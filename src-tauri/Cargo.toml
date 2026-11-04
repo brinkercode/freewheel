@@ -1,0 +1,13 @@
+[package]
+name = "freewheel"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99.1"
+license = "MIT"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+freewheel-core = { path = "../crates/freewheel-core" }
+tauri = { version = "2", features = [] }
