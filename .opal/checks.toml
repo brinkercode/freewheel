@@ -1,0 +1,10 @@
+# Host checks the build pipeline runs for freewheel.
+
+[[check]]
+run = ["cargo", "test", "--workspace"]
+
+[[check]]
+run = ["npm", "test"]
+
+[[check]]
+run = ["npm", "run", "build"]
