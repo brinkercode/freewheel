@@ -4,12 +4,14 @@ pub mod auth;
 pub mod clock;
 pub mod config;
 pub mod connection;
+pub mod ddc;
 pub mod engine;
 pub mod hid;
 pub mod inject;
 pub mod launch;
 pub mod logging;
 pub mod overrides;
+pub mod simulator;
 
 /// The application name shown by the tray and the settings window.
 pub const APP_NAME: &str = "freewheel";

@@ -164,6 +164,33 @@ pub enum Led {
     AudioOnly = 1 << 17,
 }
 
+impl Led {
+    /// The LED of `key`, if the key has one.
+    pub fn for_key(key: Key) -> Option<Led> {
+        Some(match key {
+            Key::CloseUp => Led::CloseUp,
+            Key::Cut => Led::Cut,
+            Key::Dis => Led::Dis,
+            Key::SmthCut => Led::SmthCut,
+            Key::Trans => Led::Trans,
+            Key::Snap => Led::Snap,
+            Key::Cam7 => Led::Cam7,
+            Key::Cam8 => Led::Cam8,
+            Key::Cam9 => Led::Cam9,
+            Key::LiveOwr => Led::LiveOwr,
+            Key::Cam4 => Led::Cam4,
+            Key::Cam5 => Led::Cam5,
+            Key::Cam6 => Led::Cam6,
+            Key::VideoOnly => Led::VideoOnly,
+            Key::Cam1 => Led::Cam1,
+            Key::Cam2 => Led::Cam2,
+            Key::Cam3 => Led::Cam3,
+            Key::AudioOnly => Led::AudioOnly,
+            _ => return None,
+        })
+    }
+}
+
 /// A jog-mode LED, with its bit in the 0x04 output report (bmd.py).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
@@ -348,6 +375,20 @@ mod tests {
             assert_eq!(l as u32, 1 << bit);
         }
         assert_eq!(led_report(&all), [0x02, 0xff, 0xff, 0x03, 0x00]);
+    }
+
+    #[test]
+    fn led_for_key_matches_by_name_and_keys_without_led_have_none() {
+        let lit: Vec<Key> = Key::ALL
+            .iter()
+            .copied()
+            .filter(|&k| Led::for_key(k).is_some())
+            .collect();
+        assert_eq!(lit.len(), 18);
+        for k in lit {
+            assert_eq!(format!("{:?}", Led::for_key(k).unwrap()), format!("{k:?}"));
+        }
+        assert_eq!(Led::for_key(Key::In), None);
     }
 
     #[test]

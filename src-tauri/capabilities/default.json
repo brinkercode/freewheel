@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The settings window checks for, downloads and installs signed updates, then restarts.",
+  "windows": ["main"],
+  "permissions": ["updater:default", "process:allow-restart"]
+}
