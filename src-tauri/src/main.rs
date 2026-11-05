@@ -9,6 +9,7 @@ mod hidapi_transport;
 #[cfg(not(test))]
 mod inject;
 mod launch;
+mod simulate;
 #[cfg(any(windows, test))]
 #[allow(dead_code)] // wired up with the override worker
 mod volume;
@@ -16,7 +17,11 @@ mod volume;
 use std::sync::Arc;
 
 use freewheel_core::clock::SystemClock;
+use freewheel_core::config::ConfigStore;
+use freewheel_core::inject::{KeyInjector, MockInjector};
 use freewheel_core::logging::Logger;
+use freewheel_core::simulator;
+use tauri::Manager;
 
 /// Opens the log in the OS per-user data dir (`<data_local_dir>/logs`).
 /// Logging is best effort: the app still runs when the dir is unusable.
@@ -35,6 +40,46 @@ fn init_logging() -> Option<Logger> {
     Some(logger)
 }
 
+/// The injector "send for real" uses in simulator mode.
+#[cfg(not(test))]
+fn real_injector() -> Box<dyn KeyInjector> {
+    match inject::EnigoInjector::new() {
+        Ok(i) => Box::new(i),
+        Err(e) => {
+            tracing::warn!(error = %e, "no key injector, send for real records only");
+            Box::new(MockInjector::new())
+        }
+    }
+}
+
+#[cfg(test)]
+fn real_injector() -> Box<dyn KeyInjector> {
+    Box::new(MockInjector::new())
+}
+
+/// `--simulate`: the simulator session on its own config, and its window.
+fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    let real = ConfigStore::from_project_dirs()
+        .unwrap_or_else(|| ConfigStore::new(std::env::temp_dir().join(freewheel_core::APP_NAME)));
+    builder
+        .manage(simulate::spawn(
+            simulator::simulator_store(&real),
+            real_injector,
+        ))
+        .invoke_handler(tauri::generate_handler![simulate::simulate])
+        .setup(|app| {
+            if let Some(settings) = app.get_webview_window("main") {
+                settings.set_title(&simulator::title("freewheel settings", true))?;
+            }
+            let url = tauri::WebviewUrl::App("index.html#simulator".into());
+            tauri::WebviewWindowBuilder::new(app, "simulator", url)
+                .title(simulator::title(freewheel_core::APP_NAME, true))
+                .inner_size(520.0, 720.0)
+                .build()?;
+            Ok(())
+        })
+}
+
 fn main() {
     let _logger = init_logging();
     let context = tauri::generate_context!();
@@ -45,6 +90,9 @@ fn main() {
     let mut builder = tauri::Builder::default().plugin(tauri_plugin_process::init());
     if updater_pubkey_set(&context.config().plugins) {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    }
+    if simulator::requested(std::env::args()) {
+        builder = with_simulator(builder);
     }
     builder.run(context).expect("error while running freewheel");
 }
