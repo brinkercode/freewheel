@@ -1,7 +1,17 @@
-# Host checks the factory runs for freewheel.
+# Host checks the factory runs for freewheel: the per-PR gate (the full Linux
+# fast tier). Hosted Windows/macOS CI runs only on tags, nightly and dispatch.
+
+[[check]]
+run = ["cargo", "fmt", "--all", "--", "--check"]
+
+[[check]]
+run = ["cargo", "clippy", "--workspace", "--all-targets", "--", "-D", "warnings"]
 
 [[check]]
 run = ["cargo", "test", "--workspace"]
+
+[[check]]
+run = ["npm", "ci"]
 
 [[check]]
 run = ["npm", "test"]
