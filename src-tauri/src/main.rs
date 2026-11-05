@@ -80,7 +80,10 @@ fn spawn_device(
             &mut injector,
             &mut launch::ProcessLauncher,
             commands,
-            |state| tray::show_state(&tray, &toggle, state),
+            {
+                let mut view = tray::TrayView::new(config.settings.low_battery_threshold);
+                move |update| view.apply(&tray, &toggle, update)
+            },
         );
     });
 }
@@ -143,7 +146,8 @@ fn main() {
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             tray::show_settings(app)
         }))
-        .plugin(tauri_plugin_process::init());
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init());
     if updater_pubkey_set(&context.config().plugins) {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
