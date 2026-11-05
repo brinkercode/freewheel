@@ -1,0 +1,5 @@
+# Keep LF on every checkout: a CRLF '#!/usr/bin/env node' line breaks vitest on Windows CI.
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.icns binary
