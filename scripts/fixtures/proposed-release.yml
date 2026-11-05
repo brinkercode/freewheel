@@ -1,0 +1,108 @@
+# Release for freewheel: on a version tag, runs the full ci.yml test matrix,
+# then builds draft GitHub Releases with tauri-action: an unsigned per-user
+# NSIS installer on Windows, a signed and notarized universal dmg on macOS,
+# and the updater's latest.json. Signing secrets live only in the protected
+# 'release' environment and only in the tauri-action step env.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: test
+    environment: release
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            args: "-- --locked"
+          - os: macos-15
+            args: "--target universal-apple-darwin -- --locked"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      # Installs exactly the toolchain pinned in rust-toolchain.toml (1.99.1),
+      # with the aarch64 and x86_64 Apple targets the universal build needs.
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install
+          rustc --version
+
+      - run: npm ci
+
+      # Pin to the commit of the tauri-action v0 release tag; verify the SHA
+      # on github.com/tauri-apps/tauri-action before enabling this workflow.
+      - uses: tauri-apps/tauri-action@0000000000000000000000000000000000000000 # v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tauriScript: npm run tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: freewheel ${{ github.ref_name }}
+          releaseDraft: true
+          prerelease: false
+          uploadUpdaterJson: true
+          args: ${{ matrix.args }}
+
+      # Zero-install gate on what ships: the built exe, then the exe the
+      # NSIS installer puts in the per-user install dir.
+      - name: Import check and smoke (built exe)
+        if: runner.os == 'Windows'
+        run: node scripts/check-windows-exe.mjs target/release/freewheel.exe
+      - name: Install silently and smoke the installed exe
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          $install = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "installer exit $($install.ExitCode)" }
+          node scripts/check-windows-exe.mjs "$env:LOCALAPPDATA\freewheel\freewheel.exe"
+
+  # Checks the draft's latest.json lists every platform the updater serves.
+  # Draft releases are hidden from read-only tokens, hence contents: write.
+  latest-json:
+    needs: release
+    permissions:
+      contents: write
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Check the draft's latest.json
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern latest.json
+          test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
+          node scripts/check-latest-json.mjs latest.json

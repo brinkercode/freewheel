@@ -48,7 +48,10 @@ test("bundles: per-user unsigned NSIS on Windows, macOS 15.0 dmg, no MSI", () =>
   expect(conf.bundle.targets).toEqual(["nsis", "app", "dmg"]);
   expect(conf.bundle.createUpdaterArtifacts).toBe(true);
   expect(conf.bundle.macOS.minimumSystemVersion).toBe("15.0");
-  expect(conf.bundle.windows).toEqual({ nsis: { installMode: "currentUser" } });
+  expect(conf.bundle.windows).toEqual({
+    nsis: { installMode: "currentUser" },
+    webviewInstallMode: { type: "downloadBootstrapper" },
+  });
   expect(release).not.toMatch(/WINDOWS_CERTIFICATE|certificateThumbprint|signCommand|AZURE_/);
 });
 
