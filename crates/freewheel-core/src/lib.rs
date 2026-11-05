@@ -4,6 +4,7 @@ pub mod auth;
 pub mod config;
 pub mod connection;
 pub mod hid;
+pub mod inject;
 
 /// The application name shown by the tray and the settings window.
 pub const APP_NAME: &str = "freewheel";

@@ -2,6 +2,8 @@
 
 #[allow(dead_code)] // wired up by the connection manager
 mod hidapi_transport;
+#[cfg(not(test))]
+mod inject;
 
 fn main() {
     let context = tauri::generate_context!();
