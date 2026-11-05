@@ -15,6 +15,7 @@ freewheel-core = { path = "../crates/freewheel-core" }
 serde_json = "1" # generate_context! embeds plugins.updater through serde_json
 hidapi = { version = "2.6", default-features = false, features = ["linux-native-basic-udev"] }
 os_info = { version = "3", default-features = false }
+sysinfo = { version = "0.37", default-features = false, features = ["system"] }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-notification = "2"
