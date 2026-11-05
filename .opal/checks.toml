@@ -1,4 +1,5 @@
-# Host checks the build pipeline runs for freewheel.
+# Host checks the build pipeline runs for freewheel: the per-PR gate (the full Linux
+# per-PR gate; hosted Windows/macOS CI also runs on every PR and push to main
 
 # Named-test runner for the build pipeline's per-check results (ids `<path>::<name>`).
 test_one = ["cargo", "test", "--offline", "--locked", "--workspace", "--", "{name}"]
@@ -6,7 +7,16 @@ fail_codes = [101]
 ran = '(?m)^test \S+ \.\.\. (ok|FAILED)'
 
 [[check]]
+run = ["cargo", "fmt", "--all", "--", "--check"]
+
+[[check]]
+run = ["cargo", "clippy", "--workspace", "--all-targets", "--", "-D", "warnings"]
+
+[[check]]
 run = ["cargo", "test", "--workspace"]
+
+[[check]]
+run = ["npm", "ci"]
 
 [[check]]
 run = ["npm", "test"]
