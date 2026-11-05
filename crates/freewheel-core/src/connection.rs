@@ -384,6 +384,59 @@ mod tests {
     }
 
     #[test]
+    fn engine_releases_everything_on_off_and_on_disconnect() {
+        use crate::config::{Action, Config, KeyCombo};
+        use crate::engine::Engine;
+        use crate::inject::MockInjector;
+        use crate::launch::MockLauncher;
+
+        let mut config = Config::default();
+        let combo = KeyCombo {
+            modifiers: vec![],
+            key: "A".into(),
+        };
+        config.layers[0]
+            .bindings
+            .insert("In".into(), Action::Held { combo });
+        let press_in = [0x04, 0x07, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let (f, clock) = setup();
+        let mut m = manager(&f, &clock);
+        let mut engine = Engine::new(&config);
+        let mut mock = MockInjector::new();
+        let mut feed = |events: Vec<ConnectionEvent>, mock: &mut MockInjector| {
+            for e in events {
+                if let Device(e) = e {
+                    engine.handle(&e, mock, &mut MockLauncher::new()).unwrap();
+                }
+            }
+        };
+
+        // Off with the key held.
+        let dev = Shared::default();
+        dev.handshake(600);
+        dev.0.borrow_mut().push_input(press_in);
+        f.plug(&dev);
+        feed(m.tick(T), &mut mock);
+        feed(m.tick(T), &mut mock);
+        assert_eq!(mock.keys_down().len(), 1);
+        feed(m.set_enabled(false), &mut mock);
+        assert!(mock.keys_down().is_empty());
+
+        // The device goes away with the key held.
+        let dev = Shared::default();
+        dev.handshake(600);
+        dev.0.borrow_mut().push_input(press_in);
+        f.plug(&dev);
+        feed(m.set_enabled(true), &mut mock);
+        feed(m.tick(T), &mut mock);
+        feed(m.tick(T), &mut mock);
+        assert_eq!(mock.keys_down().len(), 1);
+        feed(m.tick(T), &mut mock); // empty input script: disconnect
+        assert_eq!(m.status(), Some(Absent));
+        assert!(mock.keys_down().is_empty());
+    }
+
+    #[test]
     fn transport_errors_emit_disconnected_without_panicking() {
         let (f, clock) = setup();
         let dev = Shared::default();
