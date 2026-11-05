@@ -56,7 +56,9 @@ unsafe extern "C" {
 fn check(status: i32, what: &str) -> Result<(), ControlError> {
     match status {
         0 => Ok(()),
-        s => Err(ControlError(format!("Core Audio {what} failed: OSStatus {s}"))),
+        s => Err(ControlError(format!(
+            "Core Audio {what} failed: OSStatus {s}"
+        ))),
     }
 }
 

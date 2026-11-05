@@ -878,6 +878,7 @@ dependencies = [
  "os_info",
  "tauri",
  "tauri-build",
+ "windows 0.61.3",
 ]
 
 [[package]]
