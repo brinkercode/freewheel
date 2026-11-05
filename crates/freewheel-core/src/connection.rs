@@ -14,6 +14,7 @@ const REPORT_BUF: usize = 64;
 
 /// The connection part of the status event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum ConnectionStatus {
     Absent,
     Connected,

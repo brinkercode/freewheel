@@ -19,6 +19,7 @@ mod mac_app_volume;
 mod macos_volume;
 mod permissions;
 mod resolve_watch;
+mod settings;
 mod simulate;
 mod sysinfo_lister;
 mod tray;
@@ -36,7 +37,8 @@ use freewheel_core::inject::{KeyInjector, MockInjector};
 use freewheel_core::logging::Logger;
 use freewheel_core::resolve::{POLL_INTERVAL, ResolveWatcher};
 use freewheel_core::simulator;
-use tauri::Manager;
+use freewheel_core::status::{KEY_PRESSED_EVENT, STATUS_EVENT};
+use tauri::{Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 
 /// How long the quit hook waits for the device loop to release keys.
@@ -65,8 +67,10 @@ fn auth_response(_challenge: u64) -> u64 {
     0
 }
 
-/// Starts the device loop on its own thread; the tray shows its state.
+/// Starts the device loop on its own thread; the tray shows its state and
+/// the settings window hears the `status` and `key-pressed` events.
 fn spawn_device(
+    app: tauri::AppHandle<tauri::Wry>,
     config: Config,
     tray: tauri::tray::TrayIcon<tauri::Wry>,
     toggle: tauri::menu::CheckMenuItem<tauri::Wry>,
@@ -92,7 +96,15 @@ fn spawn_device(
             commands,
             {
                 let mut view = tray::TrayView::new(config.settings.low_battery_threshold);
-                move |update| view.apply(&tray, &toggle, update)
+                move |update| {
+                    if let device::Update::KeyPressed(key) = &update {
+                        let _ = app.emit(KEY_PRESSED_EVENT, key);
+                    }
+                    if let Some(status) = app.state::<settings::Settings>().apply(&update) {
+                        let _ = app.emit(STATUS_EVENT, status);
+                    }
+                    view.apply(&tray, &toggle, update)
+                }
             },
         );
     });
@@ -101,15 +113,20 @@ fn spawn_device(
 /// How often the tray re-checks the macOS permissions.
 const PERMISSION_POLL: Duration = Duration::from_secs(2);
 
-/// Keeps the tray's 'Needs permission' line current, checking every
-/// [`PERMISSION_POLL`] (macOS only; elsewhere nothing is needed).
-fn spawn_permission_watch(status: tray::StatusLine<tauri::Wry>) {
+/// Keeps the tray's 'Needs permission' line and the status event's
+/// permissions current, checking every [`PERMISSION_POLL`] (macOS only;
+/// elsewhere nothing is needed).
+fn spawn_permission_watch(app: tauri::AppHandle<tauri::Wry>, status: tray::StatusLine<tauri::Wry>) {
     if !cfg!(target_os = "macos") {
         return;
     }
     std::thread::spawn(move || {
         loop {
-            status.show(&permissions::current());
+            let current = permissions::current();
+            status.show(&current);
+            if let Some(event) = app.state::<settings::Settings>().set_permissions(&current) {
+                let _ = app.emit(STATUS_EVENT, event);
+            }
             std::thread::sleep(PERMISSION_POLL);
         }
     });
@@ -176,6 +193,9 @@ fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::
         ))
         .invoke_handler(tauri::generate_handler![
             simulate::simulate,
+            settings::get_config,
+            settings::save_config,
+            settings::get_status,
             permissions::get_permissions,
             permissions::open_permission_pane
         ])
@@ -223,20 +243,32 @@ fn main() {
         with_simulator(builder)
     } else {
         builder.invoke_handler(tauri::generate_handler![
+            settings::get_config,
+            settings::save_config,
+            settings::get_status,
             permissions::get_permissions,
             permissions::open_permission_pane
         ])
     };
     let app = builder
         .setup(move |app| {
-            let config = ConfigStore::from_project_dirs()
-                .map(|mut store| store.load_or_default().0)
-                .unwrap_or_default();
+            let mut store = ConfigStore::from_project_dirs().unwrap_or_else(|| {
+                ConfigStore::new(std::env::temp_dir().join(freewheel_core::APP_NAME))
+            });
+            let (config, error) = store.load_or_default();
+            if let Some(e) = error {
+                tracing::warn!(error = %e, "config not loaded, running with defaults");
+            }
+            app.manage(settings::Settings::new(
+                store,
+                config.clone(),
+                commands.clone(),
+            ));
             let (manual, manual_rx) = mpsc::channel();
             spawn_resolve_watch(app.handle().clone(), &config, manual_rx, commands.clone());
             let (tray, toggle, status) = tray::build(app.handle(), commands, manual)?;
-            spawn_device(config, tray, toggle, receiver);
-            spawn_permission_watch(status);
+            spawn_device(app.handle().clone(), config, tray, toggle, receiver);
+            spawn_permission_watch(app.handle().clone(), status);
             if simulate {
                 open_simulator(app)?;
             }

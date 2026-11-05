@@ -320,7 +320,8 @@ impl TrayView {
         update: Update,
     ) {
         match update {
-            Update::State(state) => {
+            Update::State(status) => {
+                let state = status.into();
                 self.state = state;
                 // A new connection reports its battery afresh.
                 self.battery = None;
@@ -338,6 +339,8 @@ impl TrayView {
                         .show();
                 }
             }
+            // Only the settings window shows these.
+            Update::Layer(_) | Update::KeyPressed(_) => return,
         }
         let _ = tray.set_tooltip(Some(self.tooltip()));
     }

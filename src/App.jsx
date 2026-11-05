@@ -5,6 +5,7 @@ import UpdateBanner from "./UpdateBanner.jsx";
 import { download, restart, startupCheck } from "./updater.js";
 import Simulator from "./Simulator.jsx";
 import Permissions from "./Permissions.jsx";
+import Status from "./Status.jsx";
 
 export default function App({ autoUpdate = true }) {
   // The Simulator window exists only in `freewheel --simulate` (main.rs).
@@ -27,6 +28,7 @@ function Settings({ autoUpdate }) {
         onRestart={() => restart(pending.current, relaunch, setUpdate)}
       />
       <h1>freewheel settings</h1>
+      <Status />
       <Permissions />
     </>
   );
