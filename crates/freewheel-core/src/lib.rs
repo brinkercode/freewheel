@@ -13,6 +13,7 @@ pub mod inject;
 pub mod launch;
 pub mod logging;
 pub mod overrides;
+pub mod permissions;
 pub mod resolve;
 pub mod simulator;
 

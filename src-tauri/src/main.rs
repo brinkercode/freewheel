@@ -17,6 +17,7 @@ mod mac_app_volume;
 #[cfg(target_os = "macos")]
 #[allow(dead_code)] // wired into the override worker by a later card
 mod macos_volume;
+mod permissions;
 mod resolve_watch;
 mod simulate;
 mod sysinfo_lister;
@@ -97,6 +98,23 @@ fn spawn_device(
     });
 }
 
+/// How often the tray re-checks the macOS permissions.
+const PERMISSION_POLL: Duration = Duration::from_secs(2);
+
+/// Keeps the tray's 'Needs permission' line current, checking every
+/// [`PERMISSION_POLL`] (macOS only; elsewhere nothing is needed).
+fn spawn_permission_watch(status: tray::StatusLine<tauri::Wry>) {
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    std::thread::spawn(move || {
+        loop {
+            status.show(&permissions::current());
+            std::thread::sleep(PERMISSION_POLL);
+        }
+    });
+}
+
 /// Starts the Resolve hand-off on its own thread: it polls for the
 /// configured process, switches the device loop Off or On and notifies.
 fn spawn_resolve_watch(
@@ -156,7 +174,11 @@ fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::
             simulator::simulator_store(&real),
             real_injector,
         ))
-        .invoke_handler(tauri::generate_handler![simulate::simulate])
+        .invoke_handler(tauri::generate_handler![
+            simulate::simulate,
+            permissions::get_permissions,
+            permissions::open_permission_pane
+        ])
 }
 
 /// `--simulate`: the simulator window. Called from the one `setup` hook,
@@ -197,9 +219,14 @@ fn main() {
     if updater_pubkey_set(&context.config().plugins) {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
-    if simulate {
-        builder = with_simulator(builder);
-    }
+    builder = if simulate {
+        with_simulator(builder)
+    } else {
+        builder.invoke_handler(tauri::generate_handler![
+            permissions::get_permissions,
+            permissions::open_permission_pane
+        ])
+    };
     let app = builder
         .setup(move |app| {
             let config = ConfigStore::from_project_dirs()
@@ -207,8 +234,9 @@ fn main() {
                 .unwrap_or_default();
             let (manual, manual_rx) = mpsc::channel();
             spawn_resolve_watch(app.handle().clone(), &config, manual_rx, commands.clone());
-            let (tray, toggle) = tray::build(app.handle(), commands, manual)?;
+            let (tray, toggle, status) = tray::build(app.handle(), commands, manual)?;
             spawn_device(config, tray, toggle, receiver);
+            spawn_permission_watch(status);
             if simulate {
                 open_simulator(app)?;
             }
