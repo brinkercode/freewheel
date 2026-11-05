@@ -1,5 +1,6 @@
 //! freewheel-core: platform-free logic of the freewheel macro pad.
 
+pub mod auth;
 pub mod hid;
 
 /// The application name shown by the tray and the settings window.
