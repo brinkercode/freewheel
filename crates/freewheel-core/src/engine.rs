@@ -8,9 +8,12 @@ use tracing::warn;
 
 use crate::clock::Clock;
 use crate::config::{Action, Config, JogMode, JogSettings, KeyCombo, Layer, OverrideMode};
+use crate::hid::{HidError, HidTransport};
 use crate::inject::{InjectError, KeyInjector, Keystroke};
 use crate::launch::{LaunchError, Launcher};
-use crate::report::{DeviceEvent, DeviceJogMode, Key, set_jog_mode};
+use crate::report::{
+    DeviceEvent, DeviceJogMode, JogLed, Key, Led, jog_led_report, led_report, set_jog_mode,
+};
 
 /// Shuttle repeat rate cap when the binding sets no `shuttle_max_rate_hz`.
 const DEFAULT_SHUTTLE_MAX_RATE_HZ: u32 = 20;
@@ -141,7 +144,7 @@ impl Engine {
         fire(action, injector)
     }
 
-    fn set_jog_mode(&mut self, mode: JogMode) {
+    pub fn set_jog_mode(&mut self, mode: JogMode) {
         self.jog_mode = mode;
         self.jog_value = 0;
         self.last_shuttle_fire = None;
@@ -275,6 +278,61 @@ impl Engine {
         let current = self.layer_stack.last()?;
         let layer = self.layers.iter().find(|l| &l.id == current)?;
         layer.bindings.get(&format!("{key:?}"))
+    }
+
+    /// The LEDs for the current state: the jog mode, the button that pushed
+    /// the current layer (its 'back' button) and the active override's
+    /// toggle button on the current layer.
+    pub fn leds(&self) -> LedState {
+        let push_key = self.push_keys.last().copied();
+        let override_key = self.active_override.and_then(|mode| {
+            Key::ALL.iter().copied().find(|&k| {
+                Some(k) != push_key && self.binding(k) == Some(&Action::OverrideToggle { mode })
+            })
+        });
+        LedState {
+            buttons: push_key
+                .into_iter()
+                .chain(override_key)
+                .filter_map(Led::for_key)
+                .collect(),
+            jog: match self.jog_mode {
+                JogMode::Jog => JogLed::Jog,
+                JogMode::Shuttle => JogLed::Shtl,
+                JogMode::Scroll => JogLed::Scrl,
+            },
+        }
+    }
+}
+
+/// The lit LEDs, derived by [`Engine::leds`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LedState {
+    pub buttons: Vec<Led>,
+    pub jog: JogLed,
+}
+
+/// Writes LED reports to the device, each only when its LEDs change.
+#[derive(Debug, Default)]
+pub struct LedWriter {
+    last: Option<LedState>,
+}
+
+impl LedWriter {
+    pub fn sync(
+        &mut self,
+        leds: &LedState,
+        transport: &mut dyn HidTransport,
+    ) -> Result<(), HidError> {
+        let last = self.last.as_ref();
+        if last.map(|l| &l.buttons) != Some(&leds.buttons) {
+            transport.write(&led_report(&leds.buttons))?;
+        }
+        if last.map(|l| l.jog) != Some(leds.jog) {
+            transport.write(&jog_led_report(&[leds.jog]))?;
+        }
+        self.last = Some(leds.clone());
+        Ok(())
     }
 }
 
@@ -926,6 +984,94 @@ mod tests {
             assert!(Instant::now() < end, "timed out");
             std::thread::sleep(Duration::from_millis(1));
         }
+    }
+
+    #[test]
+    fn leds_map_jog_mode_to_its_jog_led_and_light_no_buttons_at_rest() {
+        for (mode, led) in [
+            (JogMode::Jog, JogLed::Jog),
+            (JogMode::Shuttle, JogLed::Shtl),
+            (JogMode::Scroll, JogLed::Scrl),
+        ] {
+            let engine = jog_engine(mode, 1, None);
+            assert_eq!(
+                engine.leds(),
+                LedState {
+                    buttons: vec![],
+                    jog: led
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn pushing_a_layer_lights_its_push_button_and_popping_clears_it() {
+        let mut engine = layered(&[(Key::Cam1, push("l1"))], 1, &[]);
+        let mut l = MockLauncher::new();
+        let mut mock = MockInjector::new();
+        engine.handle(&Press(Key::Cam1), &mut mock, &mut l).unwrap();
+        assert_eq!(engine.leds().buttons, [Led::Cam1]);
+        engine.handle(&Press(Key::Cam1), &mut mock, &mut l).unwrap();
+        assert!(engine.leds().buttons.is_empty());
+    }
+
+    #[test]
+    fn active_override_lights_its_toggle_button() {
+        let mut engine = override_engine();
+        let mut l = MockLauncher::new();
+        let mut mock = MockInjector::new();
+        engine.handle(&Press(Key::Cam2), &mut mock, &mut l).unwrap();
+        assert_eq!(engine.leds().buttons, [Led::Cam2]);
+        engine.handle(&Press(Key::Cam3), &mut mock, &mut l).unwrap();
+        assert_eq!(engine.leds().buttons, [Led::Cam3]);
+        engine.handle(&Press(Key::Cam3), &mut mock, &mut l).unwrap();
+        assert!(engine.leds().buttons.is_empty());
+    }
+
+    #[test]
+    fn led_reports_are_written_only_when_the_leds_change() {
+        use crate::hid::{FakeTransport, Written::Output};
+        let mut config = Config::default();
+        let bindings = &mut config.layers[0].bindings;
+        bindings.insert("Cam1".into(), push("l1"));
+        bindings.insert("Cut".into(), Action::Hotkey { combo: ctrl_s() });
+        bindings.insert("Jog".into(), Action::SetJogMode { mode: JogMode::Jog });
+        config.layers.push(Layer {
+            id: "l1".into(),
+            name: "Layer 1".into(),
+            bindings: BTreeMap::new(),
+        });
+        let mut engine = Engine::new(&config);
+        let mut fake = FakeTransport::new();
+        let mut writer = LedWriter::default();
+        let mut mock = MockInjector::new();
+        let mut l = MockLauncher::new();
+        writer.sync(&engine.leds(), &mut fake).unwrap();
+        for e in [
+            Press(Key::Cut),
+            Release(Key::Cut),
+            jog(3),
+            Press(Key::Cam1),
+            Release(Key::Cam1),
+            Press(Key::Cam1),
+            Press(Key::Jog),
+            Press(Key::Jog),
+        ] {
+            engine.handle(&e, &mut mock, &mut l).unwrap();
+            writer.sync(&engine.leds(), &mut fake).unwrap();
+        }
+        assert_eq!(
+            fake.written(),
+            &[
+                Output(vec![0x02, 0, 0, 0, 0]),
+                Output(vec![0x04, 0x04]),
+                // Cam1 pushes l1: its LED (bit 14) lights.
+                Output(vec![0x02, 0, 0x40, 0, 0]),
+                // Cam1 pops back: cleared.
+                Output(vec![0x02, 0, 0, 0, 0]),
+                Output(vec![0x04, 0x01]),
+            ]
+        );
     }
 
     #[test]

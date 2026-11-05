@@ -2,18 +2,28 @@
 
 #[cfg(windows)]
 mod app_volume;
+#[cfg(target_os = "macos")]
+mod ddc_macos;
 mod device;
 mod hidapi_transport;
 mod inject;
 mod launch;
+mod simulate;
 mod tray;
+#[cfg(any(windows, test))]
+#[allow(dead_code)] // wired up with the override worker
+mod volume;
 
 use std::sync::Arc;
 use std::sync::mpsc;
 use std::time::Duration;
 
 use freewheel_core::clock::SystemClock;
+use freewheel_core::config::ConfigStore;
+use freewheel_core::inject::{KeyInjector, MockInjector};
 use freewheel_core::logging::Logger;
+use freewheel_core::simulator;
+use tauri::Manager;
 
 /// How long the quit hook waits for the device loop to release keys.
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
@@ -47,7 +57,6 @@ fn spawn_device(
     toggle: tauri::menu::CheckMenuItem<tauri::Wry>,
     commands: mpsc::Receiver<device::Command>,
 ) {
-    use freewheel_core::config::ConfigStore;
     use freewheel_core::connection::ConnectionManager;
     use freewheel_core::engine::Engine;
 
@@ -74,6 +83,49 @@ fn spawn_device(
     });
 }
 
+/// The injector "send for real" uses in simulator mode.
+#[cfg(not(test))]
+fn real_injector() -> Box<dyn KeyInjector> {
+    match inject::EnigoInjector::new() {
+        Ok(i) => Box::new(i),
+        Err(e) => {
+            tracing::warn!(error = %e, "no key injector, send for real records only");
+            Box::new(MockInjector::new())
+        }
+    }
+}
+
+#[cfg(test)]
+fn real_injector() -> Box<dyn KeyInjector> {
+    Box::new(MockInjector::new())
+}
+
+/// `--simulate`: the simulator session on its own config.
+fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    let real = ConfigStore::from_project_dirs()
+        .unwrap_or_else(|| ConfigStore::new(std::env::temp_dir().join(freewheel_core::APP_NAME)));
+    builder
+        .manage(simulate::spawn(
+            simulator::simulator_store(&real),
+            real_injector,
+        ))
+        .invoke_handler(tauri::generate_handler![simulate::simulate])
+}
+
+/// `--simulate`: the simulator window. Called from the one `setup` hook,
+/// since a second `Builder::setup` would replace the tray's.
+fn open_simulator(app: &tauri::App) -> tauri::Result<()> {
+    if let Some(settings) = app.get_webview_window("main") {
+        settings.set_title(&simulator::title("freewheel settings", true))?;
+    }
+    let url = tauri::WebviewUrl::App("index.html#simulator".into());
+    tauri::WebviewWindowBuilder::new(app, "simulator", url)
+        .title(simulator::title(freewheel_core::APP_NAME, true))
+        .inner_size(520.0, 720.0)
+        .build()?;
+    Ok(())
+}
+
 fn main() {
     let _logger = init_logging();
     let context = tauri::generate_context!();
@@ -83,14 +135,26 @@ fn main() {
     );
     let (commands, receiver) = mpsc::channel();
     let quit_commands = commands.clone();
-    let app = tauri::Builder::default()
-        // Registered first, so a second launch only focuses this one.
+    let simulate = simulator::requested(std::env::args());
+    // Registered first, so a second launch only focuses this one.
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             tray::show_settings(app)
         }))
+        .plugin(tauri_plugin_process::init());
+    if updater_pubkey_set(&context.config().plugins) {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    }
+    if simulate {
+        builder = with_simulator(builder);
+    }
+    let app = builder
         .setup(move |app| {
             let (tray, toggle) = tray::build(app.handle(), commands)?;
             spawn_device(tray, toggle, receiver);
+            if simulate {
+                open_simulator(app)?;
+            }
             Ok(())
         })
         // Closing the settings window hides it; only Quit exits.
@@ -110,4 +174,49 @@ fn main() {
             tracing::warn!("device loop did not confirm the key release");
         }
     });
+}
+
+/// Only release builds get the updater pubkey (`tauri build --config` in the
+/// release workflow); CI and dev builds have none and skip the updater.
+fn updater_pubkey_set(plugins: &tauri::utils::config::PluginConfig) -> bool {
+    plugins
+        .0
+        .get("updater")
+        .and_then(|u| u.get("pubkey"))
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|k| !k.trim().is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::updater_pubkey_set;
+    use tauri::utils::config::PluginConfig;
+
+    fn plugins(updater: serde_json::Value) -> PluginConfig {
+        PluginConfig([("updater".to_string(), updater)].into_iter().collect())
+    }
+
+    #[test]
+    fn dev_and_ci_builds_without_a_pubkey_skip_the_updater() {
+        assert!(!updater_pubkey_set(&PluginConfig::default()));
+        assert!(!updater_pubkey_set(&plugins(serde_json::json!({}))));
+        assert!(!updater_pubkey_set(&plugins(
+            serde_json::json!({ "pubkey": "" })
+        )));
+    }
+
+    #[test]
+    fn a_release_build_with_the_injected_pubkey_runs_the_updater() {
+        assert!(updater_pubkey_set(&plugins(
+            serde_json::json!({ "pubkey": "injected" })
+        )));
+    }
+
+    #[test]
+    fn the_committed_config_has_no_pubkey() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let plugins = PluginConfig(serde_json::from_value(conf["plugins"].clone()).unwrap());
+        assert!(!updater_pubkey_set(&plugins));
+    }
 }
