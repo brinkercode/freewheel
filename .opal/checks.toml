@@ -1,5 +1,10 @@
 # Host checks the factory runs for freewheel.
 
+# Named-test runner for the factory's per-check results (ids `<path>::<name>`).
+test_one = ["cargo", "test", "--offline", "--locked", "--workspace", "--", "{name}"]
+fail_codes = [101]
+ran = '(?m)^test \S+ \.\.\. (ok|FAILED)'
+
 [[check]]
 run = ["cargo", "test", "--workspace"]
 
