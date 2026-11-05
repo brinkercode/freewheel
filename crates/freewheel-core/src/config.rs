@@ -57,14 +57,32 @@ pub enum OverrideMode {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Action {
-    Hotkey { combo: KeyCombo },
-    Held { combo: KeyCombo },
-    Latched { combo: KeyCombo },
-    Scroll { amount: i32 },
-    LaunchApp { path: String, args: Vec<String>, enabled: bool },
-    LayerPush { target: LayerId },
-    SetJogMode { mode: JogMode },
-    OverrideToggle { mode: OverrideMode },
+    Hotkey {
+        combo: KeyCombo,
+    },
+    Held {
+        combo: KeyCombo,
+    },
+    Latched {
+        combo: KeyCombo,
+    },
+    Scroll {
+        amount: i32,
+    },
+    LaunchApp {
+        path: String,
+        args: Vec<String>,
+        enabled: bool,
+    },
+    LayerPush {
+        target: LayerId,
+    },
+    SetJogMode {
+        mode: JogMode,
+    },
+    OverrideToggle {
+        mode: OverrideMode,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -112,7 +130,11 @@ pub struct OverrideSettings {
 
 impl Default for OverrideSettings {
     fn default() -> Self {
-        OverrideSettings { system_volume_step: 0.02, app_volume_step: 0.02, brightness_step: 5 }
+        OverrideSettings {
+            system_volume_step: 0.02,
+            app_volume_step: 0.02,
+            brightness_step: 5,
+        }
     }
 }
 
@@ -127,7 +149,11 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        let resolve = if cfg!(windows) { "Resolve.exe" } else { "Resolve" };
+        let resolve = if cfg!(windows) {
+            "Resolve.exe"
+        } else {
+            "Resolve"
+        };
         Settings {
             enabled: true,
             start_at_login: false,
@@ -149,7 +175,11 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        let base = Layer { id: "base".into(), name: "Base".into(), bindings: BTreeMap::new() };
+        let base = Layer {
+            id: "base".into(),
+            name: "Base".into(),
+            bindings: BTreeMap::new(),
+        };
         Config {
             version: CONFIG_VERSION,
             settings: Settings::default(),
@@ -175,7 +205,9 @@ pub enum ConfigError {
 impl fmt::Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ConfigError::UnsupportedVersion(v) => write!(f, "config version {v} is newer than {CONFIG_VERSION}"),
+            ConfigError::UnsupportedVersion(v) => {
+                write!(f, "config version {v} is newer than {CONFIG_VERSION}")
+            }
             ConfigError::Malformed(msg) => write!(f, "malformed config: {msg}"),
             ConfigError::Io(e) => write!(f, "config I/O error: {e}"),
         }
@@ -201,7 +233,10 @@ pub struct ConfigStore {
 impl ConfigStore {
     /// A store for an injected config directory.
     pub fn new(dir: impl Into<PathBuf>) -> Self {
-        ConfigStore { dir: dir.into(), preserve_bad: false }
+        ConfigStore {
+            dir: dir.into(),
+            preserve_bad: false,
+        }
     }
 
     /// A store for the user's config directory from `directories::ProjectDirs`.
@@ -249,7 +284,8 @@ impl ConfigStore {
             fs::rename(&path, self.bad_path())?;
         }
         self.preserve_bad = false;
-        let json = serde_json::to_vec_pretty(config).map_err(|e| ConfigError::Malformed(e.to_string()))?;
+        let json =
+            serde_json::to_vec_pretty(config).map_err(|e| ConfigError::Malformed(e.to_string()))?;
         let tmp = self.dir.join(TEMP_FILE);
         let mut file = fs::File::create(&tmp)?;
         file.write_all(&json)?;
@@ -260,7 +296,10 @@ impl ConfigStore {
     }
 
     fn bad_path(&self) -> PathBuf {
-        let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
         let mut candidate = self.dir.join(format!("{BAD_PREFIX}{secs}"));
         let mut n = 1;
         while candidate.exists() {
@@ -276,7 +315,8 @@ fn parse(bytes: &[u8]) -> Result<Config, ConfigError> {
     struct Probe {
         version: u32,
     }
-    let probe: Probe = serde_json::from_slice(bytes).map_err(|e| ConfigError::Malformed(e.to_string()))?;
+    let probe: Probe =
+        serde_json::from_slice(bytes).map_err(|e| ConfigError::Malformed(e.to_string()))?;
     if probe.version > CONFIG_VERSION {
         return Err(ConfigError::UnsupportedVersion(probe.version));
     }
@@ -288,7 +328,10 @@ mod tests {
     use super::*;
 
     fn combo(key: &str) -> KeyCombo {
-        KeyCombo { modifiers: vec![Modifier::Ctrl, Modifier::Shift], key: key.into() }
+        KeyCombo {
+            modifiers: vec![Modifier::Ctrl, Modifier::Shift],
+            key: key.into(),
+        }
     }
 
     fn roundtrip<T: Serialize + for<'de> Deserialize<'de> + PartialEq + fmt::Debug>(value: &T) {
@@ -304,8 +347,10 @@ mod tests {
     }
 
     fn entries(dir: &Path) -> Vec<String> {
-        let mut names: Vec<String> =
-            fs::read_dir(dir).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+        let mut names: Vec<String> = fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
         names.sort();
         names
     }
@@ -317,11 +362,25 @@ mod tests {
             Action::Held { combo: combo("H") },
             Action::Latched { combo: combo("L") },
             Action::Scroll { amount: -3 },
-            Action::LaunchApp { path: "/bin/app".into(), args: vec!["-x".into()], enabled: false },
-            Action::LaunchApp { path: "app.exe".into(), args: vec![], enabled: true },
-            Action::LayerPush { target: "edit".into() },
-            Action::SetJogMode { mode: JogMode::Shuttle },
-            Action::OverrideToggle { mode: OverrideMode::Brightness },
+            Action::LaunchApp {
+                path: "/bin/app".into(),
+                args: vec!["-x".into()],
+                enabled: false,
+            },
+            Action::LaunchApp {
+                path: "app.exe".into(),
+                args: vec![],
+                enabled: true,
+            },
+            Action::LayerPush {
+                target: "edit".into(),
+            },
+            Action::SetJogMode {
+                mode: JogMode::Shuttle,
+            },
+            Action::OverrideToggle {
+                mode: OverrideMode::Brightness,
+            },
         ];
         for a in &actions {
             roundtrip(a);
@@ -329,16 +388,30 @@ mod tests {
         let layer = Layer {
             id: "edit".into(),
             name: "Edit".into(),
-            bindings: actions.iter().enumerate().map(|(i, a)| (format!("K{i}"), a.clone())).collect(),
+            bindings: actions
+                .iter()
+                .enumerate()
+                .map(|(i, a)| (format!("K{i}"), a.clone()))
+                .collect(),
         };
         roundtrip(&layer);
         let mut jog = JogSettings::default();
         jog.per_mode.insert(
             JogMode::Shuttle,
-            JogBinding { left: None, right: Some(actions[0].clone()), threshold: 4, shuttle_max_rate_hz: Some(20) },
+            JogBinding {
+                left: None,
+                right: Some(actions[0].clone()),
+                threshold: 4,
+                shuttle_max_rate_hz: Some(20),
+            },
         );
         roundtrip(&jog);
-        let settings = Settings { enabled: false, start_at_login: true, resolve_process_name: "R".into(), low_battery_threshold: 9 };
+        let settings = Settings {
+            enabled: false,
+            start_at_login: true,
+            resolve_process_name: "R".into(),
+            low_battery_threshold: 9,
+        };
         roundtrip(&settings);
         let mut config = Config::default();
         config.layers.push(layer);
@@ -413,7 +486,10 @@ mod tests {
         assert_eq!(names.len(), 2, "{names:?}");
         assert_eq!(names[0], CONFIG_FILE);
         let stamp = names[1].strip_prefix(BAD_PREFIX).expect("bad file name");
-        assert!(!stamp.is_empty() && stamp.chars().all(|c| c.is_ascii_digit()), "{stamp}");
+        assert!(
+            !stamp.is_empty() && stamp.chars().all(|c| c.is_ascii_digit()),
+            "{stamp}"
+        );
         assert_eq!(fs::read(dir.path().join(&names[1])).unwrap(), bad);
         assert_eq!(s.load().unwrap(), config);
 
@@ -427,7 +503,12 @@ mod tests {
         let (dir, s) = store();
         assert_eq!(s.path(), dir.path().join(CONFIG_FILE));
         if let Some(real) = ConfigStore::from_project_dirs() {
-            assert!(real.dir().to_string_lossy().to_lowercase().contains("freewheel"));
+            assert!(
+                real.dir()
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .contains("freewheel")
+            );
             assert!(real.path().ends_with(CONFIG_FILE));
         }
     }
