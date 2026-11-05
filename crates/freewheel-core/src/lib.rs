@@ -9,6 +9,7 @@ pub mod hid;
 pub mod inject;
 pub mod launch;
 pub mod logging;
+pub mod overrides;
 
 /// The application name shown by the tray and the settings window.
 pub const APP_NAME: &str = "freewheel";

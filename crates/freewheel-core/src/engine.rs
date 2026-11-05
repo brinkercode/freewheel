@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use tracing::warn;
 
 use crate::clock::Clock;
-use crate::config::{Action, Config, JogMode, JogSettings, KeyCombo, Layer};
+use crate::config::{Action, Config, JogMode, JogSettings, KeyCombo, Layer, OverrideMode};
 use crate::inject::{InjectError, KeyInjector, Keystroke};
 use crate::launch::{LaunchError, Launcher};
 use crate::report::{DeviceEvent, DeviceJogMode, Key, set_jog_mode};
@@ -33,6 +33,8 @@ pub struct Engine {
     last_shuttle_fire: Option<Instant>,
     reports: Vec<Vec<u8>>,
     launch_errors: Vec<LaunchError>,
+    active_override: Option<OverrideMode>,
+    override_ticks: Vec<(OverrideMode, i32)>,
 }
 
 impl Engine {
@@ -49,7 +51,27 @@ impl Engine {
             last_shuttle_fire: None,
             reports: Vec::new(),
             launch_errors: Vec::new(),
+            active_override: None,
+            override_ticks: Vec::new(),
         }
+    }
+
+    /// The dial override in use, if any.
+    pub fn active_override(&self) -> Option<OverrideMode> {
+        self.active_override
+    }
+
+    /// Drains the dial ticks taken by the active override, for an
+    /// [`OverrideWorker`](crate::overrides::OverrideWorker).
+    pub fn take_override_ticks(&mut self) -> Vec<(OverrideMode, i32)> {
+        std::mem::take(&mut self.override_ticks)
+    }
+
+    /// Switches the dial to `mode`, or back to jog actions if it is active.
+    fn toggle_override(&mut self, mode: OverrideMode) {
+        self.active_override = (self.active_override != Some(mode)).then_some(mode);
+        self.jog_value = 0;
+        self.last_shuttle_fire = None;
     }
 
     pub fn jog_mode(&self) -> JogMode {
@@ -73,7 +95,7 @@ impl Engine {
         clock: &dyn Clock,
         injector: &mut dyn KeyInjector,
     ) -> Result<(), InjectError> {
-        if self.jog_mode != JogMode::Shuttle {
+        if self.jog_mode != JogMode::Shuttle || self.active_override.is_some() {
             return Ok(());
         }
         let Some(binding) = self.jog.per_mode.get(&JogMode::Shuttle) else {
@@ -115,6 +137,12 @@ impl Engine {
     }
 
     fn jog(&mut self, value: i32, injector: &mut dyn KeyInjector) -> Result<(), InjectError> {
+        if let Some(mode) = self.active_override {
+            if value != 0 {
+                self.override_ticks.push((mode, value));
+            }
+            return Ok(());
+        }
         if self.jog_mode == JogMode::Shuttle {
             self.jog_value = value;
             return Ok(());
@@ -175,6 +203,10 @@ impl Engine {
                 }
                 Some(Action::SetJogMode { mode }) => {
                     self.set_jog_mode(mode);
+                    Ok(())
+                }
+                Some(Action::OverrideToggle { mode }) => {
+                    self.toggle_override(mode);
                     Ok(())
                 }
                 Some(Action::LaunchApp {
@@ -780,6 +812,102 @@ mod tests {
             .handle(&Press(Key::Cam1), &mut mock, &mut launcher)
             .unwrap();
         assert_eq!(launcher.calls().len(), 2);
+    }
+
+    fn override_engine() -> Engine {
+        let mut config = Config::default();
+        let bindings = &mut config.layers[0].bindings;
+        for (key, mode) in [
+            ("Cam1", OverrideMode::SystemVolume),
+            ("Cam2", OverrideMode::AppVolume),
+            ("Cam3", OverrideMode::Brightness),
+        ] {
+            bindings.insert(key.into(), Action::OverrideToggle { mode });
+        }
+        bindings.insert("Cut".into(), Action::Hotkey { combo: ctrl_s() });
+        Engine::new(&config)
+    }
+
+    #[test]
+    fn override_button_toggles_its_mode_and_again_returns_to_jog_actions() {
+        let mut engine = override_engine();
+        let mut mock = MockInjector::new();
+        let mut l = MockLauncher::new();
+        engine.handle(&Press(Key::Cam1), &mut mock, &mut l).unwrap();
+        assert_eq!(engine.active_override(), Some(OverrideMode::SystemVolume));
+        engine.handle(&jog(2), &mut mock, &mut l).unwrap();
+        engine.handle(&jog(-1), &mut mock, &mut l).unwrap();
+        assert!(mock.calls().is_empty());
+        assert_eq!(
+            engine.take_override_ticks(),
+            [
+                (OverrideMode::SystemVolume, 2),
+                (OverrideMode::SystemVolume, -1)
+            ]
+        );
+        // Another override button switches straight to its mode.
+        engine.handle(&Press(Key::Cam3), &mut mock, &mut l).unwrap();
+        assert_eq!(engine.active_override(), Some(OverrideMode::Brightness));
+        engine.handle(&Press(Key::Cam3), &mut mock, &mut l).unwrap();
+        assert_eq!(engine.active_override(), None);
+        engine.handle(&jog(1), &mut mock, &mut l).unwrap();
+        assert_eq!(mock.calls(), &[Scroll(1)]);
+        assert!(engine.take_override_ticks().is_empty());
+    }
+
+    #[test]
+    fn dial_ticks_step_active_control_and_slow_brightness_never_delays_keys() {
+        use crate::overrides::ControlCall::{Down, Up};
+        use crate::overrides::{Controls, FakeControl, OverrideRunner, OverrideWorker};
+
+        let (volume, brightness) = (FakeControl::new(), FakeControl::new());
+        let controls = Controls {
+            volume: Box::new(volume.clone()),
+            app_volume: Box::new(FakeControl::new()),
+            brightness: Box::new(brightness.clone()),
+        };
+        let mut config = Config::default();
+        config.overrides.system_volume_step = 0.5;
+        let runner = OverrideRunner::new(
+            controls,
+            config.overrides.clone(),
+            crate::clock::SystemClock,
+        );
+        let worker = OverrideWorker::spawn(runner);
+        let mut engine = override_engine();
+        let mut mock = MockInjector::new();
+        let mut l = MockLauncher::new();
+        let mut feed = |engine: &mut Engine, mock: &mut MockInjector, e: DeviceEvent| {
+            engine.handle(&e, mock, &mut l).unwrap();
+            for (mode, ticks) in engine.take_override_ticks() {
+                worker.push(mode, ticks);
+            }
+        };
+
+        feed(&mut engine, &mut mock, Press(Key::Cam1));
+        feed(&mut engine, &mut mock, jog(1));
+        wait_until(|| volume.calls() == [Up(0.5)]);
+        feed(&mut engine, &mut mock, jog(-1));
+        wait_until(|| volume.calls() == [Up(0.5), Down(0.5)]);
+
+        // Brightness blocks in the fake; keys still go through at once.
+        let slow = brightness.hold();
+        feed(&mut engine, &mut mock, Press(Key::Cam3));
+        feed(&mut engine, &mut mock, jog(-1));
+        feed(&mut engine, &mut mock, Press(Key::Cut));
+        assert_eq!(mock.calls().len(), 4);
+        assert!(brightness.calls().is_empty());
+        drop(slow);
+        wait_until(|| brightness.calls() == [Down(5.0)]);
+        drop(worker);
+    }
+
+    fn wait_until(f: impl Fn() -> bool) {
+        let end = Instant::now() + Duration::from_secs(5);
+        while !f() {
+            assert!(Instant::now() < end, "timed out");
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 
     #[test]
