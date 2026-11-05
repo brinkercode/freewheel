@@ -38,6 +38,7 @@ pub struct Engine {
     launch_errors: Vec<LaunchError>,
     active_override: Option<OverrideMode>,
     override_ticks: Vec<(OverrideMode, i32)>,
+    override_exited: bool,
 }
 
 impl Engine {
@@ -56,6 +57,7 @@ impl Engine {
             launch_errors: Vec::new(),
             active_override: None,
             override_ticks: Vec::new(),
+            override_exited: false,
         }
     }
 
@@ -70,8 +72,15 @@ impl Engine {
         std::mem::take(&mut self.override_ticks)
     }
 
+    /// Whether the dial left an override since the last call, so the
+    /// worker releases its controls (the app-volume tap).
+    pub fn take_override_exit(&mut self) -> bool {
+        std::mem::take(&mut self.override_exited)
+    }
+
     /// Switches the dial to `mode`, or back to jog actions if it is active.
     fn toggle_override(&mut self, mode: OverrideMode) {
+        self.override_exited |= self.active_override.is_some();
         self.active_override = (self.active_override != Some(mode)).then_some(mode);
         self.jog_value = 0;
         self.last_shuttle_fire = None;
@@ -81,7 +90,7 @@ impl Engine {
     /// override and the Shuttle repeat, so nothing stays stuck. Calling it
     /// again injects nothing.
     pub fn release_all(&mut self, injector: &mut dyn KeyInjector) -> Result<(), InjectError> {
-        self.active_override = None;
+        self.override_exited |= self.active_override.take().is_some();
         self.override_ticks.clear();
         self.jog_value = 0;
         self.last_shuttle_fire = None;
@@ -1139,6 +1148,27 @@ mod tests {
             engine.tick(&clock, &mut mock).unwrap();
         }
         assert_eq!(mock.calls(), &[Scroll(5)]);
+    }
+
+    #[test]
+    fn leaving_an_override_or_release_all_signals_an_override_exit() {
+        let mut engine = override_engine();
+        let mut mock = MockInjector::new();
+        let mut l = MockLauncher::new();
+        engine.handle(&Press(Key::Cam2), &mut mock, &mut l).unwrap();
+        assert!(!engine.take_override_exit());
+        // Switching to another mode leaves app volume.
+        engine.handle(&Press(Key::Cam1), &mut mock, &mut l).unwrap();
+        assert!(engine.take_override_exit());
+        assert!(!engine.take_override_exit());
+        // Toggling the active mode off.
+        engine.handle(&Press(Key::Cam1), &mut mock, &mut l).unwrap();
+        assert!(engine.take_override_exit());
+        engine.handle(&Press(Key::Cam2), &mut mock, &mut l).unwrap();
+        engine.release_all(&mut mock).unwrap();
+        assert!(engine.take_override_exit());
+        engine.release_all(&mut mock).unwrap();
+        assert!(!engine.take_override_exit());
     }
 
     #[test]

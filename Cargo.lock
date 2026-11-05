@@ -1111,10 +1111,12 @@ dependencies = [
 name = "freewheel"
 version = "0.1.0"
 dependencies = [
+ "core-foundation 0.10.1",
  "directories",
  "enigo",
  "freewheel-core",
  "hidapi",
+ "objc2",
  "os_info",
  "serde",
  "serde_json",
