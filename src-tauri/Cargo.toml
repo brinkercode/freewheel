@@ -17,6 +17,7 @@ hidapi = { version = "2.6", default-features = false, features = ["linux-native-
 os_info = { version = "3", default-features = false }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-autostart = "2"
+tauri-plugin-notification = "2"
 tauri-plugin-process = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"

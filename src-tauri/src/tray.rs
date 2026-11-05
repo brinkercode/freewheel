@@ -10,7 +10,10 @@ use tauri::tray::{TrayIcon, TrayIconBuilder};
 use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_autostart::ManagerExt;
 
-use crate::device::{Command, TrayState};
+use freewheel_core::battery::{self, Battery, LowBatteryAlert};
+use tauri_plugin_notification::NotificationExt;
+
+use crate::device::{Command, TrayState, Update};
 
 const TOGGLE: &str = "toggle";
 const OPEN_SETTINGS: &str = "open-settings";
@@ -78,6 +81,15 @@ fn toggle_text(on: bool) -> &'static str {
     }
 }
 
+/// The device status the tooltip shows while no battery data is known.
+fn status_text(state: TrayState) -> &'static str {
+    match state {
+        TrayState::On => "Connected",
+        TrayState::Off => "freewheel is Off",
+        TrayState::NotConnected => "Looking for device",
+    }
+}
+
 /// The tray menu; the returned check items are the On/Off toggle and Start
 /// at login, checked as `start_at_login` says.
 pub fn menu<R: Runtime>(
@@ -128,7 +140,7 @@ pub fn build<R: Runtime>(
     let tray = TrayIconBuilder::with_id("main")
         .icon(icon(TrayState::NotConnected))
         .icon_as_template(cfg!(target_os = "macos"))
-        .tooltip(freewheel_core::APP_NAME)
+        .tooltip(status_text(TrayState::NotConnected))
         .menu(&menu)
         .on_menu_event(move |app, event| match event.id().as_ref() {
             TOGGLE => {
@@ -166,6 +178,61 @@ pub fn show_state<R: Runtime>(tray: &TrayIcon<R>, toggle: &CheckMenuItem<R>, sta
     let _ = tray.set_icon_as_template(cfg!(target_os = "macos"));
     let _ = toggle.set_checked(on);
     let _ = toggle.set_text(toggle_text(on));
+}
+
+/// What the tray shows: the state icon, the battery tooltip and the
+/// once-only low-battery notification.
+pub struct TrayView {
+    state: TrayState,
+    battery: Option<Battery>,
+    alert: LowBatteryAlert,
+    threshold: u8,
+}
+
+impl TrayView {
+    pub fn new(threshold: u8) -> Self {
+        Self {
+            state: TrayState::NotConnected,
+            battery: None,
+            alert: LowBatteryAlert::default(),
+            threshold,
+        }
+    }
+
+    /// The tooltip for what is known now.
+    fn tooltip(&self) -> String {
+        battery::tooltip(status_text(self.state), self.battery)
+    }
+
+    /// Takes an update from the device loop and shows it.
+    pub fn apply<R: Runtime>(
+        &mut self,
+        tray: &TrayIcon<R>,
+        toggle: &CheckMenuItem<R>,
+        update: Update,
+    ) {
+        match update {
+            Update::State(state) => {
+                self.state = state;
+                // A new connection reports its battery afresh.
+                self.battery = None;
+                show_state(tray, toggle, state);
+            }
+            Update::Battery(b) => {
+                self.battery = Some(b);
+                if self.alert.update(b, self.threshold) {
+                    let _ = tray
+                        .app_handle()
+                        .notification()
+                        .builder()
+                        .title("Speed Editor battery low")
+                        .body(format!("{}% left. Charge it soon.", b.level))
+                        .show();
+                }
+            }
+        }
+        let _ = tray.set_tooltip(Some(self.tooltip()));
+    }
 }
 
 #[cfg(test)]
@@ -213,6 +280,22 @@ mod tests {
                 (QUIT, "Quit freewheel"),
             ]
         );
+    }
+
+    #[test]
+    fn tooltip_shows_the_battery_or_else_the_device_status() {
+        let mut view = TrayView::new(15);
+        assert_eq!(view.tooltip(), "Looking for device");
+        view.state = TrayState::On;
+        assert_eq!(view.tooltip(), "Connected");
+        view.battery = Some(Battery {
+            level: 64,
+            charging: true,
+        });
+        assert_eq!(view.tooltip(), "Speed Editor 64% (charging)");
+        view.state = TrayState::Off;
+        view.battery = None;
+        assert_eq!(view.tooltip(), "freewheel is Off");
     }
 
     #[test]
