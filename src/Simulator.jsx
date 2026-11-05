@@ -1,0 +1,85 @@
+import { useEffect, useState } from "react";
+
+// Drives the `simulate` command of `freewheel --simulate` (core simulator.rs).
+const invoke = (control) => window.__TAURI__.core.invoke("simulate", { control });
+
+export default function Simulator({ initial = null }) {
+  const [status, setStatus] = useState(initial);
+  const [log, setLog] = useState([]);
+  const [battery, setBattery] = useState(80);
+
+  const send = (control) =>
+    invoke(control).then((s) => {
+      setStatus(s);
+      setLog((l) => [...s.toasts, ...l].slice(0, 50));
+    });
+
+  useEffect(() => {
+    send({ type: "Status" });
+  }, []);
+
+  if (!status) return <h1>freewheel Simulator</h1>;
+  const connected = status.connection === "Connected";
+  return (
+    <main>
+      <h1>freewheel Simulator</h1>
+      <p>
+        {connected ? `Connected over ${status.bus}` : status.connection === "Off" ? "Off" : "Device not found"}
+        {status.battery != null && ` · battery ${status.battery}%${status.charging ? " charging" : ""}`}
+        {status.low_battery && " · low battery"}
+        {` · page ${status.page} · LEDs ${status.lit_leds.join(", ") || "none"}`}
+      </p>
+      <section>
+        <button onClick={() => send({ type: "Connect", bus: "Usb" })}>Connect USB</button>
+        <button onClick={() => send({ type: "Connect", bus: "Bluetooth" })}>Connect Bluetooth</button>
+        <button onClick={() => send({ type: "Disconnect" })}>Disconnect</button>
+        <button onClick={() => send({ type: "SetEnabled", on: !status.enabled })}>
+          {status.enabled ? "Turn Off" : "Turn On"}
+        </button>
+        <button onClick={() => send({ type: "LoadSampleMappings" })}>Load sample mappings</button>
+      </section>
+      <section>
+        <label>
+          Battery {battery}%
+          <input type="range" min="0" max="100" value={battery} onChange={(e) => setBattery(Number(e.target.value))} />
+        </label>
+        <button onClick={() => send({ type: "Battery", level: battery, charging: false })}>Send battery</button>
+        <button onClick={() => send({ type: "Battery", level: battery, charging: true })}>Send charging</button>
+      </section>
+      <section>
+        {["Scroll", "Jog", "Shuttle"].map((mode) => (
+          <button key={mode} disabled={status.jog_mode === mode} onClick={() => send({ type: "WheelMode", mode })}>
+            {mode}
+          </button>
+        ))}
+        <button onClick={() => send({ type: "Wheel", value: -1 })}>Wheel left</button>
+        <button onClick={() => send({ type: "Wheel", value: 1 })}>Wheel right</button>
+      </section>
+      <section>
+        {status.keys.map((key) => (
+          <button
+            key={key}
+            aria-pressed={status.held_keys.includes(key)}
+            onMouseDown={() => send({ type: "Key", key, down: true })}
+            onMouseUp={() => send({ type: "Key", key, down: false })}
+          >
+            {key}
+          </button>
+        ))}
+      </section>
+      <label>
+        <input
+          type="checkbox"
+          checked={status.send_for_real}
+          onChange={(e) => send({ type: "SendForReal", on: e.target.checked })}
+        />
+        Send for real
+      </label>
+      <ul>
+        {log.map((line, i) => (
+          <li key={i}>{line}</li>
+        ))}
+      </ul>
+    </main>
+  );
+}
