@@ -7,6 +7,7 @@ pub mod config;
 pub mod connection;
 pub mod ddc;
 pub mod engine;
+pub mod first_run;
 pub mod hid;
 pub mod inject;
 pub mod launch;

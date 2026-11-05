@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import UpdateBanner from "./UpdateBanner.jsx";
 
 // Drives the `simulate` command of `freewheel --simulate` (core simulator.rs).
 const invoke = (control) => window.__TAURI__.core.invoke("simulate", { control });
@@ -38,6 +39,20 @@ export default function Simulator({ initial = null }) {
         </button>
         <button onClick={() => send({ type: "LoadSampleMappings" })}>Load sample mappings</button>
       </section>
+      <section>
+        <button onClick={() => send({ type: "Resolve", open: !status.resolve_open })}>
+          {status.resolve_open ? "Close Resolve" : "Open Resolve"}
+        </button>
+        {["Granted", "Missing"].map((state) => (
+          <button key={state} disabled={status.permissions === state} onClick={() => send({ type: "Permissions", state })}>
+            {`Permissions ${state.toLowerCase()}`}
+          </button>
+        ))}
+        <button onClick={() => send({ type: "StepUpdate" })}>Next update state</button>
+        <button onClick={() => send({ type: "ResetFirstRun" })}>Reset to first run</button>
+        {status.first_run && " · first run"}
+      </section>
+      <UpdateBanner update={status.update} />
       <section>
         <label>
           Battery {battery}%
