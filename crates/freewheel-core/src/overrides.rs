@@ -42,6 +42,41 @@ pub trait AppVolumeControl: Send {
     fn step_down(&mut self, step: f32) -> Result<(), ControlError>;
 }
 
+/// One OS audio session (Windows: an `IAudioSessionControl2` with its
+/// `ISimpleAudioVolume`), so [`step_app_sessions`] is tested without OS calls.
+pub trait AudioSession {
+    fn process_id(&self) -> Result<u32, ControlError>;
+    /// The session volume, 0..1.
+    fn volume(&self) -> Result<f32, ControlError>;
+    fn set_volume(&mut self, volume: f32) -> Result<(), ControlError>;
+}
+
+/// The error when the foreground app has no audio session.
+pub const NO_AUDIO_SESSION: &str = "no audio session";
+
+/// Steps every session owned by `pid` by `delta` (negative is down), clamped
+/// to 0..1. Errors with [`NO_AUDIO_SESSION`] when no session matches.
+pub fn step_app_sessions<S: AudioSession>(
+    pid: u32,
+    sessions: impl IntoIterator<Item = S>,
+    delta: f32,
+) -> Result<(), ControlError> {
+    let mut found = false;
+    for mut s in sessions {
+        if s.process_id()? != pid {
+            continue;
+        }
+        found = true;
+        let v = (s.volume()? + delta).clamp(0.0, 1.0);
+        s.set_volume(v)?;
+    }
+    if found {
+        Ok(())
+    } else {
+        Err(ControlError(NO_AUDIO_SESSION.into()))
+    }
+}
+
 /// Display brightness; `step` is in percent.
 pub trait BrightnessControl: Send {
     fn step_up(&mut self, step: u8) -> Result<(), ControlError>;
@@ -410,6 +445,65 @@ mod tests {
                 error: ControlError("cannot apply Down(5.0)".into()),
             }]
         );
+    }
+
+    /// A fake session: (owning pid, volume), shared so the test reads it back.
+    struct FakeSession(u32, Arc<Mutex<f32>>);
+
+    impl AudioSession for FakeSession {
+        fn process_id(&self) -> Result<u32, ControlError> {
+            Ok(self.0)
+        }
+        fn volume(&self) -> Result<f32, ControlError> {
+            Ok(*self.1.lock().unwrap())
+        }
+        fn set_volume(&mut self, volume: f32) -> Result<(), ControlError> {
+            *self.1.lock().unwrap() = volume;
+            Ok(())
+        }
+    }
+
+    fn sessions(list: &[(u32, f32)]) -> Vec<(u32, Arc<Mutex<f32>>)> {
+        list.iter()
+            .map(|&(pid, v)| (pid, Arc::new(Mutex::new(v))))
+            .collect()
+    }
+
+    fn fake(list: &[(u32, Arc<Mutex<f32>>)]) -> Vec<FakeSession> {
+        list.iter()
+            .map(|(pid, v)| FakeSession(*pid, Arc::clone(v)))
+            .collect()
+    }
+
+    fn volumes(list: &[(u32, Arc<Mutex<f32>>)]) -> Vec<f32> {
+        list.iter().map(|(_, v)| *v.lock().unwrap()).collect()
+    }
+
+    #[test]
+    fn app_volume_steps_only_the_sessions_of_the_pid() {
+        let list = sessions(&[(7, 0.5), (8, 0.5), (7, 0.25)]);
+        assert_eq!(step_app_sessions(7, fake(&list), 0.25), Ok(()));
+        assert_eq!(volumes(&list), [0.75, 0.5, 0.5]);
+        assert_eq!(step_app_sessions(8, fake(&list), -0.25), Ok(()));
+        assert_eq!(volumes(&list), [0.75, 0.25, 0.5]);
+    }
+
+    #[test]
+    fn app_volume_is_clamped_to_0_1() {
+        let list = sessions(&[(7, 0.75), (7, 0.25)]);
+        step_app_sessions(7, fake(&list), 0.5).unwrap();
+        assert_eq!(volumes(&list), [1.0, 0.75]);
+        step_app_sessions(7, fake(&list), -2.0).unwrap();
+        assert_eq!(volumes(&list), [0.0, 0.0]);
+    }
+
+    #[test]
+    fn app_volume_without_a_matching_session_is_a_no_audio_session_error() {
+        let list = sessions(&[(8, 0.5)]);
+        let err = step_app_sessions(7, fake(&list), 0.25).unwrap_err();
+        assert_eq!(err, ControlError("no audio session".into()));
+        assert_eq!(step_app_sessions(7, fake(&[]), 0.25), Err(err));
+        assert_eq!(volumes(&list), [0.5]);
     }
 
     fn wait_for(mut f: impl FnMut() -> bool) {
