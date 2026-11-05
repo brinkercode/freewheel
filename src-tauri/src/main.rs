@@ -17,7 +17,9 @@ mod mac_app_volume;
 #[cfg(target_os = "macos")]
 #[allow(dead_code)] // wired into the override worker by a later card
 mod macos_volume;
+mod resolve_watch;
 mod simulate;
+mod sysinfo_lister;
 mod tray;
 #[cfg(any(windows, test))]
 #[allow(dead_code)] // wired up with the override worker
@@ -28,11 +30,13 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use freewheel_core::clock::SystemClock;
-use freewheel_core::config::ConfigStore;
+use freewheel_core::config::{Config, ConfigStore};
 use freewheel_core::inject::{KeyInjector, MockInjector};
 use freewheel_core::logging::Logger;
+use freewheel_core::resolve::{POLL_INTERVAL, ResolveWatcher};
 use freewheel_core::simulator;
 use tauri::Manager;
+use tauri_plugin_notification::NotificationExt;
 
 /// How long the quit hook waits for the device loop to release keys.
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
@@ -62,6 +66,7 @@ fn auth_response(_challenge: u64) -> u64 {
 
 /// Starts the device loop on its own thread; the tray shows its state.
 fn spawn_device(
+    config: Config,
     tray: tauri::tray::TrayIcon<tauri::Wry>,
     toggle: tauri::menu::CheckMenuItem<tauri::Wry>,
     commands: mpsc::Receiver<device::Command>,
@@ -70,9 +75,6 @@ fn spawn_device(
     use freewheel_core::engine::Engine;
 
     std::thread::spawn(move || {
-        let config = ConfigStore::from_project_dirs()
-            .map(|mut store| store.load_or_default().0)
-            .unwrap_or_default();
         let (mut injector, api) = match (inject::EnigoInjector::new(), hidapi::HidApi::new()) {
             (Ok(injector), Ok(api)) => (injector, api),
             (Err(e), _) => return tracing::error!(error = %e, "no key injection"),
@@ -91,6 +93,39 @@ fn spawn_device(
                 let mut view = tray::TrayView::new(config.settings.low_battery_threshold);
                 move |update| view.apply(&tray, &toggle, update)
             },
+        );
+    });
+}
+
+/// Starts the Resolve hand-off on its own thread: it polls for the
+/// configured process, switches the device loop Off or On and notifies.
+fn spawn_resolve_watch(
+    app: tauri::AppHandle<tauri::Wry>,
+    config: &Config,
+    manual: mpsc::Receiver<bool>,
+    commands: mpsc::Sender<device::Command>,
+) {
+    let watcher = ResolveWatcher::from_settings(&config.settings);
+    std::thread::spawn(move || {
+        let notify = |text: &str| {
+            let shown = app
+                .notification()
+                .builder()
+                .title(freewheel_core::APP_NAME)
+                .body(text)
+                .show();
+            if let Err(e) = shown {
+                tracing::warn!(error = %e, "replug notification failed");
+            }
+        };
+        resolve_watch::run(
+            watcher,
+            &mut sysinfo_lister::SysinfoLister::new(),
+            true,
+            POLL_INTERVAL,
+            manual,
+            commands,
+            notify,
         );
     });
 }
@@ -167,8 +202,13 @@ fn main() {
     }
     let app = builder
         .setup(move |app| {
-            let (tray, toggle) = tray::build(app.handle(), commands)?;
-            spawn_device(tray, toggle, receiver);
+            let config = ConfigStore::from_project_dirs()
+                .map(|mut store| store.load_or_default().0)
+                .unwrap_or_default();
+            let (manual, manual_rx) = mpsc::channel();
+            spawn_resolve_watch(app.handle().clone(), &config, manual_rx, commands.clone());
+            let (tray, toggle) = tray::build(app.handle(), commands, manual)?;
+            spawn_device(config, tray, toggle, receiver);
             if simulate {
                 open_simulator(app)?;
             }
