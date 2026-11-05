@@ -1,8 +1,5 @@
-//! The production [`KeyInjector`], backed by enigo. Tests never build or
-//! call it (the module is `cfg(not(test))`); they use `MockInjector`.
-
-// Wired into the mapping engine by a later card.
-#![allow(dead_code)]
+//! The production [`KeyInjector`], backed by enigo. Tests never construct
+//! it; they use `MockInjector`.
 
 use enigo::{Axis, Direction, Enigo, Key, Keyboard, Mouse, Settings};
 use freewheel_core::inject::{InjectError, KeyInjector, Keystroke, Modifier};

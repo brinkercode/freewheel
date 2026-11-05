@@ -7,7 +7,9 @@ This product credits the following third-party work:
 - smunaut/blackmagic-misc (https://github.com/smunaut/blackmagic-misc)
   Licensed under the Apache License, Version 2.0.
   Its reverse-engineering of the Speed Editor's HID protocol (authentication
-  handshake and report layout) informs freewheel's device code.
+  handshake and report layout) informs freewheel's device code, and the
+  challenge-response function bmd_kbd_auth of its bmd.py (Copyright (C) 2021
+  Sylvain Munaut) is ported in crates/freewheel-core/src/auth.rs.
 
 No third-party code is used in freewheel beyond what this NOTICE lists.
 Dependencies fetched by Cargo and npm keep their own licenses.

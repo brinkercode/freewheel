@@ -1,0 +1,174 @@
+//! The tray icon and its menu: the On/Off check item, Open settings and Quit.
+
+use std::sync::mpsc::Sender;
+
+use tauri::image::Image;
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{TrayIcon, TrayIconBuilder};
+use tauri::{AppHandle, Manager, Runtime};
+
+use crate::device::{Command, TrayState};
+
+const TOGGLE: &str = "toggle";
+const OPEN_SETTINGS: &str = "open-settings";
+const QUIT: &str = "quit";
+
+/// The bundled icon for each state (macOS template images, else the
+/// Windows dark-taskbar set).
+pub fn icon(state: TrayState) -> Image<'static> {
+    #[cfg(target_os = "macos")]
+    let [on, off, absent] = [
+        tauri::include_image!("icons/tray/macos/tray-onTemplate@2x.png"),
+        tauri::include_image!("icons/tray/macos/tray-offTemplate@2x.png"),
+        tauri::include_image!("icons/tray/macos/tray-not-connectedTemplate@2x.png"),
+    ];
+    #[cfg(not(target_os = "macos"))]
+    let [on, off, absent] = [
+        tauri::include_image!("icons/tray/windows/dark-taskbar/tray-on-32.png"),
+        tauri::include_image!("icons/tray/windows/dark-taskbar/tray-off-32.png"),
+        tauri::include_image!("icons/tray/windows/dark-taskbar/tray-not-connected-32.png"),
+    ];
+    match state {
+        TrayState::On => on,
+        TrayState::Off => off,
+        TrayState::NotConnected => absent,
+    }
+}
+
+fn toggle_text(on: bool) -> &'static str {
+    if on {
+        "freewheel is On"
+    } else {
+        "freewheel is Off"
+    }
+}
+
+/// The menu entries after the On/Off toggle, each preceded by a separator.
+const ENTRIES: [(&str, &str); 2] = [
+    (OPEN_SETTINGS, "Open settings..."),
+    (QUIT, "Quit freewheel"),
+];
+
+/// The tray menu; the returned check item is the On/Off toggle.
+pub fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<(Menu<R>, CheckMenuItem<R>)> {
+    let toggle = CheckMenuItem::with_id(app, TOGGLE, toggle_text(true), true, true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&toggle])?;
+    for (id, text) in ENTRIES {
+        menu.append(&PredefinedMenuItem::separator(app)?)?;
+        menu.append(&MenuItem::with_id(app, id, text, true, None::<&str>)?)?;
+    }
+    Ok((menu, toggle))
+}
+
+/// Shows and focuses the settings window (Open settings, second launch).
+pub fn show_settings<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+/// Builds the tray. The toggle sends On/Off to the device loop; Quit exits
+/// the app, whose exit hook releases every held key.
+pub fn build<R: Runtime>(
+    app: &AppHandle<R>,
+    commands: Sender<Command>,
+) -> tauri::Result<(TrayIcon<R>, CheckMenuItem<R>)> {
+    let (menu, toggle) = menu(app)?;
+    let check = toggle.clone();
+    let tray = TrayIconBuilder::with_id("main")
+        .icon(icon(TrayState::NotConnected))
+        .icon_as_template(cfg!(target_os = "macos"))
+        .tooltip(freewheel_core::APP_NAME)
+        .menu(&menu)
+        .on_menu_event(move |app, event| match event.id().as_ref() {
+            TOGGLE => {
+                let on = check.is_checked().unwrap_or(true);
+                let _ = check.set_text(toggle_text(on));
+                let _ = commands.send(Command::SetEnabled(on));
+            }
+            OPEN_SETTINGS => show_settings(app),
+            QUIT => app.exit(0),
+            _ => {}
+        })
+        .build(app)?;
+    Ok((tray, toggle))
+}
+
+/// Shows `state` on the tray icon and the toggle.
+pub fn show_state<R: Runtime>(tray: &TrayIcon<R>, toggle: &CheckMenuItem<R>, state: TrayState) {
+    let on = state != TrayState::Off;
+    let _ = tray.set_icon(Some(icon(state)));
+    let _ = tray.set_icon_as_template(cfg!(target_os = "macos"));
+    let _ = toggle.set_checked(on);
+    let _ = toggle.set_text(toggle_text(on));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn each_state_has_its_own_bundled_icon() {
+        let on = icon(TrayState::On);
+        let off = icon(TrayState::Off);
+        let absent = icon(TrayState::NotConnected);
+        assert_ne!(on.rgba(), off.rgba());
+        assert_ne!(on.rgba(), absent.rgba());
+        assert_ne!(off.rgba(), absent.rgba());
+    }
+
+    #[test]
+    fn menu_entries_are_open_settings_then_quit() {
+        assert_eq!(
+            ENTRIES,
+            [
+                (OPEN_SETTINGS, "Open settings..."),
+                (QUIT, "Quit freewheel")
+            ]
+        );
+        assert_eq!(toggle_text(true), "freewheel is On");
+    }
+
+    // muda builds macOS menus only on the main thread, and libtest runs
+    // tests on worker threads; there the layout is covered by
+    // `menu_entries_are_open_settings_then_quit`.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn menu_has_a_checked_toggle_open_settings_and_quit() {
+        use tauri::menu::MenuItemKind;
+        let app = tauri::test::mock_app();
+        let (menu, toggle) = menu(app.handle()).unwrap();
+        assert!(toggle.is_checked().unwrap());
+        assert_eq!(toggle.text().unwrap(), "freewheel is On");
+        let items: Vec<(String, String)> = menu
+            .items()
+            .unwrap()
+            .iter()
+            .filter_map(|item| match item {
+                MenuItemKind::Check(i) => Some((i.id().0.clone(), i.text().unwrap())),
+                MenuItemKind::MenuItem(i) => Some((i.id().0.clone(), i.text().unwrap())),
+                _ => None,
+            })
+            .collect();
+        let pairs: Vec<(&str, &str)> = items
+            .iter()
+            .map(|(a, b)| (a.as_str(), b.as_str()))
+            .collect();
+        assert_eq!(
+            pairs,
+            [
+                (TOGGLE, "freewheel is On"),
+                (OPEN_SETTINGS, "Open settings..."),
+                (QUIT, "Quit freewheel"),
+            ]
+        );
+    }
+
+    #[test]
+    fn toggle_text_names_the_state() {
+        assert_eq!(toggle_text(true), "freewheel is On");
+        assert_eq!(toggle_text(false), "freewheel is Off");
+    }
+}
