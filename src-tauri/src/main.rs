@@ -5,6 +5,9 @@ mod hidapi_transport;
 #[cfg(not(test))]
 mod inject;
 mod launch;
+#[cfg(any(windows, test))]
+#[allow(dead_code)] // wired up with the override worker
+mod volume;
 
 use std::sync::Arc;
 
