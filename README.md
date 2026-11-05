@@ -23,17 +23,6 @@ layer page so you can see pages and lit keys change.
   focused app.
 - Window titles contain "Simulator" so you can tell it from the real app.
 
-## Test builds
-
-Every push to main (or a manual **Run workflow**) runs the `test-build`
-workflow. To get a Windows build, open that workflow's run on the repository's
-**Actions** tab and download the `freewheel-windows-…` artifact from the
-run's artifacts. It holds the NSIS installer (`freewheel_…_x64-setup.exe`) and
-the portable `freewheel.exe`, and is kept for 1 day.
-
-The build is unsigned, so Windows SmartScreen warns when you start it: click
-**More info**, then **Run anyway**.
-
 ## Manual checklist
 
 The release gate, checked by hand on each OS before a release.
