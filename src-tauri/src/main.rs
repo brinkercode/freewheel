@@ -4,6 +4,7 @@
 mod hidapi_transport;
 #[cfg(not(test))]
 mod inject;
+mod launch;
 
 use std::sync::Arc;
 
