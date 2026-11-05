@@ -1,5 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(not(test))]
+mod inject;
+
 fn main() {
     let context = tauri::generate_context!();
     debug_assert_eq!(
