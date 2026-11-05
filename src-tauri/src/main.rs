@@ -10,6 +10,8 @@ mod device;
 mod hidapi_transport;
 mod inject;
 mod launch;
+#[cfg(target_os = "macos")]
+mod mac_app_volume;
 mod simulate;
 mod tray;
 #[cfg(any(windows, test))]
@@ -220,5 +222,23 @@ mod tests {
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
         let plugins = PluginConfig(serde_json::from_value(conf["plugins"].clone()).unwrap());
         assert!(!updater_pubkey_set(&plugins));
+    }
+
+    /// A21: tapped audio only goes to the playback IOProc.
+    #[test]
+    fn mac_app_volume_has_no_file_or_network_io() {
+        let src = include_str!("mac_app_volume.rs");
+        for io in [
+            "std::fs", "std::net", "std::io", "File", "Tcp", "Udp", "Socket", "Write",
+        ] {
+            assert!(!src.contains(io), "mac_app_volume.rs uses {io}");
+        }
+        assert!(src.contains("play_at_gain(inp, unsafe { samples(out) }, gain)"));
+    }
+
+    #[test]
+    fn info_plist_has_the_audio_capture_usage_string() {
+        let plist = include_str!("../Info.plist");
+        assert!(plist.contains("<key>NSAudioCaptureUsageDescription</key>\n\t<string>freewheel"));
     }
 }
