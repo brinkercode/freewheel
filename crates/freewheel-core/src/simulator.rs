@@ -13,12 +13,10 @@ use crate::clock::Clock;
 use crate::config::{Action, Config, ConfigStore, JogMode};
 use crate::connection::{ConnectionEvent, ConnectionManager, ConnectionStatus, RETRY_INTERVAL};
 use crate::engine::Engine;
-use crate::first_run::{FakeFirstRun, FirstRun};
 use crate::hid::{FakeTransport, HidError, HidTransport};
 use crate::inject::{InjectError, KeyCombo, KeyInjector, Keystroke};
 use crate::launch::{LaunchError, Launcher};
 use crate::report::{DeviceEvent, Key};
-use crate::resolve::{FakeProcessLister, HandOff, ProcessLister, ResolveWatcher};
 
 /// The command-line flag that starts simulator mode.
 pub const FLAG: &str = "--simulate";
@@ -88,59 +86,6 @@ pub enum Control {
     },
     /// Binds [`sample_mappings`] through the same path as `SetBinding`.
     LoadSampleMappings,
-    /// Starts or quits the Resolve process the Resolve watcher polls for.
-    Resolve {
-        open: bool,
-    },
-    /// Sets the macOS permissions the app sees; nothing asks the OS.
-    Permissions {
-        state: Permissions,
-    },
-    /// Moves the fake update source to its next [`update_step`].
-    StepUpdate,
-    /// Puts the app back in its first-run state.
-    ResetFirstRun,
-}
-
-/// The macOS permissions (Accessibility, Input Monitoring) as the app sees them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Permissions {
-    Granted,
-    Missing,
-}
-
-/// The updater state in the shape the settings window's update banner reads.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "status", rename_all = "lowercase")]
-pub enum UpdateState {
-    Available {
-        version: String,
-    },
-    Downloading {
-        version: String,
-        progress: Option<u8>,
-    },
-    Ready {
-        version: String,
-    },
-}
-
-/// The version the simulator's fake update source offers; it never goes online.
-pub const FAKE_UPDATE_VERSION: &str = "99.0.0";
-
-/// The fake update source: no update, available, downloading, ready, and
-/// back to no update.
-pub fn update_step(current: Option<&UpdateState>) -> Option<UpdateState> {
-    let version = FAKE_UPDATE_VERSION.to_string();
-    match current {
-        None => Some(UpdateState::Available { version }),
-        Some(UpdateState::Available { .. }) => Some(UpdateState::Downloading {
-            version,
-            progress: Some(50),
-        }),
-        Some(UpdateState::Downloading { .. }) => Some(UpdateState::Ready { version }),
-        Some(UpdateState::Ready { .. }) => None,
-    }
 }
 
 /// The layer 'Load sample mappings' adds, pushed by [`SAMPLE_PUSH_KEY`].
@@ -195,10 +140,6 @@ pub struct SimStatus {
     pub toasts: Vec<String>,
     /// Every device key, for the window's key buttons.
     pub keys: Vec<String>,
-    pub resolve_open: bool,
-    pub permissions: Permissions,
-    pub update: Option<UpdateState>,
-    pub first_run: bool,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -331,11 +272,6 @@ pub struct Simulator {
     battery: Option<(u8, bool)>,
     held: Vec<Key>,
     toasts: Vec<String>,
-    resolve: ResolveWatcher,
-    processes: FakeProcessLister,
-    permissions: Permissions,
-    update: Option<UpdateState>,
-    first_run: Box<dyn FirstRun>,
 }
 
 impl Simulator {
@@ -363,11 +299,6 @@ impl Simulator {
         let mut sim = Simulator {
             manager: ConnectionManager::new(open, clock.clone(), (|c: u64| !c) as fn(u64) -> u64),
             engine: Engine::new(&config),
-            resolve: ResolveWatcher::from_settings(&config.settings),
-            processes: FakeProcessLister::new(),
-            permissions: Permissions::Granted,
-            update: None,
-            first_run: Box::new(FakeFirstRun::default()),
             store,
             config,
             plug,
@@ -419,8 +350,12 @@ impl Simulator {
             }
             Control::WheelMode { mode } => self.engine.set_jog_mode(mode),
             Control::SetEnabled { on } => {
-                self.resolve.manual_switch();
-                self.set_enabled(on);
+                let events = self.manager.set_enabled(on);
+                self.feed(events);
+                if on && self.connection != Some(ConnectionStatus::Connected) {
+                    self.clock.advance(RETRY_INTERVAL);
+                    self.tick();
+                }
             }
             Control::SendForReal { on } => {
                 // Nothing stays held on the side we switch away from.
@@ -436,37 +371,8 @@ impl Simulator {
                 info!("simulator: sample mappings loaded");
                 self.toasts.push("sample mappings loaded".into());
             }
-            Control::Resolve { open } => {
-                let name = self.resolve.process_name().to_owned();
-                if open {
-                    self.processes.start(&name);
-                } else {
-                    self.processes.stop(&name);
-                }
-                let enabled = self.connection != Some(ConnectionStatus::Off);
-                match self.resolve.poll(&mut self.processes, enabled) {
-                    Some(HandOff::SwitchOff { notification }) => {
-                        self.toasts.push(notification.into());
-                        self.set_enabled(false);
-                    }
-                    Some(HandOff::SwitchOn) => self.set_enabled(true),
-                    None => {}
-                }
-            }
-            Control::Permissions { state } => self.permissions = state,
-            Control::StepUpdate => self.update = update_step(self.update.as_ref()),
-            Control::ResetFirstRun => self.first_run.reset(),
         }
         self.status()
-    }
-
-    fn set_enabled(&mut self, on: bool) {
-        let events = self.manager.set_enabled(on);
-        self.feed(events);
-        if on && self.connection != Some(ConnectionStatus::Connected) {
-            self.clock.advance(RETRY_INTERVAL);
-            self.tick();
-        }
     }
 
     fn status(&mut self) -> SimStatus {
@@ -496,10 +402,6 @@ impl Simulator {
             send_for_real: self.send_for_real,
             toasts: std::mem::take(&mut self.toasts),
             keys: Key::ALL.iter().map(|k| format!("{k:?}")).collect(),
-            resolve_open: self.processes.is_running(self.resolve.process_name()),
-            permissions: self.permissions,
-            update: self.update.clone(),
-            first_run: self.first_run.is_first_run(),
         }
     }
 
@@ -1013,112 +915,6 @@ mod tests {
             Some(&hotkey(&[Modifier::Ctrl], "C"))
         );
         assert!(!saved.layers[0].bindings.contains_key("In"));
-    }
-
-    #[test]
-    fn resolve_closed_pauses_and_open_resumes_through_the_watcher() {
-        let (_dir, mut sim, _) = connected(Bus::Usb);
-        let s = sim.apply(Control::Resolve { open: true });
-        assert!(s.resolve_open);
-        assert_eq!(s.connection, Some(ConnectionStatus::Off));
-        assert!(!s.enabled);
-        assert_eq!(s.toasts, [crate::resolve::REPLUG_NOTIFICATION]);
-        let s = sim.apply(Control::Resolve { open: false });
-        assert!(!s.resolve_open);
-        assert_eq!(s.connection, Some(ConnectionStatus::Connected));
-        assert!(s.enabled);
-        assert!(sim.processes.polls() >= 2);
-    }
-
-    #[test]
-    fn a_manual_switch_while_resolve_is_open_wins() {
-        let (_dir, mut sim, _) = connected(Bus::Usb);
-        sim.apply(Control::Resolve { open: true });
-        sim.apply(Control::SetEnabled { on: true });
-        sim.apply(Control::SetEnabled { on: false });
-        let s = sim.apply(Control::Resolve { open: false });
-        assert_eq!(s.connection, Some(ConnectionStatus::Off));
-    }
-
-    #[test]
-    fn permissions_follow_each_choice_without_touching_the_os() {
-        let (_dir, mut sim, mock) = connected(Bus::Usb);
-        assert_eq!(sim.apply(Control::Status).permissions, Permissions::Granted);
-        for state in [Permissions::Missing, Permissions::Granted] {
-            let s = sim.apply(Control::Permissions { state });
-            assert_eq!(s.permissions, state);
-            assert!(s.toasts.is_empty());
-        }
-        assert!(mock.calls().is_empty());
-    }
-
-    #[test]
-    fn update_steps_through_the_updater_states_offline() {
-        let dir = tempfile::tempdir().unwrap();
-        let (mut sim, _) = sim_in(dir.path());
-        assert_eq!(sim.apply(Control::Status).update, None);
-        // The JSON the update banner (src/UpdateBanner.jsx) reads.
-        for expected in [
-            serde_json::json!({"status": "available", "version": FAKE_UPDATE_VERSION}),
-            serde_json::json!({"status": "downloading", "version": FAKE_UPDATE_VERSION, "progress": 50}),
-            serde_json::json!({"status": "ready", "version": FAKE_UPDATE_VERSION}),
-        ] {
-            let s = sim.apply(Control::StepUpdate);
-            let json = serde_json::to_value(&s).unwrap();
-            assert_eq!(json["update"], expected);
-        }
-        assert_eq!(sim.apply(Control::StepUpdate).update, None);
-    }
-
-    #[test]
-    fn reset_to_first_run_returns_the_app_to_first_run() {
-        let dir = tempfile::tempdir().unwrap();
-        let (mut sim, _) = sim_in(dir.path());
-        assert!(!sim.apply(Control::Status).first_run);
-        assert!(sim.apply(Control::ResetFirstRun).first_run);
-    }
-
-    #[test]
-    fn every_ticket_state_is_reachable_from_a_control() {
-        let (_dir, mut sim, _) = connected(Bus::Usb);
-        let reach = |sim: &mut Simulator, json: &str| {
-            let control: Control = serde_json::from_str(json).unwrap();
-            sim.apply(control)
-        };
-        type Check = fn(&SimStatus) -> bool;
-        let states: [(&str, &str, Check); 8] = [
-            ("Resolve open", r#"{"type":"Resolve","open":true}"#, |s| {
-                s.resolve_open && !s.enabled
-            }),
-            (
-                "Resolve closed",
-                r#"{"type":"Resolve","open":false}"#,
-                |s| !s.resolve_open && s.enabled,
-            ),
-            (
-                "permissions missing",
-                r#"{"type":"Permissions","state":"Missing"}"#,
-                |s| s.permissions == Permissions::Missing,
-            ),
-            (
-                "permissions granted",
-                r#"{"type":"Permissions","state":"Granted"}"#,
-                |s| s.permissions == Permissions::Granted,
-            ),
-            ("update available", r#"{"type":"StepUpdate"}"#, |s| {
-                matches!(s.update, Some(UpdateState::Available { .. }))
-            }),
-            ("downloading", r#"{"type":"StepUpdate"}"#, |s| {
-                matches!(s.update, Some(UpdateState::Downloading { .. }))
-            }),
-            ("ready", r#"{"type":"StepUpdate"}"#, |s| {
-                matches!(s.update, Some(UpdateState::Ready { .. }))
-            }),
-            ("first run", r#"{"type":"ResetFirstRun"}"#, |s| s.first_run),
-        ];
-        for (name, control, check) in states {
-            assert!(check(&reach(&mut sim, control)), "{name}");
-        }
     }
 
     #[test]

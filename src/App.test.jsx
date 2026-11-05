@@ -33,10 +33,6 @@ test("Simulator window renders the status and every control", () => {
         send_for_real: false,
         toasts: [],
         keys: ["Cut", "Cam1"],
-        resolve_open: false,
-        permissions: "Granted",
-        update: { status: "ready", version: "99.0.0" },
-        first_run: true,
       }}
     />,
   );
@@ -54,14 +50,6 @@ test("Simulator window renders the status and every control", () => {
     "Shuttle",
     "Cam1",
     "Send for real",
-    "Open Resolve",
-    "Permissions missing",
-    "Next update state",
-    "99.0.0",
-    "is ready.",
-    "Restart to update",
-    "Reset to first run",
-    "· first run",
   ]) {
     expect(html).toContain(text);
   }
