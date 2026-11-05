@@ -2,9 +2,6 @@
 //! array (`Command::new`), never through a shell, so arguments are passed to
 //! the OS unchanged and never interpreted (threat T2).
 
-// Wired into the mapping engine by a later card.
-#![allow(dead_code)]
-
 use std::process::Command;
 
 use freewheel_core::launch::{LaunchError, Launcher};
