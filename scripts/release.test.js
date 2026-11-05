@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import { checkLatestJson } from "./check-latest-json.mjs";
 import { checkReleaseWorkflow } from "./check-workflow.mjs";
+import { releaseArgs } from "./tauri-release.mjs";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const release = read("../.github/workflows/release.yml");
@@ -49,6 +50,39 @@ test("bundles: per-user unsigned NSIS on Windows, macOS 15.0 dmg, no MSI", () =>
   expect(conf.bundle.macOS.minimumSystemVersion).toBe("15.0");
   expect(conf.bundle.windows).toEqual({ nsis: { installMode: "currentUser" } });
   expect(release).not.toMatch(/WINDOWS_CERTIFICATE|certificateThumbprint|signCommand|AZURE_/);
+});
+
+test("[T3][T7] the release build's tauriScript goes through the pubkey override, and no pubkey is committed", () => {
+  expect(release).toContain("tauriScript: npm run tauri");
+  const pkg = JSON.parse(read("../package.json"));
+  expect(pkg.scripts.tauri).toBe("node scripts/tauri-release.mjs");
+  expect(release).not.toMatch(/secrets\.TAURI_UPDATER_PUBKEY/);
+  expect(conf.plugins.updater.pubkey ?? "").toBe("");
+});
+
+const releaseEnv = {
+  TAURI_UPDATER_PUBKEY: "public-key-from-vars",
+  TAURI_SIGNING_PRIVATE_KEY: "x",
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: "y",
+};
+
+test("tauri build gets a --config override of plugins.updater.pubkey", () => {
+  const { problems, args } = releaseArgs(["build", "--target", "universal-apple-darwin"], releaseEnv);
+  expect(problems).toEqual([]);
+  expect(args.slice(0, 2)).toEqual(["build", "--config"]);
+  expect(JSON.parse(args[2])).toEqual({ plugins: { updater: { pubkey: "public-key-from-vars" } } });
+  expect(args.slice(3)).toEqual(["--target", "universal-apple-darwin"]);
+});
+
+test.each(Object.keys(releaseEnv))("the release build fails naming a missing %s", (name) => {
+  const { problems, args } = releaseArgs(["build"], { ...releaseEnv, [name]: "" });
+  expect(args).toBeNull();
+  expect(problems).toHaveLength(1);
+  expect(problems[0]).toMatch(new RegExp(`^release build needs ${name}:`));
+});
+
+test("other Tauri commands pass through without the release env", () => {
+  expect(releaseArgs(["info"], {})).toEqual({ problems: [], args: ["info"] });
 });
 
 const platform = { url: "https://github.com/x/freewheel/releases/download/v1/a", signature: "sig" };
