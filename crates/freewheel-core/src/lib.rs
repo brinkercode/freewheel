@@ -4,6 +4,7 @@ pub mod auth;
 pub mod clock;
 pub mod config;
 pub mod connection;
+pub mod ddc;
 pub mod engine;
 pub mod hid;
 pub mod inject;
