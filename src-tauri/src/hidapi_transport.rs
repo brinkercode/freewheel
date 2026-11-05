@@ -61,8 +61,10 @@ fn map_error(err: hidapi::HidError) -> HidError {
     use std::io::ErrorKind;
     let gone = match &err {
         hidapi::HidError::IoError { error } => {
-            matches!(error.kind(), ErrorKind::NotConnected | ErrorKind::BrokenPipe)
-                || error.raw_os_error() == Some(19) // ENODEV
+            matches!(
+                error.kind(),
+                ErrorKind::NotConnected | ErrorKind::BrokenPipe
+            ) || error.raw_os_error() == Some(19) // ENODEV
         }
         hidapi::HidError::HidApiError { message } => {
             let m = message.to_ascii_lowercase();

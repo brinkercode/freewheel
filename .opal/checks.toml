@@ -1,6 +1,12 @@
 # Host checks the factory runs for freewheel.
 
 [[check]]
+run = ["cargo", "fmt", "--all", "--", "--check"]
+
+[[check]]
+run = ["cargo", "clippy", "--workspace", "--all-targets", "--", "-D", "warnings"]
+
+[[check]]
 run = ["cargo", "test", "--workspace"]
 
 [[check]]

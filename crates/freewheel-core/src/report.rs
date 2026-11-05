@@ -49,8 +49,14 @@ pub enum DeviceEvent {
     Press(Key),
     Release(Key),
     /// `mode` is the device's raw jog mode byte.
-    Jog { mode: u8, value: i32 },
-    Battery { charging: bool, level: u8 },
+    Jog {
+        mode: u8,
+        value: i32,
+    },
+    Battery {
+        charging: bool,
+        level: u8,
+    },
     Connected,
     Disconnected,
 }
@@ -94,14 +100,20 @@ impl ReportParser {
             _ => return Err(ReportError::UnknownReport(id)),
         };
         if report.len() < need {
-            return Err(ReportError::Short { id, len: report.len() });
+            return Err(ReportError::Short {
+                id,
+                len: report.len(),
+            });
         }
         match id {
             0x03 => Ok(vec![DeviceEvent::Jog {
                 mode: report[1],
                 value: i32::from_le_bytes([report[2], report[3], report[4], report[5]]),
             }]),
-            0x07 => Ok(vec![DeviceEvent::Battery { charging: report[1] != 0, level: report[2] }]),
+            0x07 => Ok(vec![DeviceEvent::Battery {
+                charging: report[1] != 0,
+                level: report[2],
+            }]),
             _ => {
                 let keys = report[1..13]
                     .as_chunks::<2>()
@@ -111,8 +123,15 @@ impl ReportParser {
                     .filter(|&c| c != 0)
                     .map(Key::try_from)
                     .collect::<Result<Vec<_>, _>>()?;
-                let released = self.held.iter().filter(|k| !keys.contains(k)).map(|&k| DeviceEvent::Release(k));
-                let pressed = keys.iter().filter(|k| !self.held.contains(k)).map(|&k| DeviceEvent::Press(k));
+                let released = self
+                    .held
+                    .iter()
+                    .filter(|k| !keys.contains(k))
+                    .map(|&k| DeviceEvent::Release(k));
+                let pressed = keys
+                    .iter()
+                    .filter(|k| !self.held.contains(k))
+                    .map(|&k| DeviceEvent::Press(k));
                 let events = released.chain(pressed).collect();
                 self.held = keys;
                 Ok(events)
@@ -146,10 +165,19 @@ mod tests {
     #[test]
     fn overlapping_key_reports_diff_into_press_and_release() {
         let mut p = ReportParser::default();
-        assert_eq!(p.parse(&keys_report(&[0x07, 0x08])).unwrap(), vec![Press(Key::In), Press(Key::Out)]);
-        assert_eq!(p.parse(&keys_report(&[0x08, 0x0f])).unwrap(), vec![Release(Key::In), Press(Key::Cut)]);
+        assert_eq!(
+            p.parse(&keys_report(&[0x07, 0x08])).unwrap(),
+            vec![Press(Key::In), Press(Key::Out)]
+        );
+        assert_eq!(
+            p.parse(&keys_report(&[0x08, 0x0f])).unwrap(),
+            vec![Release(Key::In), Press(Key::Cut)]
+        );
         assert_eq!(p.parse(&keys_report(&[0x08, 0x0f])).unwrap(), vec![]);
-        assert_eq!(p.parse(&keys_report(&[])).unwrap(), vec![Release(Key::Out), Release(Key::Cut)]);
+        assert_eq!(
+            p.parse(&keys_report(&[])).unwrap(),
+            vec![Release(Key::Out), Release(Key::Cut)]
+        );
     }
 
     #[test]
@@ -157,8 +185,15 @@ mod tests {
         let mut p = ReportParser::default();
         let six = [0x33, 0x34, 0x35, 0x36, 0x37, 0x38];
         let presses = p.parse(&keys_report(&six)).unwrap();
-        assert_eq!(presses, six.iter().map(|&c| Press(Key::try_from(c).unwrap())).collect::<Vec<_>>());
-        let swap = p.parse(&keys_report(&[0x33, 0x34, 0x35, 0x36, 0x37, 0x3c])).unwrap();
+        assert_eq!(
+            presses,
+            six.iter()
+                .map(|&c| Press(Key::try_from(c).unwrap()))
+                .collect::<Vec<_>>()
+        );
+        let swap = p
+            .parse(&keys_report(&[0x33, 0x34, 0x35, 0x36, 0x37, 0x3c]))
+            .unwrap();
         assert_eq!(swap, vec![Release(Key::Cam6), Press(Key::StopPlay)]);
     }
 
@@ -168,24 +203,57 @@ mod tests {
         let mut r = vec![0x03, 0x01];
         r.extend_from_slice(&(-4096i32).to_le_bytes());
         r.push(0);
-        assert_eq!(p.parse(&r).unwrap(), vec![DeviceEvent::Jog { mode: 1, value: -4096 }]);
+        assert_eq!(
+            p.parse(&r).unwrap(),
+            vec![DeviceEvent::Jog {
+                mode: 1,
+                value: -4096
+            }]
+        );
     }
 
     #[test]
     fn battery_report_gives_charging_and_level() {
         let mut p = ReportParser::default();
-        assert_eq!(p.parse(&[0x07, 1, 87]).unwrap(), vec![DeviceEvent::Battery { charging: true, level: 87 }]);
-        assert_eq!(p.parse(&[0x07, 0, 14]).unwrap(), vec![DeviceEvent::Battery { charging: false, level: 14 }]);
+        assert_eq!(
+            p.parse(&[0x07, 1, 87]).unwrap(),
+            vec![DeviceEvent::Battery {
+                charging: true,
+                level: 87
+            }]
+        );
+        assert_eq!(
+            p.parse(&[0x07, 0, 14]).unwrap(),
+            vec![DeviceEvent::Battery {
+                charging: false,
+                level: 14
+            }]
+        );
     }
 
     #[test]
     fn short_or_unknown_reports_are_errors() {
         let mut p = ReportParser::default();
         assert_eq!(p.parse(&[]), Err(ReportError::Empty));
-        assert_eq!(p.parse(&[0x03, 0, 1, 2]), Err(ReportError::Short { id: 0x03, len: 4 }));
-        assert_eq!(p.parse(&[0x04, 0x07]), Err(ReportError::Short { id: 0x04, len: 2 }));
-        assert_eq!(p.parse(&[0x07, 1]), Err(ReportError::Short { id: 0x07, len: 2 }));
-        assert_eq!(p.parse(&[0x09, 0, 0]), Err(ReportError::UnknownReport(0x09)));
-        assert_eq!(p.parse(&keys_report(&[0x99])), Err(ReportError::UnknownKey(0x99)));
+        assert_eq!(
+            p.parse(&[0x03, 0, 1, 2]),
+            Err(ReportError::Short { id: 0x03, len: 4 })
+        );
+        assert_eq!(
+            p.parse(&[0x04, 0x07]),
+            Err(ReportError::Short { id: 0x04, len: 2 })
+        );
+        assert_eq!(
+            p.parse(&[0x07, 1]),
+            Err(ReportError::Short { id: 0x07, len: 2 })
+        );
+        assert_eq!(
+            p.parse(&[0x09, 0, 0]),
+            Err(ReportError::UnknownReport(0x09))
+        );
+        assert_eq!(
+            p.parse(&keys_report(&[0x99])),
+            Err(ReportError::UnknownKey(0x99))
+        );
     }
 }
