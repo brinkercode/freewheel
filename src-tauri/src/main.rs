@@ -14,6 +14,9 @@ mod inject;
 mod launch;
 #[cfg(target_os = "macos")]
 mod mac_app_volume;
+#[cfg(target_os = "macos")]
+#[allow(dead_code)] // wired into the override worker by a later card
+mod macos_volume;
 mod resolve_watch;
 mod simulate;
 mod sysinfo_lister;
