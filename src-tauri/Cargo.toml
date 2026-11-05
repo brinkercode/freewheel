@@ -10,4 +10,5 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 freewheel-core = { path = "../crates/freewheel-core" }
+hidapi = { version = "2.6", default-features = false, features = ["linux-native-basic-udev"] }
 tauri = { version = "2", features = [] }
