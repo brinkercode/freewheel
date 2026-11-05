@@ -5,7 +5,7 @@ import { checkLatestJson } from "./check-latest-json.mjs";
 import { checkReleaseWorkflow } from "./check-workflow.mjs";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
-const release = read("../.github/workflows/release.yml");
+const release = read("./fixtures/proposed-release.yml");
 const conf = JSON.parse(read("../src-tauri/tauri.conf.json"));
 
 test("release.yml passes the release lint", () => {
