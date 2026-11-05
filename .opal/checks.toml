@@ -1,5 +1,11 @@
 # Host checks the factory runs for freewheel.
 
+# Named-test runner for the factory's per-check results and failing-test proofs (ids `<path>::<name>`).
+# The tests are unit tests inside the workspace crates, so filter by name across the workspace.
+test_one = ["cargo", "test", "--offline", "--locked", "--workspace", "--", "{name}"]
+fail_codes = [101]
+ran = '(?m)^test \S+ \.\.\. (ok|FAILED)'
+
 [[check]]
 run = ["cargo", "test", "--workspace"]
 
