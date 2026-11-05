@@ -4,6 +4,8 @@
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
+use tracing::warn;
+
 use crate::clock::Clock;
 use crate::config::{Action, Config, JogMode, JogSettings, KeyCombo, Layer};
 use crate::inject::{InjectError, KeyInjector, Keystroke};
@@ -12,10 +14,15 @@ use crate::report::{DeviceEvent, DeviceJogMode, Key, set_jog_mode};
 /// Shuttle repeat rate cap when the binding sets no `shuttle_max_rate_hz`.
 const DEFAULT_SHUTTLE_MAX_RATE_HZ: u32 = 20;
 
+/// Most layers on the stack, the base layer included (ADR-07 default).
+pub const MAX_LAYER_DEPTH: usize = 8;
+
 /// Runtime engine state for one config.
 pub struct Engine {
     layers: Vec<Layer>,
     layer_stack: Vec<String>,
+    /// `push_keys[i]` pushed `layer_stack[i + 1]` and pops it again.
+    push_keys: Vec<Key>,
     held: BTreeMap<Key, KeyCombo>,
     latched: Vec<KeyCombo>,
     jog: JogSettings,
@@ -31,6 +38,7 @@ impl Engine {
         Engine {
             layers: config.layers.clone(),
             layer_stack: vec![config.base_layer.clone()],
+            push_keys: Vec::new(),
             held: BTreeMap::new(),
             latched: Vec::new(),
             jog: config.jog.clone(),
@@ -127,7 +135,18 @@ impl Engine {
         injector: &mut dyn KeyInjector,
     ) -> Result<(), InjectError> {
         match event {
+            // The button that pushed the current layer is its 'back' button,
+            // whatever the layer binds it to.
+            DeviceEvent::Press(key) if self.push_keys.last() == Some(key) => {
+                self.push_keys.pop();
+                self.layer_stack.pop();
+                Ok(())
+            }
             DeviceEvent::Press(key) => match self.binding(*key).cloned() {
+                Some(Action::LayerPush { target }) => {
+                    self.push_layer(*key, target);
+                    Ok(())
+                }
                 Some(Action::Hotkey { combo }) => injector.tap_combo(&combo),
                 Some(Action::Held { combo }) => {
                     combo_down(injector, &combo)?;
@@ -157,6 +176,27 @@ impl Engine {
             },
             DeviceEvent::Jog { value, .. } => self.jog(*value, injector),
             _ => Ok(()),
+        }
+    }
+
+    /// The layer on top of the stack.
+    pub fn current_layer(&self) -> &str {
+        self.layer_stack
+            .last()
+            .map(String::as_str)
+            .unwrap_or_default()
+    }
+
+    /// Pushes `target`, with `key` as its back button. A missing target or a
+    /// push beyond [`MAX_LAYER_DEPTH`] is ignored and logged.
+    fn push_layer(&mut self, key: Key, target: String) {
+        if !self.layers.iter().any(|l| l.id == target) {
+            warn!(layer = %target, "layer push ignored: no such layer");
+        } else if self.layer_stack.len() >= MAX_LAYER_DEPTH {
+            warn!(layer = %target, depth = MAX_LAYER_DEPTH, "layer push ignored: stack full");
+        } else {
+            self.layer_stack.push(target);
+            self.push_keys.push(key);
         }
     }
 
@@ -406,6 +446,161 @@ mod tests {
         engine.handle(&jog(-1), &mut mock).unwrap();
         engine.handle(&jog(1), &mut mock).unwrap();
         assert_eq!(mock.calls(), &[Scroll(-1), Scroll(1)]);
+    }
+
+    fn push(target: &str) -> Action {
+        Action::LayerPush {
+            target: target.into(),
+        }
+    }
+
+    /// Base layer plus `n` more ("l1".."ln"), each with only the bindings given.
+    fn layered(base: &[(Key, Action)], n: usize, top: &[(Key, Action)]) -> Engine {
+        let mut config = Config::default();
+        for (key, action) in base {
+            config.layers[0]
+                .bindings
+                .insert(format!("{key:?}"), action.clone());
+        }
+        for i in 1..=n {
+            let mut bindings = BTreeMap::new();
+            if i == n {
+                for (key, action) in top {
+                    bindings.insert(format!("{key:?}"), action.clone());
+                }
+            }
+            config.layers.push(Layer {
+                id: format!("l{i}"),
+                name: format!("Layer {i}"),
+                bindings,
+            });
+        }
+        Engine::new(&config)
+    }
+
+    #[test]
+    fn layer_push_switches_and_same_button_pops_back_even_if_bound() {
+        let mut engine = layered(
+            &[(Key::Cam1, push("l1"))],
+            1,
+            &[
+                (Key::Cam1, Action::Hotkey { combo: ctrl_s() }),
+                (Key::Cut, Action::Hotkey { combo: ctrl_s() }),
+            ],
+        );
+        let mut mock = MockInjector::new();
+        assert_eq!(engine.current_layer(), "base");
+        engine.handle(&Press(Key::Cam1), &mut mock).unwrap();
+        engine.handle(&Release(Key::Cam1), &mut mock).unwrap();
+        assert_eq!(engine.current_layer(), "l1");
+        // The target's bindings apply.
+        engine.handle(&Press(Key::Cut), &mut mock).unwrap();
+        assert_eq!(mock.calls().len(), 4);
+        // The push button is 'back', not the target's Hotkey.
+        engine.handle(&Press(Key::Cam1), &mut mock).unwrap();
+        engine.handle(&Release(Key::Cam1), &mut mock).unwrap();
+        assert_eq!(engine.current_layer(), "base");
+        assert_eq!(mock.calls().len(), 4);
+    }
+
+    #[test]
+    fn key_held_before_layer_change_stays_down_until_its_release() {
+        let mut engine = layered(
+            &[
+                (Key::In, Action::Held { combo: ctrl_s() }),
+                (Key::Cam1, push("l1")),
+            ],
+            1,
+            &[(Key::In, Action::Hotkey { combo: ctrl_s() })],
+        );
+        let mut mock = MockInjector::new();
+        engine.handle(&Press(Key::In), &mut mock).unwrap();
+        engine.handle(&Press(Key::Cam1), &mut mock).unwrap();
+        assert_eq!(engine.current_layer(), "l1");
+        assert_eq!(mock.keys_down(), &[ctrl(), s()]);
+        engine.handle(&Press(Key::Cam1), &mut mock).unwrap();
+        engine.handle(&Press(Key::Cam1), &mut mock).unwrap();
+        assert_eq!(mock.keys_down(), &[ctrl(), s()]);
+        engine.handle(&Release(Key::In), &mut mock).unwrap();
+        assert!(mock.keys_down().is_empty());
+        assert_eq!(mock.calls()[2..], [Up(s()), Up(ctrl())]);
+    }
+
+    #[test]
+    fn latched_keys_stay_latched_across_layer_changes() {
+        let mut engine = layered(
+            &[
+                (Key::Snap, Action::Latched { combo: ctrl_s() }),
+                (Key::Cam1, push("l1")),
+            ],
+            1,
+            &[],
+        );
+        let mut mock = MockInjector::new();
+        engine.handle(&Press(Key::Snap), &mut mock).unwrap();
+        engine.handle(&Release(Key::Snap), &mut mock).unwrap();
+        engine.handle(&Press(Key::Cam1), &mut mock).unwrap();
+        // Unbound on l1: pressing it there leaves the latch alone.
+        engine.handle(&Press(Key::Snap), &mut mock).unwrap();
+        engine.handle(&Release(Key::Snap), &mut mock).unwrap();
+        assert_eq!(mock.keys_down(), &[ctrl(), s()]);
+        engine.handle(&Press(Key::Cam1), &mut mock).unwrap();
+        assert_eq!(engine.current_layer(), "base");
+        assert_eq!(mock.keys_down(), &[ctrl(), s()]);
+        engine.handle(&Press(Key::Snap), &mut mock).unwrap();
+        assert!(mock.keys_down().is_empty());
+    }
+
+    #[test]
+    fn push_to_missing_layer_is_ignored() {
+        let mut engine = layered(&[(Key::Cam1, push("nope"))], 0, &[]);
+        let mut mock = MockInjector::new();
+        engine.handle(&Press(Key::Cam1), &mut mock).unwrap();
+        engine.handle(&Release(Key::Cam1), &mut mock).unwrap();
+        assert_eq!(engine.current_layer(), "base");
+        assert!(mock.calls().is_empty());
+    }
+
+    #[test]
+    fn push_beyond_max_depth_is_ignored_and_pops_still_work() {
+        // Each layer pushes the next with its own key: 9 pushes possible.
+        let keys = [
+            Key::Cam1,
+            Key::Cam2,
+            Key::Cam3,
+            Key::Cam4,
+            Key::Cam5,
+            Key::Cam6,
+            Key::Cam7,
+            Key::Cam8,
+            Key::Cam9,
+        ];
+        let mut config = Config::default();
+        config.layers[0]
+            .bindings
+            .insert(format!("{:?}", keys[0]), push("l1"));
+        for i in 1..=keys.len() {
+            let mut bindings = BTreeMap::new();
+            if i < keys.len() {
+                bindings.insert(format!("{:?}", keys[i]), push(&format!("l{}", i + 1)));
+            }
+            config.layers.push(Layer {
+                id: format!("l{i}"),
+                name: format!("Layer {i}"),
+                bindings,
+            });
+        }
+        let mut engine = Engine::new(&config);
+        let mut mock = MockInjector::new();
+        for key in keys {
+            engine.handle(&Press(key), &mut mock).unwrap();
+        }
+        assert_eq!(engine.current_layer(), format!("l{}", MAX_LAYER_DEPTH - 1));
+        for key in keys[..MAX_LAYER_DEPTH - 1].iter().rev() {
+            engine.handle(&Press(*key), &mut mock).unwrap();
+        }
+        assert_eq!(engine.current_layer(), "base");
+        assert!(mock.calls().is_empty());
     }
 
     #[test]
