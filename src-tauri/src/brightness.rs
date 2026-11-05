@@ -118,7 +118,8 @@ fn physical_monitors(monitor: HMONITOR) -> Result<Vec<DdcMonitor>, ControlError>
     Ok(list
         .into_iter()
         .map(|m| {
-            let desc = &m.szPhysicalMonitorDescription;
+            // PHYSICAL_MONITOR is packed: copy the array out instead of borrowing it.
+            let desc = m.szPhysicalMonitorDescription;
             let len = desc.iter().position(|&c| c == 0).unwrap_or(desc.len());
             DdcMonitor {
                 handle: m.hPhysicalMonitor,
