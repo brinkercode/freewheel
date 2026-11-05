@@ -63,8 +63,11 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
         with:
-          tauriScript: npm run tauri
+          # Fails naming TAURI_UPDATER_PUBKEY or a missing signing secret, else
+          # runs `tauri build --config` with plugins.updater.pubkey from vars.
+          tauriScript: node scripts/tauri-release.mjs
           tagName: ${{ github.ref_name }}
           releaseName: freewheel ${{ github.ref_name }}
           releaseDraft: true
