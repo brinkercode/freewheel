@@ -4,6 +4,8 @@
 mod app_volume;
 #[cfg(windows)]
 mod brightness;
+#[cfg(any(target_os = "macos", all(unix, test)))]
+mod builtin_brightness;
 #[cfg(target_os = "macos")]
 mod ddc_macos;
 mod device;
@@ -181,7 +183,11 @@ fn main() {
             tray::show_settings(app)
         }))
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_notification::init());
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ));
     if updater_pubkey_set(&context.config().plugins) {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
