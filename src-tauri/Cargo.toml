@@ -14,6 +14,7 @@ enigo = "0.5"
 freewheel-core = { path = "../crates/freewheel-core" }
 hidapi = { version = "2.6", default-features = false, features = ["linux-native-basic-udev"] }
 os_info = { version = "3", default-features = false }
+sysinfo = { version = "0.37", default-features = false, features = ["system"] }
 tauri = { version = "2", features = [] }
 
 [target.'cfg(windows)'.dependencies]

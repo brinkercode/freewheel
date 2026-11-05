@@ -9,6 +9,8 @@ mod hidapi_transport;
 #[cfg(not(test))]
 mod inject;
 mod launch;
+#[allow(dead_code)] // wired up with the tray's On/Off state
+mod sysinfo_lister;
 #[cfg(any(windows, test))]
 #[allow(dead_code)] // wired up with the override worker
 mod volume;
