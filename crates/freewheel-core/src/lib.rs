@@ -1,6 +1,7 @@
 //! freewheel-core: platform-free logic of the freewheel macro pad.
 
 pub mod auth;
+pub mod battery;
 pub mod clock;
 pub mod config;
 pub mod connection;
