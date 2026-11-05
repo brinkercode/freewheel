@@ -1,7 +1,8 @@
 //! The battery tray tooltip and the once-only low-battery notification.
 
 /// The Speed Editor's last battery report.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Battery {
     pub level: u8,
     pub charging: bool,

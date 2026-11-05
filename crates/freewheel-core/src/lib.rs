@@ -16,6 +16,9 @@ pub mod overrides;
 pub mod permissions;
 pub mod resolve;
 pub mod simulator;
+pub mod status;
+#[cfg(test)]
+mod ts_bindings;
 
 /// The application name shown by the tray and the settings window.
 pub const APP_NAME: &str = "freewheel";
