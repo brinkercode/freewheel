@@ -162,11 +162,13 @@ pub fn show_settings<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-/// Builds the tray. The toggle sends On/Off to the device loop; Quit exits
-/// the app, whose exit hook releases every held key.
+/// Builds the tray. The toggle sends On/Off to the device loop and tells the
+/// Resolve watcher (`manual`) the switch was by hand; Quit exits the app,
+/// whose exit hook releases every held key.
 pub fn build<R: Runtime>(
     app: &AppHandle<R>,
     commands: Sender<Command>,
+    manual: Sender<bool>,
 ) -> tauri::Result<(TrayIcon<R>, CheckMenuItem<R>, StatusLine<R>)> {
     // The checkbox shows the OS login item, not the config, at startup.
     let (menu, toggle, login, status) = menu(app, autostart_enabled(app))?;
@@ -181,6 +183,7 @@ pub fn build<R: Runtime>(
                 let on = check.is_checked().unwrap_or(true);
                 let _ = check.set_text(toggle_text(on));
                 let _ = commands.send(Command::SetEnabled(on));
+                let _ = manual.send(on);
             }
             STATUS | OPEN_SETTINGS => show_settings(app),
             START_AT_LOGIN => {

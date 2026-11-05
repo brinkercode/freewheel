@@ -7,8 +7,7 @@
 //! - multi-key reports: `multi_key_report_presses_and_releases_every_bound_key`
 //! - rapid toggles: `rapid_latched_toggles_end_in_the_expected_state`,
 //!   `rapid_off_on_toggles_leave_no_key_down_and_reconnect`
-//! - Resolve hand-off: `resolve_hand_off_auto_off_and_auto_on` (ignored until
-//!   freewheel-m5-2 merges the Resolve watcher)
+//! - Resolve hand-off: `resolve_hand_off_auto_off_and_auto_on`
 //! - auth: `auth_rejected_status_is_auth_failed_then_retries_after_3s`,
 //!   `auth_reauth_capped_at_590s_and_failed_reauth_is_a_disconnect`
 //! - reports: `malformed_and_unknown_reports_are_skipped_and_connection_stays_up`
@@ -36,6 +35,7 @@ use freewheel_core::hid::{FakeTransport, HidError, HidTransport};
 use freewheel_core::inject::{InjectCall, Keystroke, MockInjector};
 use freewheel_core::launch::MockLauncher;
 use freewheel_core::report::{DeviceEvent, Key};
+use freewheel_core::resolve::{FakeProcessLister, HandOff, REPLUG_NOTIFICATION, ResolveWatcher};
 
 use ConnectionEvent::{Device as Dev, Status};
 use ConnectionStatus::{Absent, AuthFailed, Connected, Off};
@@ -472,11 +472,52 @@ fn rapid_off_on_toggles_leave_no_key_down_and_reconnect() {
 }
 
 #[test]
-#[ignore = "freewheel-m5-2: the Resolve watcher and its ProcessLister fake are not merged yet"]
 fn resolve_hand_off_auto_off_and_auto_on() {
-    unimplemented!(
-        "freewheel-m5-2: ADR-08 auto-off when Resolve starts, auto-on only when auto-off switched"
+    let (usb, clock) = (Usb::default(), FakeClock::new());
+    let mut m = usb.manager(&clock);
+    let mut rig = Rig::new(&Config::default());
+    let mut ps = FakeProcessLister::new();
+    let mut w = ResolveWatcher::from_settings(&Config::default().settings);
+    let mut enabled = true;
+    let first = Device::plugged(&usb, 600);
+    rig.tick(&mut m);
+
+    // Resolve starts: auto-off closes the device and notifies.
+    ps.start(w.process_name());
+    let action = w.poll(&mut ps, enabled);
+    assert_eq!(
+        action,
+        Some(HandOff::SwitchOff {
+            notification: REPLUG_NOTIFICATION
+        })
     );
+    enabled = false;
+    assert_eq!(
+        rig.feed(m.set_enabled(enabled)),
+        [Dev(DeviceEvent::Disconnected), Status(Off)]
+    );
+    assert!(first.closed());
+
+    // Resolve quits: auto-on, because auto-off did the switching.
+    ps.stop(w.process_name());
+    assert_eq!(w.poll(&mut ps, enabled), Some(HandOff::SwitchOn));
+    enabled = true;
+    rig.feed(m.set_enabled(enabled));
+    Device::plugged(&usb, 600);
+    assert_eq!(
+        rig.tick(&mut m),
+        [Status(Connected), Dev(DeviceEvent::Connected)]
+    );
+
+    // A manual Off is respected: Resolve coming and going leaves it Off.
+    w.manual_switch();
+    enabled = false;
+    rig.feed(m.set_enabled(enabled));
+    ps.start(w.process_name());
+    assert_eq!(w.poll(&mut ps, enabled), None);
+    ps.stop(w.process_name());
+    assert_eq!(w.poll(&mut ps, enabled), None);
+    assert_eq!(m.status(), Some(Off));
 }
 
 #[test]
