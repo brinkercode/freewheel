@@ -943,7 +943,9 @@ mod tests {
         let mut l = MockLauncher::new();
         engine.handle(&Press(Key::In), &mut mock, &mut l).unwrap();
         engine.handle(&Press(Key::Snap), &mut mock, &mut l).unwrap();
-        engine.handle(&Release(Key::Snap), &mut mock, &mut l).unwrap();
+        engine
+            .handle(&Release(Key::Snap), &mut mock, &mut l)
+            .unwrap();
         assert_eq!(mock.keys_down().len(), 4);
 
         engine.release_all(&mut mock).unwrap();
