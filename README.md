@@ -1,5 +1,11 @@
 # freewheel
 
+## Install on Windows
+
+The NSIS installer needs nothing else: it downloads and installs WebView2 if
+it is missing. The portable `freewheel.exe` has the C runtime built in but
+needs WebView2, which every Windows 11 has built in.
+
 ## Try it without a Speed Editor
 
 Run `freewheel --simulate`. The app starts with a simulated device instead of the real one and opens an

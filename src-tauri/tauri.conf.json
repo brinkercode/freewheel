@@ -19,7 +19,10 @@
     "createUpdaterArtifacts": true,
     "icon": ["icons/icon.png", "icons/icon.ico"],
     "macOS": { "minimumSystemVersion": "15.0" },
-    "windows": { "nsis": { "installMode": "currentUser" } }
+    "windows": {
+      "nsis": { "installMode": "currentUser" },
+      "webviewInstallMode": { "type": "downloadBootstrapper" }
+    }
   },
   "plugins": {
     "updater": {

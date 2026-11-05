@@ -1,0 +1,6 @@
+# freewheel.exe runs with nothing installed: the C runtime is linked in
+# statically (tauri-build then links vcruntime statically too), so the exe
+# imports only Windows system DLLs. Checked in CI by
+# scripts/check-windows-exe.mjs.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

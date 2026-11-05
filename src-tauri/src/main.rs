@@ -20,6 +20,7 @@ mod macos_volume;
 mod permissions;
 mod resolve_watch;
 mod simulate;
+mod smoke;
 mod sysinfo_lister;
 mod tray;
 #[cfg(any(windows, test))]
@@ -205,6 +206,7 @@ fn main() {
     let (commands, receiver) = mpsc::channel();
     let quit_commands = commands.clone();
     let simulate = simulator::requested(std::env::args());
+    let smoke = smoke::requested(std::env::args());
     // Registered first, so a second launch only focuses this one.
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
@@ -240,7 +242,18 @@ fn main() {
             if simulate {
                 open_simulator(app)?;
             }
+            if smoke {
+                smoke::arm_timeout(app.handle().clone());
+            }
             Ok(())
+        })
+        .on_page_load(move |webview, payload| {
+            if smoke
+                && webview.label() == "main"
+                && payload.event() == tauri::webview::PageLoadEvent::Finished
+            {
+                webview.app_handle().exit(smoke::exit_code(true));
+            }
         })
         // Closing the settings window hides it; only Quit exits.
         .on_window_event(|window, event| {
