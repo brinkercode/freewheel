@@ -5,6 +5,7 @@
 //! handling; brightness is called at most once per [`BRIGHTNESS_INTERVAL`].
 
 use std::fmt;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::JoinHandle;
@@ -40,6 +41,103 @@ pub trait VolumeControl: Send {
 pub trait AppVolumeControl: Send {
     fn step_up(&mut self, step: f32) -> Result<(), ControlError>;
     fn step_down(&mut self, step: f32) -> Result<(), ControlError>;
+    /// Called when the dial leaves its override mode and on release_all.
+    fn release(&mut self) {}
+}
+
+/// A gain of 0..1 shared with an audio thread.
+#[derive(Debug)]
+pub struct Gain(AtomicU32);
+
+impl Gain {
+    pub fn new(gain: f32) -> Self {
+        Self(AtomicU32::new(gain.clamp(0.0, 1.0).to_bits()))
+    }
+    pub fn get(&self) -> f32 {
+        f32::from_bits(self.0.load(Ordering::Relaxed))
+    }
+    /// Adds `delta` (negative is down), clamped to 0..1.
+    pub fn step(&self, delta: f32) {
+        let v = (self.get() + delta).clamp(0.0, 1.0);
+        self.0.store(v.to_bits(), Ordering::Relaxed);
+    }
+}
+
+/// Copies tapped samples to the output at `gain`; output past the input is
+/// silence.
+pub fn play_at_gain(input: &[f32], output: &mut [f32], gain: f32) {
+    let n = input.len().min(output.len());
+    for (o, i) in output[..n].iter_mut().zip(input) {
+        *o = i * gain;
+    }
+    output[n..].fill(0.0);
+}
+
+/// Opens a muting tap of one process whose audio plays back at `gain`.
+/// Dropping the tap tears it down.
+pub trait TapOpener: Send {
+    type Tap: Send;
+    fn open(&mut self, pid: u32, gain: Arc<Gain>) -> Result<Self::Tap, ControlError>;
+}
+
+/// macOS app volume: the first step taps the process at full gain, each step
+/// moves the gain, and [`release`](AppVolumeControl::release) drops the tap.
+pub struct TapAppVolume<O: TapOpener> {
+    opener: O,
+    pid: u32,
+    tap: Option<(O::Tap, Arc<Gain>)>,
+}
+
+impl<O: TapOpener> TapAppVolume<O> {
+    pub fn new(opener: O, pid: u32) -> Self {
+        Self {
+            opener,
+            pid,
+            tap: None,
+        }
+    }
+
+    fn step(&mut self, delta: f32) -> Result<(), ControlError> {
+        if self.tap.is_none() {
+            let gain = Arc::new(Gain::new(1.0));
+            let tap = self.opener.open(self.pid, Arc::clone(&gain))?;
+            self.tap = Some((tap, gain));
+        }
+        if let Some((_, gain)) = &self.tap {
+            gain.step(delta);
+        }
+        Ok(())
+    }
+}
+
+impl<O: TapOpener> AppVolumeControl for TapAppVolume<O> {
+    fn step_up(&mut self, step: f32) -> Result<(), ControlError> {
+        self.step(step)
+    }
+    fn step_down(&mut self, step: f32) -> Result<(), ControlError> {
+        self.step(-step)
+    }
+    fn release(&mut self) {
+        self.tap = None;
+    }
+}
+
+/// The error when macOS refuses the audio-capture permission for a tap.
+pub const TAP_PERMISSION_NEEDED: &str = "permission needed";
+/// The error when this Mac cannot tap app audio (the ADR-010 fallback).
+pub const TAP_NOT_AVAILABLE: &str = "not available on this Mac yet";
+
+/// Maps the OSStatus of a refused tap to its status text: the permission
+/// errors ('!hog', 'nope') to [`TAP_PERMISSION_NEEDED`], anything else to
+/// [`TAP_NOT_AVAILABLE`]. The caller logs the OS error.
+pub fn tap_refused(status: i32) -> ControlError {
+    const PERMISSIONS: i32 = i32::from_be_bytes(*b"!hog");
+    const ILLEGAL_OPERATION: i32 = i32::from_be_bytes(*b"nope");
+    let text = match status {
+        PERMISSIONS | ILLEGAL_OPERATION => TAP_PERMISSION_NEEDED,
+        _ => TAP_NOT_AVAILABLE,
+    };
+    ControlError(text.into())
 }
 
 /// One OS audio session (Windows: an `IAudioSessionControl2` with its
@@ -159,6 +257,11 @@ impl<C: Clock> OverrideRunner<C> {
         (errors, wait)
     }
 
+    /// Releases what the controls hold (the app-volume tap).
+    pub fn release(&mut self) {
+        self.controls.app_volume.release();
+    }
+
     fn step(&mut self, mode: OverrideMode, ticks: i32) -> Result<(), ControlError> {
         let n = ticks.unsigned_abs();
         let up = ticks > 0;
@@ -196,6 +299,7 @@ impl<C: Clock> OverrideRunner<C> {
 #[derive(Default)]
 struct Queue {
     steps: Vec<(OverrideMode, i32)>,
+    release: bool,
     stop: bool,
 }
 
@@ -221,9 +325,9 @@ impl OverrideWorker {
         let thread = std::thread::spawn(move || {
             let mut wait = None;
             loop {
-                let steps = {
+                let (steps, release) = {
                     let mut q = s.queue.lock().unwrap();
-                    while q.steps.is_empty() && !q.stop {
+                    while q.steps.is_empty() && !q.release && !q.stop {
                         let Some(d) = wait else {
                             q = s.wake.wait(q).unwrap();
                             continue;
@@ -237,13 +341,16 @@ impl OverrideWorker {
                     if q.stop {
                         return;
                     }
-                    std::mem::take(&mut q.steps)
+                    (std::mem::take(&mut q.steps), std::mem::take(&mut q.release))
                 };
                 for (mode, ticks) in steps {
                     runner.push(mode, ticks);
                 }
                 let (errs, w) = runner.run();
                 wait = w;
+                if release {
+                    runner.release();
+                }
                 for e in errs {
                     let _ = tx.send(e);
                 }
@@ -265,6 +372,12 @@ impl OverrideWorker {
     /// Drains the failed control calls, as override-error status events.
     pub fn take_errors(&self) -> Vec<OverrideError> {
         self.errors.try_iter().collect()
+    }
+
+    /// Releases what the controls hold, after the ticks already queued.
+    pub fn release(&self) {
+        self.shared.queue.lock().unwrap().release = true;
+        self.shared.wake.notify_one();
     }
 }
 
@@ -504,6 +617,139 @@ mod tests {
         assert_eq!(err, ControlError("no audio session".into()));
         assert_eq!(step_app_sessions(7, fake(&[]), 0.25), Err(err));
         assert_eq!(volumes(&list), [0.5]);
+    }
+
+    /// A fake tap opener: records the opened pids and their gains; a tap is
+    /// live until dropped.
+    type Opened = (u32, Arc<Gain>);
+
+    #[derive(Clone, Default)]
+    struct FakeTaps {
+        opened: Arc<Mutex<Vec<Opened>>>,
+        live: Arc<Mutex<u32>>,
+        refuse: Option<i32>,
+    }
+
+    struct FakeTap(Arc<Mutex<u32>>);
+
+    impl Drop for FakeTap {
+        fn drop(&mut self) {
+            *self.0.lock().unwrap() -= 1;
+        }
+    }
+
+    impl TapOpener for FakeTaps {
+        type Tap = FakeTap;
+        fn open(&mut self, pid: u32, gain: Arc<Gain>) -> Result<FakeTap, ControlError> {
+            if let Some(status) = self.refuse {
+                return Err(tap_refused(status));
+            }
+            self.opened.lock().unwrap().push((pid, gain));
+            *self.live.lock().unwrap() += 1;
+            Ok(FakeTap(Arc::clone(&self.live)))
+        }
+    }
+
+    impl FakeTaps {
+        fn gain(&self) -> f32 {
+            self.opened.lock().unwrap().last().unwrap().1.get()
+        }
+        fn live(&self) -> u32 {
+            *self.live.lock().unwrap()
+        }
+    }
+
+    #[test]
+    fn tap_app_volume_taps_the_pid_once_and_steps_its_gain_clamped_to_0_1() {
+        let taps = FakeTaps::default();
+        let mut app = TapAppVolume::new(taps.clone(), 42);
+        assert_eq!(taps.live(), 0);
+        app.step_down(0.25).unwrap();
+        assert_eq!(taps.live(), 1);
+        assert_eq!(taps.gain(), 0.75);
+        app.step_down(0.5).unwrap();
+        assert_eq!(taps.gain(), 0.25);
+        app.step_down(1.0).unwrap();
+        assert_eq!(taps.gain(), 0.0);
+        app.step_up(0.5).unwrap();
+        assert_eq!(taps.gain(), 0.5);
+        app.step_up(2.0).unwrap();
+        assert_eq!(taps.gain(), 1.0);
+        let opened = taps.opened.lock().unwrap();
+        assert_eq!(opened.len(), 1);
+        assert_eq!(opened[0].0, 42);
+    }
+
+    #[test]
+    fn tap_app_volume_release_tears_the_tap_down_and_reopens_at_full_gain() {
+        let taps = FakeTaps::default();
+        let mut app = TapAppVolume::new(taps.clone(), 42);
+        app.release();
+        app.step_down(0.5).unwrap();
+        app.release();
+        assert_eq!(taps.live(), 0);
+        app.release();
+        assert_eq!(taps.live(), 0);
+        app.step_down(0.25).unwrap();
+        assert_eq!((taps.live(), taps.gain()), (1, 0.75));
+        assert_eq!(taps.opened.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn refused_tap_reports_permission_needed_or_not_available() {
+        let taps = FakeTaps {
+            refuse: Some(i32::from_be_bytes(*b"!hog")),
+            ..FakeTaps::default()
+        };
+        let mut app = TapAppVolume::new(taps.clone(), 42);
+        assert_eq!(
+            app.step_up(0.1),
+            Err(ControlError("permission needed".into()))
+        );
+        assert_eq!(taps.live(), 0);
+        assert_eq!(
+            tap_refused(i32::from_be_bytes(*b"nope")).0,
+            TAP_PERMISSION_NEEDED
+        );
+        assert_eq!(tap_refused(-50).0, "not available on this Mac yet");
+    }
+
+    #[test]
+    fn play_at_gain_scales_samples_and_silences_the_rest() {
+        let mut out = [9.0; 4];
+        play_at_gain(&[1.0, -0.5], &mut out, 0.5);
+        assert_eq!(out, [0.5, -0.25, 0.0, 0.0]);
+        let mut out = [9.0; 1];
+        play_at_gain(&[1.0, 1.0], &mut out, 0.0);
+        assert_eq!(out, [0.0]);
+    }
+
+    #[test]
+    fn gain_is_clamped_to_0_1() {
+        assert_eq!(Gain::new(2.0).get(), 1.0);
+        let g = Gain::new(0.5);
+        g.step(-0.75);
+        assert_eq!(g.get(), 0.0);
+        g.step(0.25);
+        assert_eq!(g.get(), 0.25);
+    }
+
+    #[test]
+    fn worker_release_runs_queued_ticks_then_drops_the_tap() {
+        let taps = FakeTaps::default();
+        let controls = Controls {
+            volume: Box::new(FakeControl::new()),
+            app_volume: Box::new(TapAppVolume::new(taps.clone(), 7)),
+            brightness: Box::new(FakeControl::new()),
+        };
+        let worker = OverrideWorker::spawn(OverrideRunner::new(controls, steps(), SystemClock));
+        worker.push(OverrideMode::AppVolume, -1);
+        wait_for(|| taps.live() == 1);
+        assert_eq!(taps.gain(), 0.75);
+        worker.push(OverrideMode::AppVolume, -1);
+        worker.release();
+        wait_for(|| taps.live() == 0);
+        assert_eq!(taps.gain(), 0.5);
     }
 
     fn wait_for(mut f: impl FnMut() -> bool) {

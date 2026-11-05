@@ -871,13 +871,16 @@ dependencies = [
 name = "freewheel"
 version = "0.1.0"
 dependencies = [
+ "core-foundation",
  "directories",
  "enigo",
  "freewheel-core",
  "hidapi",
+ "objc2",
  "os_info",
  "tauri",
  "tauri-build",
+ "tracing",
  "windows 0.61.3",
 ]
 
