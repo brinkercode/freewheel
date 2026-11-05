@@ -37,6 +37,36 @@ pub trait VolumeControl: Send {
     fn step_down(&mut self, step: f32) -> Result<(), ControlError>;
 }
 
+/// An OS output device's volume scalar in 0..1, read and written by a backend.
+pub trait VolumeScalar: Send {
+    /// The current scalar, or `None` when the device has no settable volume.
+    fn get(&mut self) -> Result<Option<f32>, ControlError>;
+    fn set(&mut self, value: f32) -> Result<(), ControlError>;
+}
+
+/// A [`VolumeControl`] that steps a [`VolumeScalar`], clamped to 0..1.
+pub struct ScalarVolume<S>(pub S);
+
+impl<S: VolumeScalar> ScalarVolume<S> {
+    fn add(&mut self, delta: f32) -> Result<(), ControlError> {
+        let Some(current) = self.0.get()? else {
+            return Err(ControlError(
+                "the default output device has no settable volume".into(),
+            ));
+        };
+        self.0.set((current + delta).clamp(0.0, 1.0))
+    }
+}
+
+impl<S: VolumeScalar> VolumeControl for ScalarVolume<S> {
+    fn step_up(&mut self, step: f32) -> Result<(), ControlError> {
+        self.add(step)
+    }
+    fn step_down(&mut self, step: f32) -> Result<(), ControlError> {
+        self.add(-step)
+    }
+}
+
 /// The foreground app's volume; `step` is a fraction of full scale.
 pub trait AppVolumeControl: Send {
     fn step_up(&mut self, step: f32) -> Result<(), ControlError>;
@@ -753,6 +783,19 @@ mod tests {
         );
     }
 
+    /// A device volume scalar; `None` is a device without a settable volume.
+    struct FakeScalar(Option<f32>);
+
+    impl VolumeScalar for FakeScalar {
+        fn get(&mut self) -> Result<Option<f32>, ControlError> {
+            Ok(self.0)
+        }
+        fn set(&mut self, value: f32) -> Result<(), ControlError> {
+            self.0 = Some(value);
+            Ok(())
+        }
+    }
+
     /// A display with a level that records what it is set to.
     struct FakeScreen {
         name: &'static str,
@@ -787,6 +830,31 @@ mod tests {
             *self.1.lock().unwrap() = volume;
             Ok(())
         }
+    }
+
+    #[test]
+    fn scalar_volume_steps_the_scalar_clamped_to_0_1() {
+        let mut v = ScalarVolume(FakeScalar(Some(0.5)));
+        v.step_up(0.25).unwrap();
+        assert_eq!(v.0.0, Some(0.75));
+        v.step_up(0.5).unwrap();
+        assert_eq!(v.0.0, Some(1.0));
+        v.step_down(0.25).unwrap();
+        assert_eq!(v.0.0, Some(0.75));
+        v.step_down(2.0).unwrap();
+        assert_eq!(v.0.0, Some(0.0));
+    }
+
+    #[test]
+    fn scalar_volume_without_a_settable_volume_is_an_error() {
+        let mut v = ScalarVolume(FakeScalar(None));
+        assert_eq!(
+            v.step_up(0.1),
+            Err(ControlError(
+                "the default output device has no settable volume".into()
+            ))
+        );
+        assert_eq!(v.0.0, None);
     }
 
     type Opened = Result<Box<dyn Screen>, ControlError>;
