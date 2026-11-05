@@ -7,6 +7,7 @@ pub mod connection;
 pub mod engine;
 pub mod hid;
 pub mod inject;
+pub mod launch;
 pub mod logging;
 
 /// The application name shown by the tray and the settings window.
