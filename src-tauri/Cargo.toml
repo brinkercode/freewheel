@@ -14,7 +14,12 @@ enigo = "0.5"
 freewheel-core = { path = "../crates/freewheel-core" }
 hidapi = { version = "2.6", default-features = false, features = ["linux-native-basic-udev"] }
 os_info = { version = "3", default-features = false }
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-single-instance = "2"
+tracing = "0.1"
+
+[dev-dependencies]
+tauri = { version = "2", features = ["test"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [
