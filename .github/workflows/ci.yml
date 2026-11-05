@@ -10,13 +10,12 @@ on:
     paths-ignore: ["docs/**", "**.md"]
   push:
     branches: [main]
-    tags: ["v*"]
     paths-ignore: ["docs/**", "**.md"]
   workflow_dispatch:
   workflow_call:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:

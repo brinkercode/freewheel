@@ -85,11 +85,10 @@ test("ci.yml triggers exactly as written, and cancels superseded runs", () => {
     '    paths-ignore: ["docs/**", "**.md"]',
     "  push:",
     "    branches: [main]",
-    '    tags: ["v*"]',
     '    paths-ignore: ["docs/**", "**.md"]',
     "  workflow_dispatch:",
     "  workflow_call:",
   ].join("\n"));
   expect(ci).not.toMatch(/pull_request_target|schedule:/);
-  expect(ci).toMatch(/^concurrency:\r?\n  group: ci-\$\{\{ github\.ref \}\}\r?\n  cancel-in-progress: true$/m);
+  expect(ci).toMatch(/^concurrency:\r?\n  group: ci-\$\{\{ github\.workflow \}\}-\$\{\{ github\.ref \}\}\r?\n  cancel-in-progress: true$/m);
 });
