@@ -28,6 +28,7 @@ pub type LayerId = String;
 pub type Key = String;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum Modifier {
     Ctrl,
     Shift,
@@ -36,12 +37,14 @@ pub enum Modifier {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct KeyCombo {
     pub modifiers: Vec<Modifier>,
     pub key: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum JogMode {
     Jog,
     Scroll,
@@ -49,6 +52,7 @@ pub enum JogMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum OverrideMode {
     SystemVolume,
     AppVolume,
@@ -56,6 +60,7 @@ pub enum OverrideMode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum Action {
     Hotkey {
         combo: KeyCombo,
@@ -86,6 +91,7 @@ pub enum Action {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Layer {
     pub id: LayerId,
     pub name: String,
@@ -93,6 +99,7 @@ pub struct Layer {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct JogBinding {
     pub left: Option<Action>,
     pub right: Option<Action>,
@@ -101,6 +108,7 @@ pub struct JogBinding {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct JogSettings {
     pub default_mode: JogMode,
     pub per_mode: BTreeMap<JogMode, JogBinding>,
@@ -122,6 +130,7 @@ impl Default for JogSettings {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct OverrideSettings {
     pub system_volume_step: f32,
     pub app_volume_step: f32,
@@ -139,6 +148,7 @@ impl Default for OverrideSettings {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Settings {
     pub enabled: bool,
     #[serde(default)]
@@ -164,6 +174,7 @@ impl Default for Settings {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Config {
     pub version: u32,
     pub settings: Settings,
@@ -321,6 +332,146 @@ fn parse(bytes: &[u8]) -> Result<Config, ConfigError> {
         return Err(ConfigError::UnsupportedVersion(probe.version));
     }
     serde_json::from_slice(bytes).map_err(|e| ConfigError::Malformed(e.to_string()))
+}
+
+/// Why `save_config` rejected a config from the settings window (T8). It
+/// reaches the UI as `{"kind": ..., ...}`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(tag = "kind")]
+pub enum SaveError {
+    /// `version` is not [`CONFIG_VERSION`].
+    VersionMismatch {
+        #[cfg_attr(test, ts(type = "number"))]
+        found: u64,
+        expected: u32,
+    },
+    /// A field this version does not know, as a JSON path (`settings.colour`).
+    UnknownField { path: String },
+    /// A binding on a key the Speed Editor does not have.
+    UnknownKey { layer: LayerId, key: Key },
+    /// `base_layer` or a `LayerPush` names a layer that does not exist.
+    BadLayerReference { location: String, target: LayerId },
+    /// Not a version-1 config at all (wrong types, missing fields).
+    Malformed { message: String },
+    /// The config was valid but writing `config.json` failed.
+    SaveFailed { message: String },
+}
+
+impl fmt::Display for SaveError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SaveError::VersionMismatch { found, expected } => {
+                write!(f, "config version {found} is not {expected}")
+            }
+            SaveError::UnknownField { path } => write!(f, "unknown field {path}"),
+            SaveError::UnknownKey { layer, key } => {
+                write!(f, "layer {layer} binds unknown key {key}")
+            }
+            SaveError::BadLayerReference { location, target } => {
+                write!(f, "{location} refers to missing layer {target}")
+            }
+            SaveError::Malformed { message } => write!(f, "malformed config: {message}"),
+            SaveError::SaveFailed { message } => write!(f, "saving the config failed: {message}"),
+        }
+    }
+}
+
+impl std::error::Error for SaveError {}
+
+/// Parses and validates a config the settings window sends: the version, no
+/// unknown fields, only Speed Editor keys and only existing layers.
+pub fn parse_for_save(value: &serde_json::Value) -> Result<Config, SaveError> {
+    let found = value.get("version").and_then(serde_json::Value::as_u64);
+    if found != Some(u64::from(CONFIG_VERSION)) {
+        return match found {
+            Some(found) => Err(SaveError::VersionMismatch {
+                found,
+                expected: CONFIG_VERSION,
+            }),
+            None => Err(SaveError::Malformed {
+                message: "version is missing or not a number".into(),
+            }),
+        };
+    }
+    let config: Config =
+        serde_json::from_value(value.clone()).map_err(|e| SaveError::Malformed {
+            message: e.to_string(),
+        })?;
+    let known = serde_json::to_value(&config).map_err(|e| SaveError::Malformed {
+        message: e.to_string(),
+    })?;
+    if let Some(path) = unknown_field(value, &known, "") {
+        return Err(SaveError::UnknownField { path });
+    }
+    validate(&config)?;
+    Ok(config)
+}
+
+/// The first object key in `sent` that the parsed config does not keep.
+fn unknown_field(sent: &serde_json::Value, known: &serde_json::Value, at: &str) -> Option<String> {
+    use serde_json::Value;
+    let join = |k: &str| {
+        if at.is_empty() {
+            k.to_string()
+        } else {
+            format!("{at}.{k}")
+        }
+    };
+    match (sent, known) {
+        (Value::Object(s), Value::Object(k)) => s.iter().find_map(|(name, v)| match k.get(name) {
+            Some(kv) => unknown_field(v, kv, &join(name)),
+            // A null optional field round-trips as null, so only a value is extra.
+            None => Some(join(name)),
+        }),
+        (Value::Array(s), Value::Array(k)) => s
+            .iter()
+            .zip(k)
+            .enumerate()
+            .find_map(|(i, (sv, kv))| unknown_field(sv, kv, &format!("{at}[{i}]"))),
+        _ => None,
+    }
+}
+
+/// Checks the references inside a parsed config.
+pub fn validate(config: &Config) -> Result<(), SaveError> {
+    let has_layer = |id: &str| config.layers.iter().any(|l| l.id == id);
+    let check_action = |location: String, action: &Action| match action {
+        Action::LayerPush { target } if !has_layer(target) => Err(SaveError::BadLayerReference {
+            location,
+            target: target.clone(),
+        }),
+        _ => Ok(()),
+    };
+    if !has_layer(&config.base_layer) {
+        return Err(SaveError::BadLayerReference {
+            location: "base_layer".into(),
+            target: config.base_layer.clone(),
+        });
+    }
+    let key_names: Vec<String> = crate::report::Key::ALL
+        .iter()
+        .map(|k| format!("{k:?}"))
+        .collect();
+    for layer in &config.layers {
+        for (key, action) in &layer.bindings {
+            if !key_names.contains(key) {
+                return Err(SaveError::UnknownKey {
+                    layer: layer.id.clone(),
+                    key: key.clone(),
+                });
+            }
+            check_action(format!("layer {} key {key}", layer.id), action)?;
+        }
+    }
+    for (mode, binding) in &config.jog.per_mode {
+        for (side, action) in [("left", &binding.left), ("right", &binding.right)] {
+            if let Some(action) = action {
+                check_action(format!("jog {mode:?} {side}"), action)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -496,6 +647,121 @@ mod tests {
         // Only the first save renames: the second overwrites config.json.
         s.save(&config).unwrap();
         assert_eq!(entries(dir.path()).len(), 2);
+    }
+
+    fn valid_json() -> serde_json::Value {
+        let mut config = Config::default();
+        config.layers.push(Layer {
+            id: "edit".into(),
+            name: "Edit".into(),
+            bindings: BTreeMap::from([("Cut".into(), Action::Hotkey { combo: combo("X") })]),
+        });
+        config.layers[0].bindings.insert(
+            "Cam1".into(),
+            Action::LayerPush {
+                target: "edit".into(),
+            },
+        );
+        serde_json::to_value(config).unwrap()
+    }
+
+    #[test]
+    fn save_accepts_a_valid_config() {
+        let value = valid_json();
+        let config = parse_for_save(&value).unwrap();
+        assert_eq!(serde_json::to_value(config).unwrap(), value);
+    }
+
+    #[test]
+    fn save_rejects_a_version_mismatch() {
+        for version in [0, 2] {
+            let mut value = valid_json();
+            value["version"] = version.into();
+            assert_eq!(
+                parse_for_save(&value),
+                Err(SaveError::VersionMismatch {
+                    found: version,
+                    expected: CONFIG_VERSION
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn save_rejects_an_unknown_field() {
+        let mut value = valid_json();
+        value["settings"]["colour"] = "red".into();
+        assert_eq!(
+            parse_for_save(&value),
+            Err(SaveError::UnknownField {
+                path: "settings.colour".into()
+            })
+        );
+        let mut value = valid_json();
+        value["layers"][1]["hotkey"] = true.into();
+        assert_eq!(
+            parse_for_save(&value),
+            Err(SaveError::UnknownField {
+                path: "layers[1].hotkey".into()
+            })
+        );
+    }
+
+    #[test]
+    fn save_rejects_a_binding_on_an_unknown_key() {
+        let mut value = valid_json();
+        value["layers"][1]["bindings"]["Turbo"] = value["layers"][1]["bindings"]["Cut"].clone();
+        assert_eq!(
+            parse_for_save(&value),
+            Err(SaveError::UnknownKey {
+                layer: "edit".into(),
+                key: "Turbo".into()
+            })
+        );
+    }
+
+    #[test]
+    fn save_rejects_a_bad_layer_reference() {
+        let mut value = valid_json();
+        value["layers"][0]["bindings"]["Cam1"]["LayerPush"]["target"] = "gone".into();
+        assert_eq!(
+            parse_for_save(&value),
+            Err(SaveError::BadLayerReference {
+                location: "layer base key Cam1".into(),
+                target: "gone".into()
+            })
+        );
+        let mut value = valid_json();
+        value["base_layer"] = "gone".into();
+        assert!(matches!(
+            parse_for_save(&value),
+            Err(SaveError::BadLayerReference { location, .. }) if location == "base_layer"
+        ));
+        let mut value = valid_json();
+        value["jog"]["per_mode"]["Scroll"]["left"] =
+            serde_json::json!({"LayerPush": {"target": "gone"}});
+        assert!(matches!(
+            parse_for_save(&value),
+            Err(SaveError::BadLayerReference { target, .. }) if target == "gone"
+        ));
+    }
+
+    #[test]
+    fn save_errors_reach_the_ui_tagged_by_kind() {
+        let err = SaveError::UnknownKey {
+            layer: "base".into(),
+            key: "Turbo".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(err).unwrap(),
+            serde_json::json!({"kind": "UnknownKey", "layer": "base", "key": "Turbo"})
+        );
+        let mut value = valid_json();
+        value["layers"] = "none".into();
+        assert!(matches!(
+            parse_for_save(&value),
+            Err(SaveError::Malformed { .. })
+        ));
     }
 
     #[test]

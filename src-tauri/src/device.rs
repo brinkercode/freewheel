@@ -7,12 +7,14 @@ use std::time::Duration;
 
 use freewheel_core::battery::Battery;
 use freewheel_core::clock::Clock;
+use freewheel_core::config::Config;
 use freewheel_core::connection::{ConnectionEvent, ConnectionManager, ConnectionStatus};
 use freewheel_core::engine::Engine;
 use freewheel_core::hid::{HidError, HidTransport};
 use freewheel_core::inject::KeyInjector;
 use freewheel_core::launch::Launcher;
 use freewheel_core::report::DeviceEvent;
+use freewheel_core::status::KeyPressed;
 use tracing::warn;
 
 /// How long one loop turn waits for an input report or a command.
@@ -21,6 +23,8 @@ const POLL: Duration = Duration::from_millis(20);
 pub enum Command {
     /// The tray's On/Off toggle.
     SetEnabled(bool),
+    /// `save_config`: release every held key and run the new config.
+    Reload(Box<Config>),
     /// The quit hook: release every held key, then acknowledge and stop.
     Quit(Sender<()>),
 }
@@ -33,11 +37,16 @@ pub enum TrayState {
     NotConnected,
 }
 
-/// What the device loop tells the tray.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// What the device loop tells the tray and the settings window.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Update {
-    State(TrayState),
+    /// The connection status changed.
+    State(ConnectionStatus),
     Battery(Battery),
+    /// The active layer changed.
+    Layer(String),
+    /// A key went down, named for the Keys tab.
+    KeyPressed(KeyPressed),
 }
 
 impl From<ConnectionStatus> for TrayState {
@@ -81,6 +90,12 @@ pub fn run<T, O, C, F>(
         };
         let mut events = match commands.recv_timeout(wait) {
             Ok(Command::SetEnabled(on)) => manager.set_enabled(on),
+            Ok(Command::Reload(config)) => {
+                release(&mut engine, injector);
+                engine = Engine::new(&config);
+                on_update(Update::Layer(engine.current_layer().to_string()));
+                Vec::new()
+            }
             Ok(Command::Quit(done)) => {
                 release(&mut engine, injector);
                 let _ = done.send(());
@@ -92,13 +107,21 @@ pub fn run<T, O, C, F>(
         events.extend(manager.tick(POLL));
         for event in events {
             match event {
-                ConnectionEvent::Status(status) => on_update(Update::State(status.into())),
+                ConnectionEvent::Status(status) => on_update(Update::State(status)),
                 ConnectionEvent::Device(event) => {
-                    if let DeviceEvent::Battery { level, charging } = event {
-                        on_update(Update::Battery(Battery { level, charging }));
+                    match event {
+                        DeviceEvent::Battery { level, charging } => {
+                            on_update(Update::Battery(Battery { level, charging }));
+                        }
+                        DeviceEvent::Press(key) => on_update(Update::KeyPressed(key.into())),
+                        _ => {}
                     }
+                    let layer = engine.current_layer().to_string();
                     if let Err(e) = engine.handle(&event, injector, launcher) {
                         warn!(error = %e, "device event failed");
+                    }
+                    if engine.current_layer() != layer {
+                        on_update(Update::Layer(engine.current_layer().to_string()));
                     }
                 }
             }
@@ -196,14 +219,17 @@ mod tests {
             });
             assert_eq!(
                 states.recv_timeout(WAIT),
-                Ok(Update::State(TrayState::NotConnected))
+                Ok(Update::State(ConnectionStatus::Absent))
             );
             tx.send(Command::SetEnabled(false)).unwrap();
-            assert_eq!(states.recv_timeout(WAIT), Ok(Update::State(TrayState::Off)));
+            assert_eq!(
+                states.recv_timeout(WAIT),
+                Ok(Update::State(ConnectionStatus::Off))
+            );
             tx.send(Command::SetEnabled(true)).unwrap();
             assert_eq!(
                 states.recv_timeout(WAIT),
-                Ok(Update::State(TrayState::NotConnected))
+                Ok(Update::State(ConnectionStatus::Absent))
             );
             assert!(shutdown(&tx, WAIT));
         });
@@ -238,7 +264,10 @@ mod tests {
                     move |u| update_tx.send(u).unwrap(),
                 );
             });
-            assert_eq!(updates.recv_timeout(WAIT), Ok(Update::State(TrayState::On)));
+            assert_eq!(
+                updates.recv_timeout(WAIT),
+                Ok(Update::State(ConnectionStatus::Connected))
+            );
             assert_eq!(
                 updates.recv_timeout(WAIT),
                 Ok(Update::Battery(Battery {
@@ -246,6 +275,134 @@ mod tests {
                     charging: true
                 }))
             );
+            assert!(shutdown(&tx, WAIT));
+        });
+    }
+
+    type OnceOpener = Box<dyn FnMut() -> Result<FakeTransport, HidError> + Send>;
+
+    /// A manager whose device authenticates, then sends `inputs`.
+    fn connected_manager(
+        inputs: Vec<Vec<u8>>,
+    ) -> ConnectionManager<FakeTransport, OnceOpener, SystemClock, fn(u64) -> u64> {
+        let mut dev = FakeTransport::new();
+        for (sub, payload) in [(0u8, 0x1234u64), (2, 0), (4, 300)] {
+            let mut r = vec![0x06, sub];
+            r.extend_from_slice(&payload.to_le_bytes());
+            dev.push_feature(r);
+        }
+        for input in inputs {
+            dev.push_input(input);
+        }
+        let mut dev = Some(dev);
+        let open: OnceOpener = Box::new(move || dev.take().ok_or(HidError::Disconnected));
+        ConnectionManager::new(open, SystemClock, (|c: u64| !c) as fn(u64) -> u64)
+    }
+
+    /// A 0x04 key report with `key` down.
+    fn key_report(key: Key) -> Vec<u8> {
+        let mut r = vec![0x04; 13];
+        r[1..].fill(0);
+        r[1..3].copy_from_slice(&(key as u16).to_le_bytes());
+        r
+    }
+
+    fn with_binding(key: Key, action: Action) -> Config {
+        let mut config = Config::default();
+        config.layers[0].bindings.insert(format!("{key:?}"), action);
+        config
+    }
+
+    #[test]
+    fn reload_applies_a_saved_config_to_the_running_engine() {
+        let combo = KeyCombo {
+            modifiers: vec![],
+            key: "X".into(),
+        };
+        let config = with_binding(Key::Cut, Action::Hotkey { combo });
+        let manager = connected_manager(vec![key_report(Key::Cut)]);
+        let (tx, rx) = mpsc::channel();
+        // Queued before the loop runs, so it lands before the press is read.
+        tx.send(Command::Reload(Box::new(config))).unwrap();
+        let (update_tx, updates) = mpsc::channel();
+        let mut injector = MockInjector::new();
+        thread::scope(|s| {
+            let injector = &mut injector;
+            s.spawn(move || {
+                run(
+                    manager,
+                    Engine::new(&Config::default()),
+                    &SystemClock,
+                    injector,
+                    &mut MockLauncher::new(),
+                    rx,
+                    move |u| update_tx.send(u).unwrap(),
+                );
+            });
+            assert_eq!(updates.recv_timeout(WAIT), Ok(Update::Layer("base".into())));
+            assert_eq!(
+                updates.recv_timeout(WAIT),
+                Ok(Update::State(ConnectionStatus::Connected))
+            );
+            assert_eq!(
+                updates.recv_timeout(WAIT),
+                Ok(Update::KeyPressed(Key::Cut.into()))
+            );
+            assert!(shutdown(&tx, WAIT));
+        });
+        let x = freewheel_core::inject::Keystroke::Key("X".into());
+        assert_eq!(
+            injector.calls(),
+            [
+                freewheel_core::inject::InjectCall::Down(x.clone()),
+                freewheel_core::inject::InjectCall::Up(x)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_press_names_its_printed_key_and_a_layer_change_is_reported() {
+        let mut config = with_binding(
+            Key::Cam1,
+            Action::LayerPush {
+                target: "edit".into(),
+            },
+        );
+        config.layers.push(freewheel_core::config::Layer {
+            id: "edit".into(),
+            name: "Edit".into(),
+            bindings: Default::default(),
+        });
+        let manager = connected_manager(vec![key_report(Key::Cam1)]);
+        let (tx, rx) = mpsc::channel();
+        let (update_tx, updates) = mpsc::channel();
+        let mut injector = MockInjector::new();
+        thread::scope(|s| {
+            let injector = &mut injector;
+            s.spawn(move || {
+                run(
+                    manager,
+                    Engine::new(&config),
+                    &SystemClock,
+                    injector,
+                    &mut MockLauncher::new(),
+                    rx,
+                    move |u| update_tx.send(u).unwrap(),
+                );
+            });
+            assert_eq!(
+                updates.recv_timeout(WAIT),
+                Ok(Update::State(ConnectionStatus::Connected))
+            );
+            let pressed = updates.recv_timeout(WAIT).unwrap();
+            assert_eq!(
+                pressed,
+                Update::KeyPressed(KeyPressed {
+                    key: "Cam1".into(),
+                    label: "CAM 1".into()
+                })
+            );
+            assert_eq!(updates.recv_timeout(WAIT), Ok(Update::Layer("edit".into())));
             assert!(shutdown(&tx, WAIT));
         });
     }

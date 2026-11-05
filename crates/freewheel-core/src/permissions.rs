@@ -45,7 +45,8 @@ impl Permission {
 }
 
 /// Whether macOS has granted a permission.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum Grant {
     Granted,
     Missing,
