@@ -48,6 +48,53 @@ pub trait BrightnessControl: Send {
     fn step_down(&mut self, step: u8) -> Result<(), ControlError>;
 }
 
+/// A display's brightness in its own units, from `min` to `max`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Level {
+    pub min: u32,
+    pub current: u32,
+    pub max: u32,
+}
+
+/// One display a [`BrightnessControl`] backend can step.
+pub trait Screen {
+    fn name(&self) -> String;
+    fn level(&mut self) -> Result<Level, ControlError>;
+    fn set(&mut self, value: u32) -> Result<(), ControlError>;
+}
+
+/// Steps every display by `percent` of its range (negative is down),
+/// clamped to it. A display that fails, or a source that could not list its
+/// displays, gives its own error; the others are still stepped (A16).
+pub fn step_displays(
+    screens: Vec<Result<Box<dyn Screen>, ControlError>>,
+    percent: i32,
+) -> Result<(), ControlError> {
+    let mut errors = Vec::new();
+    for screen in screens {
+        let mut s = match screen {
+            Ok(s) => s,
+            Err(e) => {
+                errors.push(e.0);
+                continue;
+            }
+        };
+        let stepped = s.level().and_then(|l| {
+            let range = i64::from(l.max.saturating_sub(l.min));
+            let to = i64::from(l.current) + i64::from(percent) * range / 100;
+            s.set(to.clamp(l.min.into(), l.max.into()) as u32)
+        });
+        if let Err(e) = stepped {
+            errors.push(format!("{}: {}", s.name(), e.0));
+        }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(ControlError(errors.join("; ")))
+    }
+}
+
 /// The override-errors part of the status event: a control call that failed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OverrideError {
@@ -410,6 +457,69 @@ mod tests {
                 error: ControlError("cannot apply Down(5.0)".into()),
             }]
         );
+    }
+
+    /// A display with a level that records what it is set to.
+    struct FakeScreen {
+        name: &'static str,
+        level: Result<Level, ControlError>,
+        set_to: Arc<Mutex<Vec<u32>>>,
+    }
+
+    impl Screen for FakeScreen {
+        fn name(&self) -> String {
+            self.name.into()
+        }
+        fn level(&mut self) -> Result<Level, ControlError> {
+            self.level.clone()
+        }
+        fn set(&mut self, value: u32) -> Result<(), ControlError> {
+            self.set_to.lock().unwrap().push(value);
+            Ok(())
+        }
+    }
+
+    fn screen(
+        name: &'static str,
+        level: Result<Level, ControlError>,
+    ) -> (Arc<Mutex<Vec<u32>>>, Result<Box<dyn Screen>, ControlError>) {
+        let set_to = Arc::new(Mutex::new(Vec::new()));
+        let s = FakeScreen {
+            name,
+            level,
+            set_to: Arc::clone(&set_to),
+        };
+        (set_to, Ok(Box::new(s)))
+    }
+
+    #[test]
+    fn displays_step_by_percent_of_their_own_range_and_clamp() {
+        let lvl = |min, current, max| Ok(Level { min, current, max });
+        let (ddc, a) = screen("DDC", lvl(0, 50, 200));
+        let (panel, b) = screen("panel", lvl(0, 98, 100));
+        assert_eq!(step_displays(vec![a, b], 5), Ok(()));
+        assert_eq!(*ddc.lock().unwrap(), [60]);
+        assert_eq!(*panel.lock().unwrap(), [100]);
+        let (low, c) = screen("low", lvl(10, 12, 110));
+        assert_eq!(step_displays(vec![c], -5), Ok(()));
+        assert_eq!(*low.lock().unwrap(), [10]);
+    }
+
+    #[test]
+    fn each_failing_display_gives_its_own_error_and_the_others_still_step() {
+        let lvl = Ok(Level {
+            min: 0,
+            current: 40,
+            max: 100,
+        });
+        let (first, a) = screen("Dell", lvl.clone());
+        let (_, b) = screen("LG", Err(ControlError("DDC/CI off".into())));
+        let no_wmi = Err(ControlError("built-in panel: class not found".into()));
+        let (last, d) = screen("HP", lvl);
+        let err = step_displays(vec![a, b, no_wmi, d], -10).unwrap_err();
+        assert_eq!(err.0, "LG: DDC/CI off; built-in panel: class not found");
+        assert_eq!(*first.lock().unwrap(), [30]);
+        assert_eq!(*last.lock().unwrap(), [30]);
     }
 
     fn wait_for(mut f: impl FnMut() -> bool) {
