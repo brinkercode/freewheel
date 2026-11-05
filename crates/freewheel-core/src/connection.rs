@@ -13,7 +13,7 @@ pub const RETRY_INTERVAL: Duration = Duration::from_secs(3);
 const REPORT_BUF: usize = 64;
 
 /// The connection part of the status event.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum ConnectionStatus {
     Absent,
     Connected,
