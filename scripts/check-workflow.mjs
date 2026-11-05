@@ -27,12 +27,59 @@ export function checkWorkflow(text) {
   return problems;
 }
 
+const indent = (line) => line.search(/\S/);
+
+/** Index one past the last line of the block that starts at `start`. */
+function blockEnd(lines, start) {
+  const base = indent(lines[start]);
+  let i = start + 1;
+  while (i < lines.length && (lines[i].trim() === "" || indent(lines[i]) > base)) i++;
+  return i;
+}
+
+/**
+ * Lints the release workflow: every 'uses:' is pinned to a 40-hex commit SHA
+ * (or is a local ./ workflow), the tauri-action job declares
+ * 'environment: release', APPLE_* and TAURI_SIGNING_* appear only in the
+ * tauri-action step env, and no secrets are inherited by called workflows.
+ */
+export function checkReleaseWorkflow(text) {
+  const lines = text.split(/\r?\n/).map((l) => l.replace(/(^|\s)#.*$/, ""));
+  const problems = [];
+  lines.forEach((line, i) => {
+    const uses = line.match(/uses:\s*(\S+)/);
+    if (uses && !/^\.\//.test(uses[1]) && !/@[0-9a-f]{40}$/.test(uses[1])) {
+      problems.push(`line ${i + 1}: '${uses[1]}' is not pinned to a 40-hex SHA`);
+    }
+    if (/secrets:\s*inherit/.test(line)) problems.push(`line ${i + 1}: uses 'secrets: inherit'`);
+  });
+  const step = lines.findIndex((l) => /^\s*-\s+uses:\s*tauri-apps\/tauri-action@/.test(l));
+  if (step < 0) return [...problems, "no tauri-action step"];
+  const stepEnd = blockEnd(lines, step);
+  const env = lines.findIndex((l, i) => i > step && i < stepEnd && /^\s+env:\s*$/.test(l));
+  const envEnd = env < 0 ? env : blockEnd(lines, env);
+  lines.forEach((line, i) => {
+    if (/APPLE_|TAURI_SIGNING_/.test(line) && !(i > env && i < envEnd)) {
+      problems.push(`line ${i + 1}: APPLE_*/TAURI_SIGNING_* outside the tauri-action step env`);
+    }
+  });
+  let job = step;
+  while (job >= 0 && indent(lines[job]) !== 2) job--;
+  const jobLines = job < 0 ? [] : lines.slice(job, blockEnd(lines, job));
+  if (!jobLines.some((l) => /^ {4}environment:\s*release\s*$/.test(l))) {
+    problems.push("the tauri-action job does not declare 'environment: release'");
+  }
+  return problems;
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const files = process.argv.slice(2);
+  const release = process.argv[2] === "--release";
+  const files = process.argv.slice(release ? 3 : 2);
   let failed = files.length === 0;
-  if (failed) console.error("usage: check-workflow.mjs <workflow.yml>...");
+  if (failed) console.error("usage: check-workflow.mjs [--release] <workflow.yml>...");
+  const check = release ? checkReleaseWorkflow : checkWorkflow;
   for (const file of files) {
-    for (const problem of checkWorkflow(readFileSync(file, "utf8"))) {
+    for (const problem of check(readFileSync(file, "utf8"))) {
       console.error(`${file}: ${problem}`);
       failed = true;
     }
