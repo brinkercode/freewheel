@@ -101,7 +101,7 @@ impl Write for RotatingFile {
 
 /// The session-only detailed-logs switch.
 struct DetailedLogs {
-    clock: Arc<dyn Clock>,
+    clock: Arc<dyn Clock + Send + Sync>,
     since: Mutex<Option<Instant>>,
 }
 
@@ -128,7 +128,11 @@ pub struct Logger {
 
 impl Logger {
     /// Opens (appending) the log in `dir`. `home` is scrubbed from every line.
-    pub fn init(dir: &Path, home: Option<&Path>, clock: Arc<dyn Clock>) -> io::Result<Self> {
+    pub fn init(
+        dir: &Path,
+        home: Option<&Path>,
+        clock: Arc<dyn Clock + Send + Sync>,
+    ) -> io::Result<Self> {
         let writer = Mutex::new(RotatingFile::open(dir, home)?);
         let detailed = Arc::new(DetailedLogs {
             clock,

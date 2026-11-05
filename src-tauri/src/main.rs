@@ -1,5 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[allow(dead_code)] // wired up by the connection manager
+mod hidapi_transport;
+#[cfg(not(test))]
+mod inject;
+
 use std::sync::Arc;
 
 use freewheel_core::clock::SystemClock;
