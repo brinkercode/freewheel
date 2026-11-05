@@ -140,6 +140,92 @@ impl ReportParser {
     }
 }
 
+/// A key LED, with its bit in the 0x02 output report mask (bmd.py).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u32)]
+pub enum Led {
+    CloseUp = 1 << 0,
+    Cut = 1 << 1,
+    Dis = 1 << 2,
+    SmthCut = 1 << 3,
+    Trans = 1 << 4,
+    Snap = 1 << 5,
+    Cam7 = 1 << 6,
+    Cam8 = 1 << 7,
+    Cam9 = 1 << 8,
+    LiveOwr = 1 << 9,
+    Cam4 = 1 << 10,
+    Cam5 = 1 << 11,
+    Cam6 = 1 << 12,
+    VideoOnly = 1 << 13,
+    Cam1 = 1 << 14,
+    Cam2 = 1 << 15,
+    Cam3 = 1 << 16,
+    AudioOnly = 1 << 17,
+}
+
+impl Led {
+    /// The LED of `key`, if the key has one.
+    pub fn for_key(key: Key) -> Option<Led> {
+        Some(match key {
+            Key::CloseUp => Led::CloseUp,
+            Key::Cut => Led::Cut,
+            Key::Dis => Led::Dis,
+            Key::SmthCut => Led::SmthCut,
+            Key::Trans => Led::Trans,
+            Key::Snap => Led::Snap,
+            Key::Cam7 => Led::Cam7,
+            Key::Cam8 => Led::Cam8,
+            Key::Cam9 => Led::Cam9,
+            Key::LiveOwr => Led::LiveOwr,
+            Key::Cam4 => Led::Cam4,
+            Key::Cam5 => Led::Cam5,
+            Key::Cam6 => Led::Cam6,
+            Key::VideoOnly => Led::VideoOnly,
+            Key::Cam1 => Led::Cam1,
+            Key::Cam2 => Led::Cam2,
+            Key::Cam3 => Led::Cam3,
+            Key::AudioOnly => Led::AudioOnly,
+            _ => return None,
+        })
+    }
+}
+
+/// A jog-mode LED, with its bit in the 0x04 output report (bmd.py).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum JogLed {
+    Jog = 1 << 0,
+    Shtl = 1 << 1,
+    Scrl = 1 << 2,
+}
+
+/// How the device reports the jog wheel, set by output report 0x03 (bmd.py).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum DeviceJogMode {
+    Relative = 0,
+    Absolute = 1,
+    Relative2 = 2,
+    AbsoluteDeadzero = 3,
+}
+
+/// Output report 0x02: the lit key LEDs as a little-endian u32 mask.
+pub fn led_report(leds: &[Led]) -> [u8; 5] {
+    let mask = leds.iter().fold(0u32, |m, &l| m | l as u32).to_le_bytes();
+    [0x02, mask[0], mask[1], mask[2], mask[3]]
+}
+
+/// Output report 0x04: the lit jog-mode LEDs.
+pub fn jog_led_report(leds: &[JogLed]) -> [u8; 2] {
+    [0x04, leds.iter().fold(0u8, |m, &l| m | l as u8)]
+}
+
+/// Output report 0x03: mode byte, a zero le32 and 0xff, as bmd.py packs it.
+pub fn set_jog_mode(mode: DeviceJogMode) -> [u8; 7] {
+    [0x03, mode as u8, 0, 0, 0, 0, 0xff]
+}
+
 #[cfg(test)]
 mod tests {
     use super::DeviceEvent::{Press, Release};
@@ -255,5 +341,74 @@ mod tests {
             p.parse(&keys_report(&[0x99])),
             Err(ReportError::UnknownKey(0x99))
         );
+    }
+
+    #[test]
+    fn led_report_is_0x02_and_le32_mask() {
+        assert_eq!(led_report(&[]), [0x02, 0, 0, 0, 0]);
+        assert_eq!(led_report(&[Led::CloseUp]), [0x02, 0x01, 0, 0, 0]);
+        assert_eq!(
+            led_report(&[Led::Cut, Led::LiveOwr, Led::AudioOnly]),
+            [0x02, 0x02, 0x02, 0x02, 0x00]
+        );
+        let all = [
+            Led::CloseUp,
+            Led::Cut,
+            Led::Dis,
+            Led::SmthCut,
+            Led::Trans,
+            Led::Snap,
+            Led::Cam7,
+            Led::Cam8,
+            Led::Cam9,
+            Led::LiveOwr,
+            Led::Cam4,
+            Led::Cam5,
+            Led::Cam6,
+            Led::VideoOnly,
+            Led::Cam1,
+            Led::Cam2,
+            Led::Cam3,
+            Led::AudioOnly,
+        ];
+        for (bit, &l) in all.iter().enumerate() {
+            assert_eq!(l as u32, 1 << bit);
+        }
+        assert_eq!(led_report(&all), [0x02, 0xff, 0xff, 0x03, 0x00]);
+    }
+
+    #[test]
+    fn led_for_key_matches_by_name_and_keys_without_led_have_none() {
+        let lit: Vec<Key> = Key::ALL
+            .iter()
+            .copied()
+            .filter(|&k| Led::for_key(k).is_some())
+            .collect();
+        assert_eq!(lit.len(), 18);
+        for k in lit {
+            assert_eq!(format!("{:?}", Led::for_key(k).unwrap()), format!("{k:?}"));
+        }
+        assert_eq!(Led::for_key(Key::In), None);
+    }
+
+    #[test]
+    fn jog_led_report_covers_jog_shtl_scrl() {
+        assert_eq!(jog_led_report(&[]), [0x04, 0]);
+        assert_eq!(jog_led_report(&[JogLed::Jog]), [0x04, 0x01]);
+        assert_eq!(jog_led_report(&[JogLed::Shtl]), [0x04, 0x02]);
+        assert_eq!(jog_led_report(&[JogLed::Scrl]), [0x04, 0x04]);
+        assert_eq!(
+            jog_led_report(&[JogLed::Jog, JogLed::Shtl, JogLed::Scrl]),
+            [0x04, 0x07]
+        );
+    }
+
+    #[test]
+    fn set_jog_mode_packs_mode_zero_le32_and_ff() {
+        use DeviceJogMode::*;
+        assert_eq!(set_jog_mode(Relative), [0x03, 0, 0, 0, 0, 0, 0xff]);
+        assert_eq!(set_jog_mode(Absolute), [0x03, 1, 0, 0, 0, 0, 0xff]);
+        assert_eq!(set_jog_mode(Relative2), [0x03, 2, 0, 0, 0, 0, 0xff]);
+        assert_eq!(set_jog_mode(AbsoluteDeadzero), [0x03, 3, 0, 0, 0, 0, 0xff]);
     }
 }
