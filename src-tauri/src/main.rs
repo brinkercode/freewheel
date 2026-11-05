@@ -2,28 +2,37 @@
 
 #[cfg(windows)]
 mod app_volume;
+#[cfg(windows)]
+mod brightness;
 #[cfg(target_os = "macos")]
 mod ddc_macos;
-#[allow(dead_code)] // wired up by the connection manager
+mod device;
 mod hidapi_transport;
-#[cfg(not(test))]
 mod inject;
 mod launch;
+mod resolve_watch;
 mod simulate;
-#[allow(dead_code)] // wired up with the tray's On/Off state
 mod sysinfo_lister;
+mod tray;
 #[cfg(any(windows, test))]
 #[allow(dead_code)] // wired up with the override worker
 mod volume;
 
 use std::sync::Arc;
+use std::sync::mpsc;
+use std::time::Duration;
 
 use freewheel_core::clock::SystemClock;
-use freewheel_core::config::ConfigStore;
+use freewheel_core::config::{Config, ConfigStore};
 use freewheel_core::inject::{KeyInjector, MockInjector};
 use freewheel_core::logging::Logger;
+use freewheel_core::resolve::{POLL_INTERVAL, ResolveWatcher};
 use freewheel_core::simulator;
 use tauri::Manager;
+use tauri_plugin_notification::NotificationExt;
+
+/// How long the quit hook waits for the device loop to release keys.
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Opens the log in the OS per-user data dir (`<data_local_dir>/logs`).
 /// Logging is best effort: the app still runs when the dir is unusable.
@@ -40,6 +49,75 @@ fn init_logging() -> Option<Logger> {
     logger.install_panic_hook();
     logger.log_startup(env!("CARGO_PKG_VERSION"), &os_info::get().to_string());
     Some(logger)
+}
+
+/// The Speed Editor's auth response algorithm is not in freewheel-core yet,
+/// so the handshake is rejected and the tray shows Not connected until it is.
+fn auth_response(_challenge: u64) -> u64 {
+    0
+}
+
+/// Starts the device loop on its own thread; the tray shows its state.
+fn spawn_device(
+    config: Config,
+    tray: tauri::tray::TrayIcon<tauri::Wry>,
+    toggle: tauri::menu::CheckMenuItem<tauri::Wry>,
+    commands: mpsc::Receiver<device::Command>,
+) {
+    use freewheel_core::connection::ConnectionManager;
+    use freewheel_core::engine::Engine;
+
+    std::thread::spawn(move || {
+        let (mut injector, api) = match (inject::EnigoInjector::new(), hidapi::HidApi::new()) {
+            (Ok(injector), Ok(api)) => (injector, api),
+            (Err(e), _) => return tracing::error!(error = %e, "no key injection"),
+            (_, Err(e)) => return tracing::error!(error = %e, "no HID access"),
+        };
+        let open = move || hidapi_transport::HidapiTransport::open(&api);
+        let manager = ConnectionManager::new(open, SystemClock, auth_response as fn(u64) -> u64);
+        device::run(
+            manager,
+            Engine::new(&config),
+            &SystemClock,
+            &mut injector,
+            &mut launch::ProcessLauncher,
+            commands,
+            |state| tray::show_state(&tray, &toggle, state),
+        );
+    });
+}
+
+/// Starts the Resolve hand-off on its own thread: it polls for the
+/// configured process, switches the device loop Off or On and notifies.
+fn spawn_resolve_watch(
+    app: tauri::AppHandle<tauri::Wry>,
+    config: &Config,
+    manual: mpsc::Receiver<bool>,
+    commands: mpsc::Sender<device::Command>,
+) {
+    let watcher = ResolveWatcher::from_settings(&config.settings);
+    std::thread::spawn(move || {
+        let notify = |text: &str| {
+            let shown = app
+                .notification()
+                .builder()
+                .title(freewheel_core::APP_NAME)
+                .body(text)
+                .show();
+            if let Err(e) = shown {
+                tracing::warn!(error = %e, "replug notification failed");
+            }
+        };
+        resolve_watch::run(
+            watcher,
+            &mut sysinfo_lister::SysinfoLister::new(),
+            true,
+            POLL_INTERVAL,
+            manual,
+            commands,
+            notify,
+        );
+    });
 }
 
 /// The injector "send for real" uses in simulator mode.
@@ -59,7 +137,7 @@ fn real_injector() -> Box<dyn KeyInjector> {
     Box::new(MockInjector::new())
 }
 
-/// `--simulate`: the simulator session on its own config, and its window.
+/// `--simulate`: the simulator session on its own config.
 fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     let real = ConfigStore::from_project_dirs()
         .unwrap_or_else(|| ConfigStore::new(std::env::temp_dir().join(freewheel_core::APP_NAME)));
@@ -69,17 +147,20 @@ fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::
             real_injector,
         ))
         .invoke_handler(tauri::generate_handler![simulate::simulate])
-        .setup(|app| {
-            if let Some(settings) = app.get_webview_window("main") {
-                settings.set_title(&simulator::title("freewheel settings", true))?;
-            }
-            let url = tauri::WebviewUrl::App("index.html#simulator".into());
-            tauri::WebviewWindowBuilder::new(app, "simulator", url)
-                .title(simulator::title(freewheel_core::APP_NAME, true))
-                .inner_size(520.0, 720.0)
-                .build()?;
-            Ok(())
-        })
+}
+
+/// `--simulate`: the simulator window. Called from the one `setup` hook,
+/// since a second `Builder::setup` would replace the tray's.
+fn open_simulator(app: &tauri::App) -> tauri::Result<()> {
+    if let Some(settings) = app.get_webview_window("main") {
+        settings.set_title(&simulator::title("freewheel settings", true))?;
+    }
+    let url = tauri::WebviewUrl::App("index.html#simulator".into());
+    tauri::WebviewWindowBuilder::new(app, "simulator", url)
+        .title(simulator::title(freewheel_core::APP_NAME, true))
+        .inner_size(520.0, 720.0)
+        .build()?;
+    Ok(())
 }
 
 fn main() {
@@ -89,14 +170,53 @@ fn main() {
         context.config().product_name.as_deref(),
         Some(freewheel_core::APP_NAME)
     );
-    let mut builder = tauri::Builder::default().plugin(tauri_plugin_process::init());
+    let (commands, receiver) = mpsc::channel();
+    let quit_commands = commands.clone();
+    let simulate = simulator::requested(std::env::args());
+    // Registered first, so a second launch only focuses this one.
+    let mut builder = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            tray::show_settings(app)
+        }))
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init());
     if updater_pubkey_set(&context.config().plugins) {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
-    if simulator::requested(std::env::args()) {
+    if simulate {
         builder = with_simulator(builder);
     }
-    builder.run(context).expect("error while running freewheel");
+    let app = builder
+        .setup(move |app| {
+            let config = ConfigStore::from_project_dirs()
+                .map(|mut store| store.load_or_default().0)
+                .unwrap_or_default();
+            let (manual, manual_rx) = mpsc::channel();
+            spawn_resolve_watch(app.handle().clone(), &config, manual_rx, commands.clone());
+            let (tray, toggle) = tray::build(app.handle(), commands, manual)?;
+            spawn_device(config, tray, toggle, receiver);
+            if simulate {
+                open_simulator(app)?;
+            }
+            Ok(())
+        })
+        // Closing the settings window hides it; only Quit exits.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
+        .build(context)
+        .expect("error while building freewheel");
+    app.run(move |_app, event| {
+        // Every exit, Quit included, releases held keys before the process ends.
+        if let tauri::RunEvent::Exit = event
+            && !device::shutdown(&quit_commands, SHUTDOWN_TIMEOUT)
+        {
+            tracing::warn!("device loop did not confirm the key release");
+        }
+    });
 }
 
 /// Only release builds get the updater pubkey (`tauri build --config` in the
