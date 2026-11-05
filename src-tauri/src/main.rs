@@ -10,6 +10,7 @@ mod device;
 mod hidapi_transport;
 mod inject;
 mod launch;
+mod permissions;
 mod simulate;
 mod tray;
 #[cfg(any(windows, test))]
@@ -86,6 +87,22 @@ fn spawn_device(
 }
 
 /// The injector "send for real" uses in simulator mode.
+const PERMISSION_POLL: Duration = Duration::from_secs(2);
+
+/// Keeps the tray's 'Needs permission' line current, checking every
+/// [`PERMISSION_POLL`] (macOS only; elsewhere nothing is needed).
+fn spawn_permission_watch(status: tray::StatusLine<tauri::Wry>) {
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    std::thread::spawn(move || {
+        loop {
+            status.show(&permissions::current());
+            std::thread::sleep(PERMISSION_POLL);
+        }
+    });
+}
+
 #[cfg(not(test))]
 fn real_injector() -> Box<dyn KeyInjector> {
     match inject::EnigoInjector::new() {
@@ -111,7 +128,11 @@ fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::
             simulator::simulator_store(&real),
             real_injector,
         ))
-        .invoke_handler(tauri::generate_handler![simulate::simulate])
+        .invoke_handler(tauri::generate_handler![
+            simulate::simulate,
+            permissions::get_permissions,
+            permissions::open_permission_pane
+        ])
 }
 
 /// `--simulate`: the simulator window. Called from the one `setup` hook,
@@ -147,13 +168,19 @@ fn main() {
     if updater_pubkey_set(&context.config().plugins) {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
-    if simulate {
-        builder = with_simulator(builder);
-    }
+    builder = if simulate {
+        with_simulator(builder)
+    } else {
+        builder.invoke_handler(tauri::generate_handler![
+            permissions::get_permissions,
+            permissions::open_permission_pane
+        ])
+    };
     let app = builder
         .setup(move |app| {
-            let (tray, toggle) = tray::build(app.handle(), commands)?;
+            let (tray, toggle, status) = tray::build(app.handle(), commands)?;
             spawn_device(tray, toggle, receiver);
+            spawn_permission_watch(status);
             if simulate {
                 open_simulator(app)?;
             }

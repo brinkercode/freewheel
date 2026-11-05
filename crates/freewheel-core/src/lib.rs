@@ -11,6 +11,7 @@ pub mod inject;
 pub mod launch;
 pub mod logging;
 pub mod overrides;
+pub mod permissions;
 pub mod simulator;
 
 /// The application name shown by the tray and the settings window.

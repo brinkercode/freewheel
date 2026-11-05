@@ -1,4 +1,5 @@
-//! The tray icon and its menu: the On/Off check item, Open settings and Quit.
+//! The tray icon and its menu: the On/Off check item, the 'Needs permission'
+//! status line (macOS), Open settings and Quit.
 
 use std::sync::mpsc::Sender;
 
@@ -7,9 +8,12 @@ use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
 use tauri::{AppHandle, Manager, Runtime};
 
+use freewheel_core::permissions::{Permissions, status_line};
+
 use crate::device::{Command, TrayState};
 
 const TOGGLE: &str = "toggle";
+const STATUS: &str = "status";
 const OPEN_SETTINGS: &str = "open-settings";
 const QUIT: &str = "quit";
 
@@ -43,9 +47,39 @@ fn toggle_text(on: bool) -> &'static str {
     }
 }
 
+/// The status line below the toggle, in the menu only while a permission is
+/// missing; clicking it opens the settings window and its Permissions section.
+#[derive(Clone)]
+pub struct StatusLine<R: Runtime> {
+    menu: Menu<R>,
+    item: MenuItem<R>,
+}
+
+impl<R: Runtime> StatusLine<R> {
+    /// Shows 'Needs permission (click to fix)' while one is missing.
+    pub fn show(&self, permissions: &Permissions) {
+        let shown = self.menu.get(STATUS).is_some();
+        match status_line(permissions) {
+            Some(text) => {
+                let _ = self.item.set_text(text);
+                if !shown {
+                    let _ = self.menu.insert(&self.item, 1);
+                }
+            }
+            None if shown => {
+                let _ = self.menu.remove(&self.item);
+            }
+            None => {}
+        }
+    }
+}
+
 /// The tray menu; the returned check item is the On/Off toggle.
-pub fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<(Menu<R>, CheckMenuItem<R>)> {
+pub fn menu<R: Runtime>(
+    app: &AppHandle<R>,
+) -> tauri::Result<(Menu<R>, CheckMenuItem<R>, StatusLine<R>)> {
     let toggle = CheckMenuItem::with_id(app, TOGGLE, toggle_text(true), true, true, None::<&str>)?;
+    let item = MenuItem::with_id(app, STATUS, "", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[
@@ -56,7 +90,11 @@ pub fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<(Menu<R>, CheckMenu
             &MenuItem::with_id(app, QUIT, "Quit freewheel", true, None::<&str>)?,
         ],
     )?;
-    Ok((menu, toggle))
+    let status = StatusLine {
+        menu: menu.clone(),
+        item,
+    };
+    Ok((menu, toggle, status))
 }
 
 /// Shows and focuses the settings window (Open settings, second launch).
@@ -73,8 +111,8 @@ pub fn show_settings<R: Runtime>(app: &AppHandle<R>) {
 pub fn build<R: Runtime>(
     app: &AppHandle<R>,
     commands: Sender<Command>,
-) -> tauri::Result<(TrayIcon<R>, CheckMenuItem<R>)> {
-    let (menu, toggle) = menu(app)?;
+) -> tauri::Result<(TrayIcon<R>, CheckMenuItem<R>, StatusLine<R>)> {
+    let (menu, toggle, status) = menu(app)?;
     let check = toggle.clone();
     let tray = TrayIconBuilder::with_id("main")
         .icon(icon(TrayState::NotConnected))
@@ -87,12 +125,12 @@ pub fn build<R: Runtime>(
                 let _ = check.set_text(toggle_text(on));
                 let _ = commands.send(Command::SetEnabled(on));
             }
-            OPEN_SETTINGS => show_settings(app),
+            STATUS | OPEN_SETTINGS => show_settings(app),
             QUIT => app.exit(0),
             _ => {}
         })
         .build(app)?;
-    Ok((tray, toggle))
+    Ok((tray, toggle, status))
 }
 
 /// Shows `state` on the tray icon and the toggle.
@@ -122,7 +160,7 @@ mod tests {
     #[test]
     fn menu_has_a_checked_toggle_open_settings_and_quit() {
         let app = tauri::test::mock_app();
-        let (menu, toggle) = menu(app.handle()).unwrap();
+        let (menu, toggle, _) = menu(app.handle()).unwrap();
         assert!(toggle.is_checked().unwrap());
         assert_eq!(toggle.text().unwrap(), "freewheel is On");
         let items: Vec<(String, String)> = menu
@@ -147,6 +185,37 @@ mod tests {
                 (QUIT, "Quit freewheel"),
             ]
         );
+    }
+
+    fn ids<R: Runtime>(menu: &Menu<R>) -> Vec<String> {
+        menu.items()
+            .unwrap()
+            .iter()
+            .filter_map(|item| match item {
+                MenuItemKind::Check(i) => Some(i.id().0.clone()),
+                MenuItemKind::MenuItem(i) => Some(i.id().0.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_missing_permission_shows_needs_permission_below_the_toggle() {
+        use freewheel_core::permissions::{Permission, check_all};
+        let app = tauri::test::mock_app();
+        let (menu, _, status) = menu(app.handle()).unwrap();
+        status.show(&check_all(|p| p != Permission::Accessibility));
+        assert_eq!(ids(&menu), [TOGGLE, STATUS, OPEN_SETTINGS, QUIT]);
+        let line = menu.get(STATUS).unwrap();
+        let line = line.as_menuitem().unwrap();
+        assert_eq!(line.text().unwrap(), "Needs permission (click to fix)");
+        assert!(line.is_enabled().unwrap());
+        status.show(&check_all(|p| p != Permission::InputMonitoring));
+        assert_eq!(ids(&menu), [TOGGLE, STATUS, OPEN_SETTINGS, QUIT]);
+        status.show(&check_all(|_| true));
+        assert_eq!(ids(&menu), [TOGGLE, OPEN_SETTINGS, QUIT]);
+        status.show(&Permissions::new());
+        assert_eq!(ids(&menu), [TOGGLE, OPEN_SETTINGS, QUIT]);
     }
 
     #[test]
