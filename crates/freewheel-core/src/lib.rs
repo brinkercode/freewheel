@@ -1,6 +1,8 @@
 //! freewheel-core: platform-free logic of the freewheel macro pad.
 
+pub mod clock;
 pub mod hid;
+pub mod logging;
 
 /// The application name shown by the tray and the settings window.
 pub const APP_NAME: &str = "freewheel";

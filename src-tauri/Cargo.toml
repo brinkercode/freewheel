@@ -9,5 +9,7 @@ license = "MIT"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+directories = "6"
 freewheel-core = { path = "../crates/freewheel-core" }
+os_info = { version = "3", default-features = false }
 tauri = { version = "2", features = [] }
