@@ -43,6 +43,10 @@ pub trait AppVolumeControl: Send {
     fn step_down(&mut self, step: f32) -> Result<(), ControlError>;
     /// Called when the dial leaves its override mode and on release_all.
     fn release(&mut self) {}
+    /// Called when the app-volume override is switched on.
+    fn activate(&mut self) -> Result<(), ControlError> {
+        Ok(())
+    }
 }
 
 /// A gain of 0..1 shared with an audio thread.
@@ -123,7 +127,7 @@ impl<O: TapOpener> AppVolumeControl for TapAppVolume<O> {
 }
 
 /// The error when macOS refuses the audio-capture permission for a tap.
-pub const TAP_PERMISSION_NEEDED: &str = "permission needed";
+pub const TAP_PERMISSION_NEEDED: &str = PERMISSION_NEEDED;
 /// The error when this Mac cannot tap app audio (the ADR-010 fallback).
 pub const TAP_NOT_AVAILABLE: &str = "not available on this Mac yet";
 
@@ -138,6 +142,93 @@ pub fn tap_refused(status: i32) -> ControlError {
         _ => TAP_NOT_AVAILABLE,
     };
     ControlError(text.into())
+}
+
+/// The error while the audio-capture permission is not granted.
+pub const PERMISSION_NEEDED: &str = "permission needed";
+
+/// The macOS audio-capture permission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CapturePermission {
+    NotAsked,
+    Denied,
+    Granted,
+}
+
+/// The frontmost app (macOS: `NSWorkspace.frontmostApplication`).
+pub trait FocusSource: Send {
+    fn frontmost_pid(&mut self) -> Result<u32, ControlError>;
+}
+
+/// A process tap with gain on one process (macOS: a Core Audio process tap).
+pub trait ProcessTap: Send {
+    fn permission(&self) -> CapturePermission;
+    /// Shows the audio-capture prompt.
+    fn request_permission(&mut self);
+    /// Moves the tap to `pid`.
+    fn retarget(&mut self, pid: u32) -> Result<(), ControlError>;
+    /// Steps the tap's gain by `delta` (negative is down).
+    fn step(&mut self, delta: f32) -> Result<(), ControlError>;
+}
+
+/// The macOS [`AppVolumeControl`]: keeps a [`ProcessTap`] on the frontmost
+/// app and asks for the audio-capture permission the first time it is
+/// switched on. Until it is granted, every call fails with
+/// [`PERMISSION_NEEDED`], which reaches the status event as an override error.
+///
+/// [manual] macOS 15: switching the app-volume override on for the first time
+/// shows the audio-capture prompt, and the status shows 'permission needed'
+/// until it is allowed; then, with audio playing in two apps, turning the jog
+/// wheel changes only the frontmost one, and after switching focus to the
+/// other app it changes only that one.
+pub struct FollowFocus<F, T> {
+    focus: F,
+    tap: T,
+    pid: Option<u32>,
+}
+
+impl<F: FocusSource, T: ProcessTap> FollowFocus<F, T> {
+    pub fn new(focus: F, tap: T) -> Self {
+        Self {
+            focus,
+            tap,
+            pid: None,
+        }
+    }
+
+    /// Moves the tap to the frontmost app if focus has changed; call it on
+    /// every focus change.
+    pub fn follow(&mut self) -> Result<(), ControlError> {
+        if self.tap.permission() != CapturePermission::Granted {
+            return Err(ControlError(PERMISSION_NEEDED.into()));
+        }
+        let pid = self.focus.frontmost_pid()?;
+        if self.pid != Some(pid) {
+            self.tap.retarget(pid)?;
+            self.pid = Some(pid);
+        }
+        Ok(())
+    }
+
+    fn step(&mut self, delta: f32) -> Result<(), ControlError> {
+        self.follow()?;
+        self.tap.step(delta)
+    }
+}
+
+impl<F: FocusSource, T: ProcessTap> AppVolumeControl for FollowFocus<F, T> {
+    fn step_up(&mut self, step: f32) -> Result<(), ControlError> {
+        self.step(step)
+    }
+    fn step_down(&mut self, step: f32) -> Result<(), ControlError> {
+        self.step(-step)
+    }
+    fn activate(&mut self) -> Result<(), ControlError> {
+        if self.tap.permission() == CapturePermission::NotAsked {
+            self.tap.request_permission();
+        }
+        self.follow()
+    }
 }
 
 /// One OS audio session (Windows: an `IAudioSessionControl2` with its
@@ -210,6 +301,7 @@ pub struct OverrideRunner<C> {
     steps: OverrideSettings,
     clock: C,
     pending: Vec<(OverrideMode, i32)>,
+    activated: Vec<OverrideMode>,
     last_brightness: Option<Instant>,
 }
 
@@ -220,6 +312,7 @@ impl<C: Clock> OverrideRunner<C> {
             steps,
             clock,
             pending: Vec::new(),
+            activated: Vec::new(),
             last_brightness: None,
         }
     }
@@ -229,11 +322,25 @@ impl<C: Clock> OverrideRunner<C> {
         coalesce(&mut self.pending, mode, ticks);
     }
 
-    /// Calls the controls for the queued ticks. Returns the failed calls and,
-    /// when brightness is held back, how long until it is due.
+    /// Queues the switching on of `mode`.
+    pub fn activate(&mut self, mode: OverrideMode) {
+        self.activated.push(mode);
+    }
+
+    /// Calls the controls for the queued activations and ticks. Returns the
+    /// failed calls and, when brightness is held back, how long until it is
+    /// due.
     pub fn run(&mut self) -> (Vec<OverrideError>, Option<Duration>) {
         let now = self.clock.now();
         let mut errors = Vec::new();
+        for mode in std::mem::take(&mut self.activated) {
+            if mode == OverrideMode::AppVolume
+                && let Err(error) = self.controls.app_volume.activate()
+            {
+                warn!(?mode, error = %error, "dial override failed");
+                errors.push(OverrideError { mode, error });
+            }
+        }
         let mut wait = None;
         for (mode, ticks) in std::mem::take(&mut self.pending) {
             if ticks == 0 {
@@ -300,6 +407,7 @@ impl<C: Clock> OverrideRunner<C> {
 struct Queue {
     steps: Vec<(OverrideMode, i32)>,
     release: bool,
+    activated: Vec<OverrideMode>,
     stop: bool,
 }
 
@@ -325,9 +433,9 @@ impl OverrideWorker {
         let thread = std::thread::spawn(move || {
             let mut wait = None;
             loop {
-                let (steps, release) = {
+                let (activated, steps, release) = {
                     let mut q = s.queue.lock().unwrap();
-                    while q.steps.is_empty() && !q.release && !q.stop {
+                    while q.steps.is_empty() && q.activated.is_empty() && !q.release && !q.stop {
                         let Some(d) = wait else {
                             q = s.wake.wait(q).unwrap();
                             continue;
@@ -341,8 +449,15 @@ impl OverrideWorker {
                     if q.stop {
                         return;
                     }
-                    (std::mem::take(&mut q.steps), std::mem::take(&mut q.release))
+                    (
+                        std::mem::take(&mut q.activated),
+                        std::mem::take(&mut q.steps),
+                        std::mem::take(&mut q.release),
+                    )
                 };
+                for mode in activated {
+                    runner.activate(mode);
+                }
                 for (mode, ticks) in steps {
                     runner.push(mode, ticks);
                 }
@@ -366,6 +481,12 @@ impl OverrideWorker {
     /// Queues `ticks` dial ticks for `mode` without calling any control.
     pub fn push(&self, mode: OverrideMode, ticks: i32) {
         coalesce(&mut self.shared.queue.lock().unwrap().steps, mode, ticks);
+        self.shared.wake.notify_one();
+    }
+
+    /// Queues the switching on of `mode`, e.g. to prompt for a permission.
+    pub fn activate(&self, mode: OverrideMode) {
+        self.shared.queue.lock().unwrap().activated.push(mode);
         self.shared.wake.notify_one();
     }
 
@@ -630,23 +751,23 @@ mod tests {
         refuse: Option<i32>,
     }
 
-    struct FakeTap(Arc<Mutex<u32>>);
+    struct LiveTap(Arc<Mutex<u32>>);
 
-    impl Drop for FakeTap {
+    impl Drop for LiveTap {
         fn drop(&mut self) {
             *self.0.lock().unwrap() -= 1;
         }
     }
 
     impl TapOpener for FakeTaps {
-        type Tap = FakeTap;
-        fn open(&mut self, pid: u32, gain: Arc<Gain>) -> Result<FakeTap, ControlError> {
+        type Tap = LiveTap;
+        fn open(&mut self, pid: u32, gain: Arc<Gain>) -> Result<LiveTap, ControlError> {
             if let Some(status) = self.refuse {
                 return Err(tap_refused(status));
             }
             self.opened.lock().unwrap().push((pid, gain));
             *self.live.lock().unwrap() += 1;
-            Ok(FakeTap(Arc::clone(&self.live)))
+            Ok(LiveTap(Arc::clone(&self.live)))
         }
     }
 
@@ -656,6 +777,63 @@ mod tests {
         }
         fn live(&self) -> u32 {
             *self.live.lock().unwrap()
+        }
+    }
+
+    /// A fake focus source: the frontmost pid, shared so a test can change it.
+    #[derive(Clone)]
+    struct FakeFocus(Arc<Mutex<u32>>);
+
+    impl FocusSource for FakeFocus {
+        fn frontmost_pid(&mut self) -> Result<u32, ControlError> {
+            Ok(*self.0.lock().unwrap())
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq)]
+    enum TapCall {
+        Prompt,
+        Retarget(u32),
+        Step(f32),
+    }
+
+    /// A fake tap recording its calls; the prompt sets the permission to
+    /// `answer`.
+    #[derive(Clone)]
+    struct FakeTap {
+        permission: Arc<Mutex<CapturePermission>>,
+        answer: CapturePermission,
+        calls: Arc<Mutex<Vec<TapCall>>>,
+    }
+
+    impl FakeTap {
+        fn new(permission: CapturePermission, answer: CapturePermission) -> Self {
+            Self {
+                permission: Arc::new(Mutex::new(permission)),
+                answer,
+                calls: Arc::default(),
+            }
+        }
+        fn calls(&self) -> Vec<TapCall> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    impl ProcessTap for FakeTap {
+        fn permission(&self) -> CapturePermission {
+            *self.permission.lock().unwrap()
+        }
+        fn request_permission(&mut self) {
+            self.calls.lock().unwrap().push(TapCall::Prompt);
+            *self.permission.lock().unwrap() = self.answer;
+        }
+        fn retarget(&mut self, pid: u32) -> Result<(), ControlError> {
+            self.calls.lock().unwrap().push(TapCall::Retarget(pid));
+            Ok(())
+        }
+        fn step(&mut self, delta: f32) -> Result<(), ControlError> {
+            self.calls.lock().unwrap().push(TapCall::Step(delta));
+            Ok(())
         }
     }
 
@@ -750,6 +928,86 @@ mod tests {
         worker.release();
         wait_for(|| taps.live() == 0);
         assert_eq!(taps.gain(), 0.5);
+    }
+
+    #[test]
+    fn app_volume_tap_moves_to_the_frontmost_app_when_focus_changes() {
+        let focus = FakeFocus(Arc::new(Mutex::new(7)));
+        let tap = FakeTap::new(CapturePermission::Granted, CapturePermission::Granted);
+        let mut control = FollowFocus::new(focus.clone(), tap.clone());
+        control.activate().unwrap();
+        control.step_up(0.25).unwrap();
+        *focus.0.lock().unwrap() = 8;
+        control.follow().unwrap();
+        control.step_down(0.5).unwrap();
+        assert_eq!(
+            tap.calls(),
+            [
+                TapCall::Retarget(7),
+                TapCall::Step(0.25),
+                TapCall::Retarget(8),
+                TapCall::Step(-0.5),
+            ]
+        );
+    }
+
+    #[test]
+    fn app_volume_prompts_for_audio_capture_only_the_first_time_it_is_switched_on() {
+        let focus = FakeFocus(Arc::new(Mutex::new(7)));
+        let tap = FakeTap::new(CapturePermission::NotAsked, CapturePermission::Granted);
+        let mut control = FollowFocus::new(focus, tap.clone());
+        control.activate().unwrap();
+        control.activate().unwrap();
+        assert_eq!(tap.calls(), [TapCall::Prompt, TapCall::Retarget(7)]);
+    }
+
+    #[test]
+    fn app_volume_reports_permission_needed_until_it_is_granted() {
+        let focus = FakeFocus(Arc::new(Mutex::new(7)));
+        let tap = FakeTap::new(CapturePermission::NotAsked, CapturePermission::Denied);
+        let (v, b) = (FakeControl::new(), FakeControl::new());
+        let controls = Controls {
+            volume: Box::new(v),
+            app_volume: Box::new(FollowFocus::new(focus, tap.clone())),
+            brightness: Box::new(b),
+        };
+        let mut runner = OverrideRunner::new(controls, steps(), SystemClock);
+        let needed = OverrideError {
+            mode: OverrideMode::AppVolume,
+            error: ControlError(PERMISSION_NEEDED.into()),
+        };
+        runner.activate(OverrideMode::AppVolume);
+        assert_eq!(runner.run(), (vec![needed.clone()], None));
+        runner.push(OverrideMode::AppVolume, 1);
+        assert_eq!(runner.run(), (vec![needed], None));
+        assert_eq!(tap.calls(), [TapCall::Prompt]);
+        *tap.permission.lock().unwrap() = CapturePermission::Granted;
+        runner.push(OverrideMode::AppVolume, 1);
+        assert_eq!(runner.run(), (vec![], None));
+        assert_eq!(
+            tap.calls(),
+            [TapCall::Prompt, TapCall::Retarget(7), TapCall::Step(0.25)]
+        );
+    }
+
+    #[test]
+    fn worker_activation_reaches_the_app_volume_control() {
+        let focus = FakeFocus(Arc::new(Mutex::new(7)));
+        let tap = FakeTap::new(CapturePermission::NotAsked, CapturePermission::NotAsked);
+        let controls = Controls {
+            volume: Box::new(FakeControl::new()),
+            app_volume: Box::new(FollowFocus::new(focus, tap.clone())),
+            brightness: Box::new(FakeControl::new()),
+        };
+        let worker = OverrideWorker::spawn(OverrideRunner::new(controls, steps(), SystemClock));
+        worker.activate(OverrideMode::AppVolume);
+        let mut errors = Vec::new();
+        wait_for(|| {
+            errors.extend(worker.take_errors());
+            !errors.is_empty()
+        });
+        assert_eq!(errors[0].error, ControlError(PERMISSION_NEEDED.into()));
+        assert_eq!(tap.calls(), [TapCall::Prompt]);
     }
 
     fn wait_for(mut f: impl FnMut() -> bool) {
