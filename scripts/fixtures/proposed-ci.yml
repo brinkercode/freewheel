@@ -39,7 +39,9 @@ jobs:
           rustc --version
 
       - name: Lint workflows
-        run: node scripts/check-workflow.mjs .github/workflows/ci.yml
+        run: |
+          node scripts/check-workflow.mjs .github/workflows/ci.yml
+          node scripts/check-workflow.mjs --release .github/workflows/release.yml
 
       - run: npm ci
       - run: npm test
