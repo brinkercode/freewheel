@@ -7,11 +7,13 @@ pub mod config;
 pub mod connection;
 pub mod ddc;
 pub mod engine;
+pub mod first_run;
 pub mod hid;
 pub mod inject;
 pub mod launch;
 pub mod logging;
 pub mod overrides;
+pub mod permissions;
 pub mod resolve;
 pub mod simulator;
 
