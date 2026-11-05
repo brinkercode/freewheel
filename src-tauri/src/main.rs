@@ -5,6 +5,9 @@ mod hidapi_transport;
 #[cfg(not(test))]
 mod inject;
 mod launch;
+#[cfg(target_os = "macos")]
+#[allow(dead_code)] // wired into the override worker by a later card
+mod macos_volume;
 
 use std::sync::Arc;
 
