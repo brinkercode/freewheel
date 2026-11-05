@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "test": "vitest run",
-    "tauri": "tauri"
+    "tauri": "node scripts/tauri-release.mjs"
   },
   "dependencies": {
     "@tauri-apps/plugin-process": "^2.0.0",

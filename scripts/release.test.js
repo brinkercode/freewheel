@@ -6,7 +6,7 @@ import { checkReleaseWorkflow } from "./check-workflow.mjs";
 import { releaseArgs } from "./tauri-release.mjs";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
-const release = read("./fixtures/proposed-release.yml");
+const release = read("../.github/workflows/release.yml");
 const conf = JSON.parse(read("../src-tauri/tauri.conf.json"));
 
 test("release.yml passes the release lint", () => {
@@ -52,9 +52,10 @@ test("bundles: per-user unsigned NSIS on Windows, macOS 15.0 dmg, no MSI", () =>
   expect(release).not.toMatch(/WINDOWS_CERTIFICATE|certificateThumbprint|signCommand|AZURE_/);
 });
 
-test("[T3][T7] the release build injects the updater pubkey from vars through the tauri-action step", () => {
-  expect(release).toContain("tauriScript: node scripts/tauri-release.mjs");
-  expect(release).toMatch(/^ {10}TAURI_UPDATER_PUBKEY: \$\{\{ vars\.TAURI_UPDATER_PUBKEY \}\}$/m);
+test("[T3][T7] the release build's tauriScript goes through the pubkey override, and no pubkey is committed", () => {
+  expect(release).toContain("tauriScript: npm run tauri");
+  const pkg = JSON.parse(read("../package.json"));
+  expect(pkg.scripts.tauri).toBe("node scripts/tauri-release.mjs");
   expect(release).not.toMatch(/secrets\.TAURI_UPDATER_PUBKEY/);
   expect(conf.plugins.updater.pubkey ?? "").toBe("");
 });

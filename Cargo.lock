@@ -901,6 +901,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-process",
  "tauri-plugin-updater",
+ "windows 0.61.3",
 ]
 
 [[package]]
