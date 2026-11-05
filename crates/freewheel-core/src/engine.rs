@@ -74,6 +74,22 @@ impl Engine {
         self.last_shuttle_fire = None;
     }
 
+    /// Releases every held and latched key and stops the active dial
+    /// override and the Shuttle repeat, so nothing stays stuck. Calling it
+    /// again injects nothing.
+    pub fn release_all(&mut self, injector: &mut dyn KeyInjector) -> Result<(), InjectError> {
+        self.active_override = None;
+        self.override_ticks.clear();
+        self.jog_value = 0;
+        self.last_shuttle_fire = None;
+        let held = std::mem::take(&mut self.held).into_values();
+        let latched = std::mem::take(&mut self.latched);
+        // Release all of them even if one fails; report the first error.
+        held.chain(latched)
+            .map(|combo| combo_up(injector, &combo))
+            .fold(Ok(()), Result::and)
+    }
+
     pub fn jog_mode(&self) -> JogMode {
         self.jog_mode
     }
@@ -228,6 +244,8 @@ impl Engine {
                 None => Ok(()),
             },
             DeviceEvent::Jog { value, .. } => self.jog(*value, injector),
+            // The connection manager sends this on Off and when the device goes.
+            DeviceEvent::Disconnected => self.release_all(injector),
             _ => Ok(()),
         }
     }
@@ -908,6 +926,71 @@ mod tests {
             assert!(Instant::now() < end, "timed out");
             std::thread::sleep(Duration::from_millis(1));
         }
+    }
+
+    #[test]
+    fn release_all_releases_held_and_latched_and_twice_injects_nothing() {
+        let mut config = Config::default();
+        let bindings = &mut config.layers[0].bindings;
+        bindings.insert("In".into(), Action::Held { combo: ctrl_s() });
+        let shift_a = KeyCombo {
+            modifiers: vec![Modifier::Shift],
+            key: "A".into(),
+        };
+        bindings.insert("Snap".into(), Action::Latched { combo: shift_a });
+        let mut engine = Engine::new(&config);
+        let mut mock = MockInjector::new();
+        let mut l = MockLauncher::new();
+        engine.handle(&Press(Key::In), &mut mock, &mut l).unwrap();
+        engine.handle(&Press(Key::Snap), &mut mock, &mut l).unwrap();
+        engine.handle(&Release(Key::Snap), &mut mock, &mut l).unwrap();
+        assert_eq!(mock.keys_down().len(), 4);
+
+        engine.release_all(&mut mock).unwrap();
+        assert!(mock.keys_down().is_empty());
+        let calls = mock.calls().len();
+        engine.release_all(&mut mock).unwrap();
+        assert_eq!(mock.calls().len(), calls);
+        // The held key's physical release later injects nothing either.
+        engine.handle(&Release(Key::In), &mut mock, &mut l).unwrap();
+        assert_eq!(mock.calls().len(), calls);
+    }
+
+    #[test]
+    fn disconnected_event_runs_release_all() {
+        let mut engine = engine_with(Key::In, Action::Held { combo: ctrl_s() });
+        let mut mock = MockInjector::new();
+        let mut l = MockLauncher::new();
+        engine.handle(&Press(Key::In), &mut mock, &mut l).unwrap();
+        engine
+            .handle(&DeviceEvent::Disconnected, &mut mock, &mut l)
+            .unwrap();
+        assert_eq!(mock.calls()[2..], [Up(s()), Up(ctrl())]);
+        assert!(mock.keys_down().is_empty());
+    }
+
+    #[test]
+    fn release_all_stops_dial_override_and_shuttle_repeat() {
+        let mut engine = override_engine();
+        let mut mock = MockInjector::new();
+        let mut l = MockLauncher::new();
+        engine.handle(&Press(Key::Cam1), &mut mock, &mut l).unwrap();
+        engine.handle(&jog(3), &mut mock, &mut l).unwrap();
+        engine.release_all(&mut mock).unwrap();
+        assert_eq!(engine.active_override(), None);
+        assert!(engine.take_override_ticks().is_empty());
+
+        let mut engine = jog_engine(JogMode::Shuttle, 10, None);
+        let clock = FakeClock(Cell::new(Instant::now()));
+        engine.handle(&jog(50), &mut mock, &mut l).unwrap();
+        engine.tick(&clock, &mut mock).unwrap();
+        assert_eq!(mock.calls(), &[Scroll(5)]);
+        engine.release_all(&mut mock).unwrap();
+        for _ in 0..10 {
+            clock.advance(1000);
+            engine.tick(&clock, &mut mock).unwrap();
+        }
+        assert_eq!(mock.calls(), &[Scroll(5)]);
     }
 
     #[test]
