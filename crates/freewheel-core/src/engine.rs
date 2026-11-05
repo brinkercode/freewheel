@@ -144,7 +144,7 @@ impl Engine {
         fire(action, injector)
     }
 
-    fn set_jog_mode(&mut self, mode: JogMode) {
+    pub fn set_jog_mode(&mut self, mode: JogMode) {
         self.jog_mode = mode;
         self.jog_value = 0;
         self.last_shuttle_fire = None;
