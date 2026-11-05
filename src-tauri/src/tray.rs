@@ -1,5 +1,5 @@
-//! The tray icon and its menu: the On/Off check item, Open settings,
-//! Start at login and Quit.
+//! The tray icon and its menu: the On/Off check item, the 'Needs permission'
+//! status line (macOS), Open settings, Start at login and Quit.
 
 use std::sync::mpsc::Sender;
 
@@ -11,11 +11,13 @@ use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_autostart::ManagerExt;
 
 use freewheel_core::battery::{self, Battery, LowBatteryAlert};
+use freewheel_core::permissions::{Permissions, status_line};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::device::{Command, TrayState, Update};
 
 const TOGGLE: &str = "toggle";
+const STATUS: &str = "status";
 const OPEN_SETTINGS: &str = "open-settings";
 const START_AT_LOGIN: &str = "start-at-login";
 const QUIT: &str = "quit";
@@ -90,6 +92,54 @@ fn status_text(state: TrayState) -> &'static str {
     }
 }
 
+/// What the status line must do for the permissions now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StatusChange {
+    /// Set this text, inserting the line below the toggle if it is hidden.
+    Show(&'static str),
+    Hide,
+    Keep,
+}
+
+/// Plain-data decision for the status line, so tests need no native menu.
+fn status_change(shown: bool, permissions: &Permissions) -> StatusChange {
+    match status_line(permissions) {
+        Some(text) => StatusChange::Show(text),
+        None if shown => StatusChange::Hide,
+        None => StatusChange::Keep,
+    }
+}
+
+/// The status line below the toggle, in the menu only while a permission is
+/// missing; clicking it opens the settings window and its Permissions section.
+#[derive(Clone)]
+pub struct StatusLine<R: Runtime> {
+    menu: Menu<R>,
+    item: MenuItem<R>,
+}
+
+impl<R: Runtime> StatusLine<R> {
+    /// Shows 'Needs permission (click to fix)' while one is missing.
+    pub fn show(&self, permissions: &Permissions) {
+        let shown = self.menu.get(STATUS).is_some();
+        match status_change(shown, permissions) {
+            StatusChange::Show(text) => {
+                let _ = self.item.set_text(text);
+                if !shown {
+                    let _ = self.menu.insert(&self.item, 1);
+                }
+            }
+            StatusChange::Hide => {
+                let _ = self.menu.remove(&self.item);
+            }
+            StatusChange::Keep => {}
+        }
+    }
+}
+
+/// The menu, its On/Off toggle, its Start at login item and its status line.
+type MenuParts<R> = (Menu<R>, CheckMenuItem<R>, CheckMenuItem<R>, StatusLine<R>);
+
 /// One tray menu entry, as plain data; `menu` turns it into a native item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Entry {
@@ -133,11 +183,9 @@ fn menu_model(start_at_login: bool) -> [Entry; 6] {
 }
 
 /// Builds the native tray menu from `menu_model` (main thread only); the
-/// returned check items are the On/Off toggle and Start at login.
-pub fn menu<R: Runtime>(
-    app: &AppHandle<R>,
-    start_at_login: bool,
-) -> tauri::Result<(Menu<R>, CheckMenuItem<R>, CheckMenuItem<R>)> {
+/// returned check items are the On/Off toggle and Start at login, then the
+/// permission status line (hidden until `StatusLine::show` needs it).
+pub fn menu<R: Runtime>(app: &AppHandle<R>, start_at_login: bool) -> tauri::Result<MenuParts<R>> {
     let mut items: Vec<Box<dyn IsMenuItem<R>>> = Vec::new();
     let (mut toggle, mut login) = (None, None);
     for entry in menu_model(start_at_login) {
@@ -168,7 +216,12 @@ pub fn menu<R: Runtime>(
     let (Some(toggle), Some(login)) = (toggle, login) else {
         unreachable!("the menu model has both check items");
     };
-    Ok((menu, toggle, login))
+    let item = MenuItem::with_id(app, STATUS, "", true, None::<&str>)?;
+    let status = StatusLine {
+        menu: menu.clone(),
+        item,
+    };
+    Ok((menu, toggle, login, status))
 }
 
 /// Shows and focuses the settings window (Open settings, second launch).
@@ -187,9 +240,9 @@ pub fn build<R: Runtime>(
     app: &AppHandle<R>,
     commands: Sender<Command>,
     manual: Sender<bool>,
-) -> tauri::Result<(TrayIcon<R>, CheckMenuItem<R>)> {
+) -> tauri::Result<(TrayIcon<R>, CheckMenuItem<R>, StatusLine<R>)> {
     // The checkbox shows the OS login item, not the config, at startup.
-    let (menu, toggle, login) = menu(app, autostart_enabled(app))?;
+    let (menu, toggle, login, status) = menu(app, autostart_enabled(app))?;
     let check = toggle.clone();
     let tray = TrayIconBuilder::with_id("main")
         .icon(icon(TrayState::NotConnected))
@@ -203,7 +256,7 @@ pub fn build<R: Runtime>(
                 let _ = commands.send(Command::SetEnabled(on));
                 let _ = manual.send(on);
             }
-            OPEN_SETTINGS => show_settings(app),
+            STATUS | OPEN_SETTINGS => show_settings(app),
             START_AT_LOGIN => {
                 let on = login.is_checked().unwrap_or(false);
                 let store = ConfigStore::from_project_dirs();
@@ -223,7 +276,7 @@ pub fn build<R: Runtime>(
             _ => {}
         })
         .build(app)?;
-    Ok((tray, toggle))
+    Ok((tray, toggle, status))
 }
 
 /// Shows `state` on the tray icon and the toggle.
@@ -330,6 +383,25 @@ mod tests {
                     text: "Quit freewheel",
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn a_missing_permission_shows_needs_permission_until_granted() {
+        use freewheel_core::permissions::{Permission, check_all};
+        let fix = StatusChange::Show("Needs permission (click to fix)");
+        for shown in [false, true] {
+            let ax = check_all(|p| p != Permission::Accessibility);
+            assert_eq!(status_change(shown, &ax), fix);
+            let input = check_all(|p| p != Permission::InputMonitoring);
+            assert_eq!(status_change(shown, &input), fix);
+        }
+        let granted = check_all(|_| true);
+        assert_eq!(status_change(true, &granted), StatusChange::Hide);
+        assert_eq!(status_change(false, &granted), StatusChange::Keep);
+        assert_eq!(
+            status_change(false, &Permissions::new()),
+            StatusChange::Keep
         );
     }
 
