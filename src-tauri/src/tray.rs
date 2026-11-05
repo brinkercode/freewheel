@@ -5,7 +5,7 @@ use std::sync::mpsc::Sender;
 
 use freewheel_core::config::ConfigStore;
 use tauri::image::Image;
-use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
 use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_autostart::ManagerExt;
@@ -90,32 +90,84 @@ fn status_text(state: TrayState) -> &'static str {
     }
 }
 
-/// The tray menu; the returned check items are the On/Off toggle and Start
-/// at login, checked as `start_at_login` says.
+/// One tray menu entry, as plain data; `menu` turns it into a native item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Entry {
+    Check {
+        id: &'static str,
+        text: &'static str,
+        checked: bool,
+    },
+    Item {
+        id: &'static str,
+        text: &'static str,
+    },
+    Separator,
+}
+
+/// The tray menu as plain data: the On/Off toggle, Open settings, Start at
+/// login (checked as `start_at_login` says) and Quit.
+fn menu_model(start_at_login: bool) -> [Entry; 6] {
+    [
+        Entry::Check {
+            id: TOGGLE,
+            text: toggle_text(true),
+            checked: true,
+        },
+        Entry::Separator,
+        Entry::Item {
+            id: OPEN_SETTINGS,
+            text: "Open settings...",
+        },
+        Entry::Check {
+            id: START_AT_LOGIN,
+            text: "Start at login",
+            checked: start_at_login,
+        },
+        Entry::Separator,
+        Entry::Item {
+            id: QUIT,
+            text: "Quit freewheel",
+        },
+    ]
+}
+
+/// Builds the native tray menu from `menu_model` (main thread only); the
+/// returned check items are the On/Off toggle and Start at login.
 pub fn menu<R: Runtime>(
     app: &AppHandle<R>,
     start_at_login: bool,
 ) -> tauri::Result<(Menu<R>, CheckMenuItem<R>, CheckMenuItem<R>)> {
-    let toggle = CheckMenuItem::with_id(app, TOGGLE, toggle_text(true), true, true, None::<&str>)?;
-    let login = CheckMenuItem::with_id(
-        app,
-        START_AT_LOGIN,
-        "Start at login",
-        true,
-        start_at_login,
-        None::<&str>,
-    )?;
-    let menu = Menu::with_items(
-        app,
-        &[
-            &toggle,
-            &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, OPEN_SETTINGS, "Open settings...", true, None::<&str>)?,
-            &login,
-            &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, QUIT, "Quit freewheel", true, None::<&str>)?,
-        ],
-    )?;
+    let mut items: Vec<Box<dyn IsMenuItem<R>>> = Vec::new();
+    let (mut toggle, mut login) = (None, None);
+    for entry in menu_model(start_at_login) {
+        match entry {
+            Entry::Check { id, text, checked } => {
+                let item = CheckMenuItem::with_id(app, id, text, true, checked, None::<&str>)?;
+                if id == TOGGLE {
+                    toggle = Some(item.clone());
+                } else {
+                    login = Some(item.clone());
+                }
+                items.push(Box::new(item));
+            }
+            Entry::Item { id, text } => {
+                items.push(Box::new(MenuItem::with_id(
+                    app,
+                    id,
+                    text,
+                    true,
+                    None::<&str>,
+                )?));
+            }
+            Entry::Separator => items.push(Box::new(PredefinedMenuItem::separator(app)?)),
+        }
+    }
+    let refs: Vec<&dyn IsMenuItem<R>> = items.iter().map(|item| item.as_ref()).collect();
+    let menu = Menu::with_items(app, &refs)?;
+    let (Some(toggle), Some(login)) = (toggle, login) else {
+        unreachable!("the menu model has both check items");
+    };
     Ok((menu, toggle, login))
 }
 
@@ -238,7 +290,6 @@ impl TrayView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tauri::menu::MenuItemKind;
 
     #[test]
     fn each_state_has_its_own_bundled_icon() {
@@ -252,34 +303,46 @@ mod tests {
 
     #[test]
     fn menu_has_a_checked_toggle_open_settings_start_at_login_and_quit() {
-        let app = tauri::test::mock_app();
-        let (menu, toggle, login) = menu(app.handle(), false).unwrap();
-        assert!(toggle.is_checked().unwrap());
-        assert!(!login.is_checked().unwrap());
-        assert_eq!(toggle.text().unwrap(), "freewheel is On");
-        let items: Vec<(String, String)> = menu
-            .items()
-            .unwrap()
-            .iter()
-            .filter_map(|item| match item {
-                MenuItemKind::Check(i) => Some((i.id().0.clone(), i.text().unwrap())),
-                MenuItemKind::MenuItem(i) => Some((i.id().0.clone(), i.text().unwrap())),
-                _ => None,
-            })
-            .collect();
-        let pairs: Vec<(&str, &str)> = items
-            .iter()
-            .map(|(a, b)| (a.as_str(), b.as_str()))
-            .collect();
         assert_eq!(
-            pairs,
+            menu_model(false),
             [
-                (TOGGLE, "freewheel is On"),
-                (OPEN_SETTINGS, "Open settings..."),
-                (START_AT_LOGIN, "Start at login"),
-                (QUIT, "Quit freewheel"),
+                Entry::Check {
+                    id: TOGGLE,
+                    text: "freewheel is On",
+                    checked: true,
+                },
+                Entry::Separator,
+                Entry::Item {
+                    id: OPEN_SETTINGS,
+                    text: "Open settings...",
+                },
+                Entry::Check {
+                    id: START_AT_LOGIN,
+                    text: "Start at login",
+                    checked: false,
+                },
+                Entry::Separator,
+                Entry::Item {
+                    id: QUIT,
+                    text: "Quit freewheel",
+                },
             ]
         );
+    }
+
+    /// Whether the Start at login entry of the model is checked.
+    fn login_checked(model: [Entry; 6]) -> bool {
+        model
+            .into_iter()
+            .find_map(|entry| match entry {
+                Entry::Check {
+                    id: START_AT_LOGIN,
+                    checked,
+                    ..
+                } => Some(checked),
+                _ => None,
+            })
+            .unwrap()
     }
 
     #[test]
@@ -303,16 +366,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let config = ConfigStore::new(dir.path()).load().unwrap();
         assert!(!config.settings.start_at_login);
-        let app = tauri::test::mock_app();
-        let (_, _, login) = menu(app.handle(), config.settings.start_at_login).unwrap();
-        assert!(!login.is_checked().unwrap());
+        assert!(!login_checked(menu_model(config.settings.start_at_login)));
     }
 
     #[test]
     fn start_at_login_shows_the_state_it_is_given() {
-        let app = tauri::test::mock_app();
-        let (_, _, login) = menu(app.handle(), true).unwrap();
-        assert!(login.is_checked().unwrap());
+        assert!(login_checked(menu_model(true)));
+        assert!(!login_checked(menu_model(false)));
     }
 
     #[test]
