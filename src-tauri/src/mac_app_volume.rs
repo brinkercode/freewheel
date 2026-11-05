@@ -1,7 +1,7 @@
 //! The macOS [`AppVolumeControl`] for one PID (ADR-010): a private Core Audio
 //! process tap mutes the app, and an IOProc on a private aggregate device
 //! (the default output plus the tap) plays the tapped audio back at the dial's
-//! gain. Its logic is [`TapAppVolume`], tested in the core.
+//! gain. It is the [`GainTap`] behind `FollowFocus`, which is tested in the core.
 //!
 //! Tapped audio only goes from the IOProc's input to its output buffers; this
 //! module does no file or network I/O (A21).
@@ -25,7 +25,7 @@ use core_foundation::dictionary::CFDictionary;
 use core_foundation::number::CFNumber;
 use core_foundation::string::{CFString, CFStringRef};
 use freewheel_core::overrides::{
-    ControlError, Gain, NO_AUDIO_SESSION, TapAppVolume, TapOpener, play_at_gain, tap_refused,
+    ControlError, Gain, GainTap, NO_AUDIO_SESSION, TapOpener, play_at_gain, tap_refused,
 };
 use objc2::msg_send;
 use objc2::rc::{Allocated, Retained};
@@ -292,9 +292,11 @@ impl TapOpener for CoreAudioTaps {
     }
 }
 
-/// App volume for one PID.
-pub type MacAppVolume = TapAppVolume<CoreAudioTaps>;
+/// The Core Audio [`ProcessTap`](freewheel_core::overrides::ProcessTap) that
+/// [`FollowFocus`](freewheel_core::overrides::FollowFocus) moves to the
+/// frontmost PID and releases on mode exit and release_all.
+pub type CoreAudioProcessTap = GainTap<CoreAudioTaps>;
 
-pub fn mac_app_volume(pid: u32) -> MacAppVolume {
-    TapAppVolume::new(CoreAudioTaps, pid)
+pub fn core_audio_process_tap() -> CoreAudioProcessTap {
+    GainTap::new(CoreAudioTaps)
 }

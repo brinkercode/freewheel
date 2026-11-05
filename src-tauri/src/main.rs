@@ -2,6 +2,8 @@
 
 #[cfg(windows)]
 mod app_volume;
+#[cfg(windows)]
+mod brightness;
 #[cfg(target_os = "macos")]
 mod ddc_macos;
 #[allow(dead_code)] // wired up by the connection manager

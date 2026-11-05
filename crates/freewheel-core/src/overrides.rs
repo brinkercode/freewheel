@@ -84,42 +84,59 @@ pub trait TapOpener: Send {
     fn open(&mut self, pid: u32, gain: Arc<Gain>) -> Result<Self::Tap, ControlError>;
 }
 
-/// macOS app volume: the first step taps the process at full gain, each step
-/// moves the gain, and [`release`](AppVolumeControl::release) drops the tap.
-pub struct TapAppVolume<O: TapOpener> {
+/// The macOS [`ProcessTap`] that [`FollowFocus`] drives: `retarget` opens a
+/// tap of the pid at full gain (dropping the previous one), each step moves
+/// the gain, and `release` drops the tap.
+///
+/// macOS has no public query for the audio-capture permission; it prompts
+/// when the first tap is created. So asking only allows that attempt, and a
+/// refused tap sets the permission back to `NotAsked`, so the next switch-on
+/// tries again.
+pub struct GainTap<O: TapOpener> {
     opener: O,
-    pid: u32,
+    permission: CapturePermission,
     tap: Option<(O::Tap, Arc<Gain>)>,
 }
 
-impl<O: TapOpener> TapAppVolume<O> {
-    pub fn new(opener: O, pid: u32) -> Self {
+impl<O: TapOpener> GainTap<O> {
+    pub fn new(opener: O) -> Self {
         Self {
             opener,
-            pid,
+            permission: CapturePermission::NotAsked,
             tap: None,
         }
     }
-
-    fn step(&mut self, delta: f32) -> Result<(), ControlError> {
-        if self.tap.is_none() {
-            let gain = Arc::new(Gain::new(1.0));
-            let tap = self.opener.open(self.pid, Arc::clone(&gain))?;
-            self.tap = Some((tap, gain));
-        }
-        if let Some((_, gain)) = &self.tap {
-            gain.step(delta);
-        }
-        Ok(())
-    }
 }
 
-impl<O: TapOpener> AppVolumeControl for TapAppVolume<O> {
-    fn step_up(&mut self, step: f32) -> Result<(), ControlError> {
-        self.step(step)
+impl<O: TapOpener> ProcessTap for GainTap<O> {
+    fn permission(&self) -> CapturePermission {
+        self.permission
     }
-    fn step_down(&mut self, step: f32) -> Result<(), ControlError> {
-        self.step(-step)
+    fn request_permission(&mut self) {
+        self.permission = CapturePermission::Granted;
+    }
+    fn retarget(&mut self, pid: u32) -> Result<(), ControlError> {
+        self.tap = None;
+        let gain = Arc::new(Gain::new(1.0));
+        match self.opener.open(pid, Arc::clone(&gain)) {
+            Ok(tap) => {
+                self.tap = Some((tap, gain));
+                Ok(())
+            }
+            Err(e) => {
+                if e.0 == TAP_PERMISSION_NEEDED {
+                    self.permission = CapturePermission::NotAsked;
+                }
+                Err(e)
+            }
+        }
+    }
+    fn step(&mut self, delta: f32) -> Result<(), ControlError> {
+        let Some((_, gain)) = &self.tap else {
+            return Err(ControlError(NO_AUDIO_SESSION.into()));
+        };
+        gain.step(delta);
+        Ok(())
     }
     fn release(&mut self) {
         self.tap = None;
@@ -169,6 +186,8 @@ pub trait ProcessTap: Send {
     fn retarget(&mut self, pid: u32) -> Result<(), ControlError>;
     /// Steps the tap's gain by `delta` (negative is down).
     fn step(&mut self, delta: f32) -> Result<(), ControlError>;
+    /// Tears the tap down, so the app plays at its own volume again.
+    fn release(&mut self);
 }
 
 /// The macOS [`AppVolumeControl`]: keeps a [`ProcessTap`] on the frontmost
@@ -229,6 +248,12 @@ impl<F: FocusSource, T: ProcessTap> AppVolumeControl for FollowFocus<F, T> {
         }
         self.follow()
     }
+    /// Tears the tap down on mode exit and release_all; the next step taps
+    /// the frontmost app again.
+    fn release(&mut self) {
+        self.tap.release();
+        self.pid = None;
+    }
 }
 
 /// One OS audio session (Windows: an `IAudioSessionControl2` with its
@@ -270,6 +295,53 @@ pub fn step_app_sessions<S: AudioSession>(
 pub trait BrightnessControl: Send {
     fn step_up(&mut self, step: u8) -> Result<(), ControlError>;
     fn step_down(&mut self, step: u8) -> Result<(), ControlError>;
+}
+
+/// A display's brightness in its own units, from `min` to `max`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Level {
+    pub min: u32,
+    pub current: u32,
+    pub max: u32,
+}
+
+/// One display a [`BrightnessControl`] backend can step.
+pub trait Screen {
+    fn name(&self) -> String;
+    fn level(&mut self) -> Result<Level, ControlError>;
+    fn set(&mut self, value: u32) -> Result<(), ControlError>;
+}
+
+/// Steps every display by `percent` of its range (negative is down),
+/// clamped to it. A display that fails, or a source that could not list its
+/// displays, gives its own error; the others are still stepped (A16).
+pub fn step_displays(
+    screens: Vec<Result<Box<dyn Screen>, ControlError>>,
+    percent: i32,
+) -> Result<(), ControlError> {
+    let mut errors = Vec::new();
+    for screen in screens {
+        let mut s = match screen {
+            Ok(s) => s,
+            Err(e) => {
+                errors.push(e.0);
+                continue;
+            }
+        };
+        let stepped = s.level().and_then(|l| {
+            let range = i64::from(l.max.saturating_sub(l.min));
+            let to = i64::from(l.current) + i64::from(percent) * range / 100;
+            s.set(to.clamp(l.min.into(), l.max.into()) as u32)
+        });
+        if let Err(e) = stepped {
+            errors.push(format!("{}: {}", s.name(), e.0));
+        }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(ControlError(errors.join("; ")))
+    }
 }
 
 /// The override-errors part of the status event: a control call that failed.
@@ -681,6 +753,26 @@ mod tests {
         );
     }
 
+    /// A display with a level that records what it is set to.
+    struct FakeScreen {
+        name: &'static str,
+        level: Result<Level, ControlError>,
+        set_to: Arc<Mutex<Vec<u32>>>,
+    }
+
+    impl Screen for FakeScreen {
+        fn name(&self) -> String {
+            self.name.into()
+        }
+        fn level(&mut self) -> Result<Level, ControlError> {
+            self.level.clone()
+        }
+        fn set(&mut self, value: u32) -> Result<(), ControlError> {
+            self.set_to.lock().unwrap().push(value);
+            Ok(())
+        }
+    }
+
     /// A fake session: (owning pid, volume), shared so the test reads it back.
     struct FakeSession(u32, Arc<Mutex<f32>>);
 
@@ -695,6 +787,51 @@ mod tests {
             *self.1.lock().unwrap() = volume;
             Ok(())
         }
+    }
+
+    type Opened = Result<Box<dyn Screen>, ControlError>;
+
+    fn screen(
+        name: &'static str,
+        level: Result<Level, ControlError>,
+    ) -> (Arc<Mutex<Vec<u32>>>, Opened) {
+        let set_to = Arc::new(Mutex::new(Vec::new()));
+        let s = FakeScreen {
+            name,
+            level,
+            set_to: Arc::clone(&set_to),
+        };
+        (set_to, Ok(Box::new(s)))
+    }
+
+    #[test]
+    fn displays_step_by_percent_of_their_own_range_and_clamp() {
+        let lvl = |min, current, max| Ok(Level { min, current, max });
+        let (ddc, a) = screen("DDC", lvl(0, 50, 200));
+        let (panel, b) = screen("panel", lvl(0, 98, 100));
+        assert_eq!(step_displays(vec![a, b], 5), Ok(()));
+        assert_eq!(*ddc.lock().unwrap(), [60]);
+        assert_eq!(*panel.lock().unwrap(), [100]);
+        let (low, c) = screen("low", lvl(10, 12, 110));
+        assert_eq!(step_displays(vec![c], -5), Ok(()));
+        assert_eq!(*low.lock().unwrap(), [10]);
+    }
+
+    #[test]
+    fn each_failing_display_gives_its_own_error_and_the_others_still_step() {
+        let lvl = Ok(Level {
+            min: 0,
+            current: 40,
+            max: 100,
+        });
+        let (first, a) = screen("Dell", lvl.clone());
+        let (_, b) = screen("LG", Err(ControlError("DDC/CI off".into())));
+        let no_wmi = Err(ControlError("built-in panel: class not found".into()));
+        let (last, d) = screen("HP", lvl);
+        let err = step_displays(vec![a, b, no_wmi, d], -10).unwrap_err();
+        assert_eq!(err.0, "LG: DDC/CI off; built-in panel: class not found");
+        assert_eq!(*first.lock().unwrap(), [30]);
+        assert_eq!(*last.lock().unwrap(), [30]);
     }
 
     fn sessions(list: &[(u32, f32)]) -> Vec<(u32, Arc<Mutex<f32>>)> {
@@ -742,11 +879,11 @@ mod tests {
 
     /// A fake tap opener: records the opened pids and their gains; a tap is
     /// live until dropped.
-    type Opened = (u32, Arc<Gain>);
+    type OpenedTap = (u32, Arc<Gain>);
 
     #[derive(Clone, Default)]
     struct FakeTaps {
-        opened: Arc<Mutex<Vec<Opened>>>,
+        opened: Arc<Mutex<Vec<OpenedTap>>>,
         live: Arc<Mutex<u32>>,
         refuse: Option<i32>,
     }
@@ -795,6 +932,7 @@ mod tests {
         Prompt,
         Retarget(u32),
         Step(f32),
+        Release,
     }
 
     /// A fake tap recording its calls; the prompt sets the permission to
@@ -835,15 +973,26 @@ mod tests {
             self.calls.lock().unwrap().push(TapCall::Step(delta));
             Ok(())
         }
+        fn release(&mut self) {
+            self.calls.lock().unwrap().push(TapCall::Release);
+        }
+    }
+
+    /// The shipped macOS path: FollowFocus over a GainTap, focused on `pid`.
+    fn gain_tap_app(taps: &FakeTaps, pid: u32) -> FollowFocus<FakeFocus, GainTap<FakeTaps>> {
+        FollowFocus::new(
+            FakeFocus(Arc::new(Mutex::new(pid))),
+            GainTap::new(taps.clone()),
+        )
     }
 
     #[test]
-    fn tap_app_volume_taps_the_pid_once_and_steps_its_gain_clamped_to_0_1() {
+    fn gain_tap_taps_the_frontmost_pid_once_and_steps_its_gain_clamped_to_0_1() {
         let taps = FakeTaps::default();
-        let mut app = TapAppVolume::new(taps.clone(), 42);
-        assert_eq!(taps.live(), 0);
-        app.step_down(0.25).unwrap();
+        let mut app = gain_tap_app(&taps, 42);
+        app.activate().unwrap();
         assert_eq!(taps.live(), 1);
+        app.step_down(0.25).unwrap();
         assert_eq!(taps.gain(), 0.75);
         app.step_down(0.5).unwrap();
         assert_eq!(taps.gain(), 0.25);
@@ -859,10 +1008,45 @@ mod tests {
     }
 
     #[test]
-    fn tap_app_volume_release_tears_the_tap_down_and_reopens_at_full_gain() {
+    fn gain_tap_retarget_drops_the_old_tap_and_opens_the_new_pid_at_full_gain() {
         let taps = FakeTaps::default();
-        let mut app = TapAppVolume::new(taps.clone(), 42);
+        let focus = FakeFocus(Arc::new(Mutex::new(7)));
+        let mut app = FollowFocus::new(focus.clone(), GainTap::new(taps.clone()));
+        app.activate().unwrap();
+        app.step_down(0.5).unwrap();
+        *focus.0.lock().unwrap() = 8;
+        app.step_down(0.25).unwrap();
+        assert_eq!((taps.live(), taps.gain()), (1, 0.75));
+        let pids: Vec<u32> = taps.opened.lock().unwrap().iter().map(|o| o.0).collect();
+        assert_eq!(pids, [7, 8]);
+    }
+
+    #[test]
+    fn follow_focus_release_tears_the_tap_down_and_the_next_step_retaps() {
+        let focus = FakeFocus(Arc::new(Mutex::new(7)));
+        let tap = FakeTap::new(CapturePermission::Granted, CapturePermission::Granted);
+        let mut control = FollowFocus::new(focus, tap.clone());
+        control.step_up(0.25).unwrap();
+        control.release();
+        control.step_up(0.25).unwrap();
+        assert_eq!(
+            tap.calls(),
+            [
+                TapCall::Retarget(7),
+                TapCall::Step(0.25),
+                TapCall::Release,
+                TapCall::Retarget(7),
+                TapCall::Step(0.25),
+            ]
+        );
+    }
+
+    #[test]
+    fn gain_tap_release_through_follow_focus_drops_the_tap_and_reopens_at_full_gain() {
+        let taps = FakeTaps::default();
+        let mut app = gain_tap_app(&taps, 42);
         app.release();
+        app.activate().unwrap();
         app.step_down(0.5).unwrap();
         app.release();
         assert_eq!(taps.live(), 0);
@@ -874,17 +1058,25 @@ mod tests {
     }
 
     #[test]
-    fn refused_tap_reports_permission_needed_or_not_available() {
-        let taps = FakeTaps {
+    fn refused_tap_reports_permission_needed_and_asks_again_next_time() {
+        let mut taps = FakeTaps {
             refuse: Some(i32::from_be_bytes(*b"!hog")),
             ..FakeTaps::default()
         };
-        let mut app = TapAppVolume::new(taps.clone(), 42);
+        let mut tap = GainTap::new(taps.clone());
+        tap.request_permission();
         assert_eq!(
-            app.step_up(0.1),
+            tap.retarget(42),
             Err(ControlError("permission needed".into()))
         );
+        assert_eq!(tap.permission(), CapturePermission::NotAsked);
         assert_eq!(taps.live(), 0);
+        taps.refuse = Some(-50);
+        let mut tap = GainTap::new(taps);
+        tap.request_permission();
+        assert_eq!(tap.retarget(42).unwrap_err().0, TAP_NOT_AVAILABLE);
+        assert_eq!(tap.permission(), CapturePermission::Granted);
+        assert_eq!(tap.step(0.1), Err(ControlError(NO_AUDIO_SESSION.into())));
         assert_eq!(
             tap_refused(i32::from_be_bytes(*b"nope")).0,
             TAP_PERMISSION_NEEDED
@@ -917,10 +1109,11 @@ mod tests {
         let taps = FakeTaps::default();
         let controls = Controls {
             volume: Box::new(FakeControl::new()),
-            app_volume: Box::new(TapAppVolume::new(taps.clone(), 7)),
+            app_volume: Box::new(gain_tap_app(&taps, 7)),
             brightness: Box::new(FakeControl::new()),
         };
         let worker = OverrideWorker::spawn(OverrideRunner::new(controls, steps(), SystemClock));
+        worker.activate(OverrideMode::AppVolume);
         worker.push(OverrideMode::AppVolume, -1);
         wait_for(|| taps.live() == 1);
         assert_eq!(taps.gain(), 0.75);
