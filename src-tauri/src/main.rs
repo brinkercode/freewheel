@@ -4,6 +4,8 @@
 mod app_volume;
 #[cfg(windows)]
 mod brightness;
+#[cfg(any(target_os = "macos", all(unix, test)))]
+mod builtin_brightness;
 #[cfg(target_os = "macos")]
 mod ddc_macos;
 mod device;
