@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 #[cfg(windows)]
+mod app_volume;
+#[cfg(windows)]
 mod brightness;
 #[allow(dead_code)] // wired up by the connection manager
 mod hidapi_transport;

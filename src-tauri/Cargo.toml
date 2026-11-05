@@ -18,5 +18,13 @@ tauri = { version = "2", features = [] }
 
 [target.'cfg(windows)'.dependencies]
 serde = { version = "1", features = ["derive"] }
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Media_Audio",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
+    "Win32_UI_WindowsAndMessaging",
+] }
 windows-sys = { version = "0.61", features = ["Win32_Devices_Display", "Win32_Foundation", "Win32_Graphics_Gdi"] }
 wmi = "0.17"
