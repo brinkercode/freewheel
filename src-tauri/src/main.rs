@@ -89,7 +89,10 @@ fn spawn_device(
             &mut injector,
             &mut launch::ProcessLauncher,
             commands,
-            |state| tray::show_state(&tray, &toggle, state),
+            {
+                let mut view = tray::TrayView::new(config.settings.low_battery_threshold);
+                move |update| view.apply(&tray, &toggle, update)
+            },
         );
     });
 }

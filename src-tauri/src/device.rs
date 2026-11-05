@@ -1,16 +1,18 @@
 //! The device loop: one thread owns the connection manager, the mapping
 //! engine and the key injector. The tray drives it with [`Command`]s and
-//! hears back a [`TrayState`] whenever the connection status changes.
+//! hears back an [`Update`] when the connection status or the battery changes.
 
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::time::Duration;
 
+use freewheel_core::battery::Battery;
 use freewheel_core::clock::Clock;
 use freewheel_core::connection::{ConnectionEvent, ConnectionManager, ConnectionStatus};
 use freewheel_core::engine::Engine;
 use freewheel_core::hid::{HidError, HidTransport};
 use freewheel_core::inject::KeyInjector;
 use freewheel_core::launch::Launcher;
+use freewheel_core::report::DeviceEvent;
 use tracing::warn;
 
 /// How long one loop turn waits for an input report or a command.
@@ -29,6 +31,13 @@ pub enum TrayState {
     On,
     Off,
     NotConnected,
+}
+
+/// What the device loop tells the tray.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Update {
+    State(TrayState),
+    Battery(Battery),
 }
 
 impl From<ConnectionStatus> for TrayState {
@@ -56,7 +65,7 @@ pub fn run<T, O, C, F>(
     injector: &mut dyn KeyInjector,
     launcher: &mut dyn Launcher,
     commands: Receiver<Command>,
-    mut on_state: impl FnMut(TrayState),
+    mut on_update: impl FnMut(Update),
 ) where
     T: HidTransport,
     O: FnMut() -> Result<T, HidError>,
@@ -83,8 +92,11 @@ pub fn run<T, O, C, F>(
         events.extend(manager.tick(POLL));
         for event in events {
             match event {
-                ConnectionEvent::Status(status) => on_state(status.into()),
+                ConnectionEvent::Status(status) => on_update(Update::State(status.into())),
                 ConnectionEvent::Device(event) => {
+                    if let DeviceEvent::Battery { level, charging } = event {
+                        on_update(Update::Battery(Battery { level, charging }));
+                    }
                     if let Err(e) = engine.handle(&event, injector, launcher) {
                         warn!(error = %e, "device event failed");
                     }
@@ -182,11 +194,58 @@ mod tests {
                     on_state,
                 );
             });
-            assert_eq!(states.recv_timeout(WAIT), Ok(TrayState::NotConnected));
+            assert_eq!(
+                states.recv_timeout(WAIT),
+                Ok(Update::State(TrayState::NotConnected))
+            );
             tx.send(Command::SetEnabled(false)).unwrap();
-            assert_eq!(states.recv_timeout(WAIT), Ok(TrayState::Off));
+            assert_eq!(states.recv_timeout(WAIT), Ok(Update::State(TrayState::Off)));
             tx.send(Command::SetEnabled(true)).unwrap();
-            assert_eq!(states.recv_timeout(WAIT), Ok(TrayState::NotConnected));
+            assert_eq!(
+                states.recv_timeout(WAIT),
+                Ok(Update::State(TrayState::NotConnected))
+            );
+            assert!(shutdown(&tx, WAIT));
+        });
+    }
+
+    #[test]
+    fn battery_reports_reach_the_tray() {
+        let mut dev = FakeTransport::new();
+        for (sub, payload) in [(0u8, 0x1234u64), (2, 0), (4, 300)] {
+            let mut r = vec![0x06, sub];
+            r.extend_from_slice(&payload.to_le_bytes());
+            dev.push_feature(r);
+        }
+        dev.push_input([0x07, 1, 64]);
+        let mut dev = Some(dev);
+        let open = move || dev.take().ok_or(HidError::Disconnected);
+        let manager = ConnectionManager::new(open, SystemClock, (|c: u64| !c) as fn(u64) -> u64);
+        let (tx, rx) = mpsc::channel();
+        let (update_tx, updates) = mpsc::channel();
+        let mut injector = MockInjector::new();
+        thread::scope(|s| {
+            let injector = &mut injector;
+            s.spawn(move || {
+                let mut launcher = MockLauncher::new();
+                run(
+                    manager,
+                    Engine::new(&Config::default()),
+                    &SystemClock,
+                    injector,
+                    &mut launcher,
+                    rx,
+                    move |u| update_tx.send(u).unwrap(),
+                );
+            });
+            assert_eq!(updates.recv_timeout(WAIT), Ok(Update::State(TrayState::On)));
+            assert_eq!(
+                updates.recv_timeout(WAIT),
+                Ok(Update::Battery(Battery {
+                    level: 64,
+                    charging: true
+                }))
+            );
             assert!(shutdown(&tx, WAIT));
         });
     }
