@@ -1,6 +1,0 @@
-# LF everywhere: on Windows checkouts the scripts' "#!/usr/bin/env node" lines otherwise get CRLF,
-# which vitest fails to parse (SyntaxError: Invalid or unexpected token on windows-2025).
-* text=auto eol=lf
-*.png binary
-*.ico binary
-*.icns binary
