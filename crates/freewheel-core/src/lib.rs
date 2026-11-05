@@ -2,6 +2,7 @@
 
 pub mod auth;
 pub mod config;
+pub mod connection;
 pub mod hid;
 
 /// The application name shown by the tray and the settings window.
