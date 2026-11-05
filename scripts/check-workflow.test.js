@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import { checkWorkflow } from "./check-workflow.mjs";
 
-const ci = readFileSync(new URL("./fixtures/proposed-ci.yml", import.meta.url), "utf8");
+const ci = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
 const clean = "on:\n  pull_request:\npermissions:\n  contents: read\njobs: {}\n";
 
 test("ci.yml passes the workflow lint", () => {
@@ -34,6 +34,29 @@ test("ci.yml matrix is exactly the hosted Windows and macOS runners", () => {
   expect(ci.match(/runs-on:/g)).toHaveLength(1);
   expect(ci).not.toMatch(/ubuntu|self-hosted/);
   expect(ci).toMatch(/^\s+workflow_call:/m);
+});
+
+test("ci.yml triggers on push, pull_request and workflow_call", () => {
+  const on = ci.match(/^on:\n((?:[ \t]+.*\n|\n)*)/m)[1];
+  const triggers = on.match(/^  [a-z_]+(?=:)/gm).map((t) => t.trim());
+  expect(triggers).toEqual(["push", "pull_request", "workflow_call"]);
+});
+
+test("ci.yml runs each leg's steps in order", () => {
+  const runs = [...ci.matchAll(/^\s+- run: (.+)$/gm)].map((m) => m[1]);
+  expect(runs).toEqual([
+    "npm ci",
+    "npm test",
+    "npm run build",
+    "cargo fmt --all -- --check",
+    "cargo clippy --workspace --all-targets -- -D warnings",
+    "cargo test --workspace",
+  ]);
+});
+
+test("no ci.yml step overrides the rust-toolchain.toml version", () => {
+  expect(ci).not.toMatch(/RUSTUP_TOOLCHAIN|rustup (default|override)|toolchain:|cargo \+|rustup toolchain install \S/);
+  expect(ci).toMatch(/^\s+rustup toolchain install$/m);
 });
 
 test("ci.yml uses the pinned toolchain and runs every check", () => {
