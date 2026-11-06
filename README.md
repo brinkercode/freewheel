@@ -66,6 +66,8 @@ the draft unpublished. Tick the items in a copy of this list for each release.
 - [ ] Settings window toolbar: the tabs Keys, Wheel, DaVinci Resolve, General and Help & backup; the status reads Connected (USB) over a cable and Connected (Bluetooth · N%) over Bluetooth. The On/Off switch and the notice bar's Turn on really switch freewheel (the keys stop and start working, the tray toggle and icon follow) and a short "freewheel is Off." / "freewheel is On." toast shows bottom-centre.
 - [ ] Keys tab: pressing a key on the Speed Editor shows "You pressed X" for 2 s and selects that key in the drawing; recording Ctrl+Shift+K as its Hotkey and saving makes that key send Ctrl+Shift+K. Held keeps the shortcut down while the key is held; Latched keeps it down until the next press.
 - [ ] Action editor (Keys tab): select a key, pick Open an app (path, one argument per line, the allow toggle), Go to a page, Set the wheel mode or Turn the wheel into a dial, and Save; the key does it at once and after a restart. An empty app path or a missing page shows an error under the field and saves nothing.
+- [ ] Wheel tab: for Jog, Shuttle and Scroll set Turn left / Turn right (Scroll, a shortcut or an app) and Ticks per step or Sensitivity, and the dial steps (%); Save, and the wheel does it at once. A step of 0 shows an error under the field and saves nothing.
+- [ ] DaVinci Resolve tab: the program name shows Resolve.exe on Windows and Resolve on macOS as the default; Reset restores it, and freewheel steps aside when a program of the saved name starts.
 - [ ] Resolve pause: with DaVinci Resolve open the status reads Paused (Resolve) and the notice bar says Paused for DaVinci Resolve (never Off or Turn on); quitting Resolve brings back Connected.
 
 ### Windows 11

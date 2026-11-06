@@ -9,6 +9,8 @@ import FirstRun from "./FirstRun.jsx";
 import Permissions, { PermissionsScreen } from "./Permissions.jsx";
 import Status from "./Status.jsx";
 import KeysTab from "./KeysTab.jsx";
+import ResolveTab from "./ResolveTab.jsx";
+import WheelTab from "./WheelTab.jsx";
 import { NoticeBar, Toast, Toolbar } from "./SettingsWindow.jsx";
 import { getStatus, onFixPermissions, onStatus, setEnabled } from "./settingsApi.js";
 import { TABS, finishFirstRun, firstRunDone, fromStatusEvent, showToast, switchOn } from "./shell.js";
@@ -73,6 +75,8 @@ function Settings({ autoUpdate, storage }) {
           <h1>freewheel settings</h1>
           <Status />
           {tab === "Keys" && <KeysTab />}
+          {tab === "Wheel" && <WheelTab />}
+          {tab === "DaVinci Resolve" && <ResolveTab />}
           <Permissions />
           {tab === "Help & backup" && <Backup onToast={(text) => showToast(setToast, text)} />}
         </main>
