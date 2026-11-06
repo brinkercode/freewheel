@@ -159,6 +159,26 @@ pub struct Settings {
     pub start_at_login: bool,
     pub resolve_process_name: String,
     pub low_battery_threshold: u8,
+    #[serde(default)]
+    pub appearance: Appearance,
+    // New versions download by themselves; the user chooses when to restart.
+    #[serde(default = "yes")]
+    pub auto_update: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// The settings window's colour scheme.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub enum Appearance {
+    // Follows the computer's light or dark setting.
+    #[default]
+    System,
+    Light,
+    Dark,
 }
 
 impl Default for Settings {
@@ -173,6 +193,8 @@ impl Default for Settings {
             start_at_login: false,
             resolve_process_name: resolve.to_string(),
             low_battery_threshold: 15,
+            appearance: Appearance::System,
+            auto_update: true,
         }
     }
 }
@@ -656,6 +678,8 @@ mod tests {
             start_at_login: true,
             resolve_process_name: "R".into(),
             low_battery_threshold: 9,
+            appearance: Appearance::Dark,
+            auto_update: false,
         };
         roundtrip(&settings);
         let mut config = Config::default();
@@ -663,6 +687,27 @@ mod tests {
         config.jog = jog;
         config.settings = settings;
         roundtrip(&config);
+    }
+
+    #[test]
+    fn update_automatically_is_on_by_default_and_persists() {
+        assert!(Settings::default().auto_update);
+        assert_eq!(Settings::default().appearance, Appearance::System);
+        // A config saved before the General tab keeps updating by itself.
+        let old: Settings = serde_json::from_value(serde_json::json!({
+            "enabled": true, "resolve_process_name": "Resolve", "low_battery_threshold": 15
+        }))
+        .unwrap();
+        assert!(old.auto_update);
+        assert_eq!(old.appearance, Appearance::System);
+        let (_dir, mut s) = store();
+        let mut config = Config::default();
+        config.settings.auto_update = false;
+        config.settings.appearance = Appearance::Light;
+        s.save(&config).unwrap();
+        let loaded = s.load().unwrap().settings;
+        assert!(!loaded.auto_update);
+        assert_eq!(loaded.appearance, Appearance::Light);
     }
 
     #[test]
