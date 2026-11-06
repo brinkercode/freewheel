@@ -3,9 +3,8 @@ import { expect, test } from "vitest";
 import { checkImports, dependents } from "./check-windows-exe.mjs";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
-// Workflow changes ship as proposals for the owner to copy into .github/workflows.
-const ci = read("./fixtures/proposed-ci.yml");
-const release = read("./fixtures/proposed-release.yml");
+const ci = read("../.github/workflows/ci.yml");
+const release = read("../.github/workflows/release.yml");
 const CHECK = "node scripts/check-windows-exe.mjs";
 
 const dumpbin = `Dump of file target\\release\\freewheel.exe
@@ -62,6 +61,15 @@ test("ci.yml builds freewheel.exe on Windows, then runs the import check and smo
   expect(build).toBeGreaterThan(ci.indexOf("run: cargo test --workspace --locked"));
   expect(check).toBeGreaterThan(build);
   expect(ci.slice(build - 60, check)).toContain("if: runner.os == 'Windows'");
+});
+
+test("ci.yml skips the zero-install build on pull requests, and the required job names stay", () => {
+  const gated = "if: runner.os == 'Windows' && github.event_name != 'pull_request'";
+  expect(ci.split(gated)).toHaveLength(3);
+  expect(ci).toContain(`${gated}\n        run: cargo build --release --locked -p freewheel`);
+  expect(ci).toContain(`${gated}\n        run: ${CHECK} target/release/freewheel.exe`);
+  expect(ci).toMatch(/^ {2}lint:\n {4}name: lint \(ubuntu-latest\)$/m);
+  expect(ci).toMatch(/^ {2}test:\n {4}name: test \(\$\{\{ matrix\.os \}\}\)$/m);
 });
 
 test("release.yml checks the built exe, installs NSIS with /S and smokes the installed exe", () => {
