@@ -9,6 +9,7 @@ use std::sync::mpsc::Sender;
 
 use freewheel_core::config::{Config, ConfigStore, SaveError, parse_for_save};
 use freewheel_core::permissions::Permissions;
+use freewheel_core::simulator::Bus;
 use freewheel_core::status::StatusEvent;
 
 use crate::device::{Command, Update};
@@ -19,18 +20,50 @@ pub struct Settings {
     config: Mutex<Config>,
     status: Mutex<StatusEvent>,
     commands: Sender<Command>,
+    /// Tells the Resolve watcher a switch was by hand, as the tray does.
+    manual: Mutex<Sender<bool>>,
 }
 
 impl Settings {
     /// `store` is the one the running `config` was loaded from, so a bad
     /// file it rejected is still kept on the first save.
-    pub fn new(store: ConfigStore, config: Config, commands: Sender<Command>) -> Self {
+    pub fn new(
+        store: ConfigStore,
+        config: Config,
+        commands: Sender<Command>,
+        manual: Sender<bool>,
+    ) -> Self {
         Settings {
             status: Mutex::new(StatusEvent::new(config.base_layer.clone())),
             store: Mutex::new(store),
             config: Mutex::new(config),
             commands,
+            manual: Mutex::new(manual),
         }
+    }
+
+    /// The settings window's On/Off switch: switches the device loop, like
+    /// the tray toggle, and tells the Resolve watcher it was by hand. The
+    /// `status` event then shows the new state.
+    pub fn set_enabled(&self, on: bool) -> Result<(), String> {
+        tracing::info!(on, "settings window switched freewheel");
+        let _ = lock(&self.manual).send(on);
+        self.commands.send(Command::SetEnabled(on)).map_err(|_| {
+            tracing::error!(on, "device loop is gone; cannot switch freewheel");
+            "freewheel's device loop is not running".to_string()
+        })
+    }
+
+    /// Records how the device that is connecting is attached; the next
+    /// `Update::State` carries it in the `status` event.
+    pub fn set_bus(&self, bus: Option<Bus>) {
+        lock(&self.status).bus = bus;
+    }
+
+    /// Records whether freewheel stepped aside for Resolve; returns the new
+    /// status when it changed.
+    pub fn set_paused(&self, paused: bool) -> Option<StatusEvent> {
+        self.change(|status| status.paused = paused)
     }
 
     pub fn config(&self) -> Config {
@@ -108,6 +141,11 @@ pub fn get_status(settings: tauri::State<'_, Settings>) -> StatusEvent {
     settings.status()
 }
 
+#[tauri::command]
+pub fn set_enabled(settings: tauri::State<'_, Settings>, on: bool) -> Result<(), String> {
+    settings.set_enabled(on)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,10 +156,54 @@ mod tests {
     use std::sync::mpsc::{self, Receiver};
 
     fn settings() -> (tempfile::TempDir, Settings, Receiver<Command>) {
+        let (dir, settings, rx, _manual) = settings_with_manual();
+        (dir, settings, rx)
+    }
+
+    type WithManual = (
+        tempfile::TempDir,
+        Settings,
+        Receiver<Command>,
+        Receiver<bool>,
+    );
+
+    fn settings_with_manual() -> WithManual {
         let dir = tempfile::tempdir().unwrap();
         let (tx, rx) = mpsc::channel();
-        let settings = Settings::new(ConfigStore::new(dir.path()), Config::default(), tx);
-        (dir, settings, rx)
+        let (manual, manual_rx) = mpsc::channel();
+        let settings = Settings::new(ConfigStore::new(dir.path()), Config::default(), tx, manual);
+        (dir, settings, rx, manual_rx)
+    }
+
+    #[test]
+    fn the_switch_turns_the_device_loop_off_and_on_by_hand() {
+        let (_dir, settings, commands, manual) = settings_with_manual();
+        for on in [false, true] {
+            settings.set_enabled(on).unwrap();
+            assert!(matches!(commands.try_recv(), Ok(Command::SetEnabled(o)) if o == on));
+            assert_eq!(manual.try_recv(), Ok(on));
+        }
+        drop(commands);
+        assert!(settings.set_enabled(false).is_err());
+    }
+
+    #[test]
+    fn the_status_carries_the_bus_and_the_resolve_pause() {
+        let (_dir, settings, _commands) = settings();
+        settings.set_bus(Some(Bus::Bluetooth));
+        let status = settings
+            .apply(&Update::State(ConnectionStatus::Connected))
+            .unwrap();
+        assert_eq!(status.bus, Some(Bus::Bluetooth));
+        let paused = settings.set_paused(true).unwrap();
+        assert!(paused.paused);
+        assert_eq!(settings.set_paused(true), None);
+        let off = settings
+            .apply(&Update::State(ConnectionStatus::Off))
+            .unwrap();
+        assert_eq!(off.bus, None);
+        assert!(off.paused);
+        assert!(!settings.set_paused(false).unwrap().paused);
     }
 
     #[test]

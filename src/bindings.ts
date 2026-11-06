@@ -30,7 +30,16 @@ export type StatusEvent = { connection: ConnectionStatus, battery: Battery | nul
  * Permission name (`Accessibility`, `InputMonitoring`) to its grant;
  * empty outside macOS.
  */
-permissions: { [key in string]?: Grant }, };
+permissions: { [key in string]?: Grant }, 
+/**
+ * How the connected device is attached; `None` while not connected or
+ * when the OS does not say.
+ */
+bus: Bus | null, 
+/**
+ * freewheel stepped aside (switched Off) because DaVinci Resolve is open.
+ */
+paused: boolean, };
 
 export type ConnectionStatus = "Absent" | "Connected" | "Off" | "AuthFailed";
 
@@ -41,3 +50,5 @@ export type OverrideErrorStatus = { mode: OverrideMode, error: string, };
 export type Grant = "Granted" | "Missing";
 
 export type KeyPressed = { key: string, label: string, };
+
+export type Bus = "Usb" | "Bluetooth";

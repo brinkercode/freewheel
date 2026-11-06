@@ -4,7 +4,8 @@
 use std::time::Duration;
 
 use freewheel_core::hid::{HidError, HidTransport};
-use hidapi::{HidApi, HidDevice};
+use freewheel_core::simulator::Bus;
+use hidapi::{BusType, HidApi, HidDevice};
 
 /// Blackmagic Design vendor id.
 pub const VID: u16 = 0x1edb;
@@ -15,15 +16,30 @@ pub const PID: u16 = 0xda0e;
 /// A Speed Editor opened through hidapi.
 pub struct HidapiTransport {
     device: Option<HidDevice>,
+    bus: Option<Bus>,
 }
 
 impl HidapiTransport {
     /// Opens the first Speed Editor hidapi can see, over USB or Bluetooth.
     pub fn open(api: &HidApi) -> Result<Self, HidError> {
         let device = api.open(VID, PID).map_err(map_error)?;
+        let bus = match device.get_device_info() {
+            Ok(info) => bus(info.bus_type()),
+            Err(e) => {
+                tracing::warn!(error = %e, "cannot read the Speed Editor's bus");
+                None
+            }
+        };
+        tracing::info!(vid = VID, pid = PID, ?bus, "opened the Speed Editor");
         Ok(Self {
             device: Some(device),
+            bus,
         })
+    }
+
+    /// How the opened device is attached, when hidapi says.
+    pub fn bus(&self) -> Option<Bus> {
+        self.bus
     }
 
     fn device(&self) -> Result<&HidDevice, HidError> {
@@ -81,6 +97,15 @@ fn map_error(err: hidapi::HidError) -> HidError {
     }
 }
 
+/// The status bus for hidapi's bus type; other buses are not a Speed Editor's.
+fn bus(bus: BusType) -> Option<Bus> {
+    match bus {
+        BusType::Usb => Some(Bus::Usb),
+        BusType::Bluetooth => Some(Bus::Bluetooth),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,6 +119,13 @@ mod tests {
     #[test]
     fn opens_the_speed_editor_usb_and_bluetooth_ids() {
         assert_eq!((VID, PID), (0x1edb, 0xda0e));
+    }
+
+    #[test]
+    fn usb_and_bluetooth_buses_name_the_status_bus() {
+        assert_eq!(bus(BusType::Usb), Some(Bus::Usb));
+        assert_eq!(bus(BusType::Bluetooth), Some(Bus::Bluetooth));
+        assert_eq!(bus(BusType::Unknown), None);
     }
 
     #[test]

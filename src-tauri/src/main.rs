@@ -77,7 +77,7 @@ fn spawn_device(
     toggle: tauri::menu::CheckMenuItem<tauri::Wry>,
     commands: mpsc::Receiver<device::Command>,
 ) {
-    use freewheel_core::connection::ConnectionManager;
+    use freewheel_core::connection::{ConnectionManager, ConnectionStatus};
     use freewheel_core::engine::Engine;
 
     std::thread::spawn(move || {
@@ -86,7 +86,17 @@ fn spawn_device(
             (Err(e), _) => return tracing::error!(error = %e, "no key injection"),
             (_, Err(e)) => return tracing::error!(error = %e, "no HID access"),
         };
-        let open = move || hidapi_transport::HidapiTransport::open(&api);
+        // The bus of the device opened last, for the `status` event.
+        let bus = Arc::new(std::sync::Mutex::new(None));
+        let open = {
+            let bus = Arc::clone(&bus);
+            move || {
+                let device = hidapi_transport::HidapiTransport::open(&api)?;
+                *bus.lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = device.bus();
+                Ok(device)
+            }
+        };
         let manager = ConnectionManager::new(open, SystemClock, auth_response as fn(u64) -> u64);
         device::run(
             manager,
@@ -101,7 +111,14 @@ fn spawn_device(
                     if let device::Update::KeyPressed(key) = &update {
                         let _ = app.emit(KEY_PRESSED_EVENT, key);
                     }
-                    if let Some(status) = app.state::<settings::Settings>().apply(&update) {
+                    let settings = app.state::<settings::Settings>();
+                    if update == device::Update::State(ConnectionStatus::Connected) {
+                        settings.set_bus(
+                            *bus.lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner),
+                        );
+                    }
+                    if let Some(status) = settings.apply(&update) {
                         let _ = app.emit(STATUS_EVENT, status);
                     }
                     view.apply(&tray, &toggle, update)
@@ -143,15 +160,22 @@ fn spawn_resolve_watch(
 ) {
     let watcher = ResolveWatcher::from_settings(&config.settings);
     std::thread::spawn(move || {
-        let notify = |text: &str| {
-            let shown = app
-                .notification()
-                .builder()
-                .title(freewheel_core::APP_NAME)
-                .body(text)
-                .show();
-            if let Err(e) = shown {
-                tracing::warn!(error = %e, "replug notification failed");
+        let pause = |pause: resolve_watch::Pause<'_>| {
+            if let resolve_watch::Pause::Started(text) = pause {
+                let shown = app
+                    .notification()
+                    .builder()
+                    .title(freewheel_core::APP_NAME)
+                    .body(text)
+                    .show();
+                if let Err(e) = shown {
+                    tracing::warn!(error = %e, "replug notification failed");
+                }
+            }
+            let paused = pause != resolve_watch::Pause::Ended;
+            if let Some(status) = app.state::<settings::Settings>().set_paused(paused) {
+                tracing::info!(paused, "Resolve hand-off");
+                let _ = app.emit(STATUS_EVENT, status);
             }
         };
         resolve_watch::run(
@@ -161,7 +185,7 @@ fn spawn_resolve_watch(
             POLL_INTERVAL,
             manual,
             commands,
-            notify,
+            pause,
         );
     });
 }
@@ -197,6 +221,7 @@ fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::
             settings::get_config,
             settings::save_config,
             settings::get_status,
+            settings::set_enabled,
             permissions::get_permissions,
             permissions::open_permission_pane
         ])
@@ -254,6 +279,7 @@ fn main() {
             settings::get_config,
             settings::save_config,
             settings::get_status,
+            settings::set_enabled,
             permissions::get_permissions,
             permissions::open_permission_pane
         ])
@@ -267,12 +293,13 @@ fn main() {
             if let Some(e) = error {
                 tracing::warn!(error = %e, "config not loaded, running with defaults");
             }
+            let (manual, manual_rx) = mpsc::channel();
             app.manage(settings::Settings::new(
                 store,
                 config.clone(),
                 commands.clone(),
+                manual.clone(),
             ));
-            let (manual, manual_rx) = mpsc::channel();
             spawn_resolve_watch(app.handle().clone(), &config, manual_rx, commands.clone());
             let (tray, toggle, status) = tray::build(app.handle(), commands, manual)?;
             spawn_device(app.handle().clone(), config, tray, toggle, receiver);
