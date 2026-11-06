@@ -12,6 +12,7 @@ use crate::connection::ConnectionStatus;
 use crate::overrides::OverrideError;
 use crate::permissions::{Grant, Permissions};
 use crate::report::Key;
+use crate::simulator::Bus;
 
 /// The event name of [`StatusEvent`].
 pub const STATUS_EVENT: &str = "status";
@@ -46,6 +47,11 @@ pub struct StatusEvent {
     /// Permission name (`Accessibility`, `InputMonitoring`) to its grant;
     /// empty outside macOS.
     pub permissions: BTreeMap<String, Grant>,
+    /// How the connected device is attached; `None` while not connected or
+    /// when the OS does not say.
+    pub bus: Option<Bus>,
+    /// freewheel stepped aside (switched Off) because DaVinci Resolve is open.
+    pub paused: bool,
 }
 
 impl StatusEvent {
@@ -57,13 +63,16 @@ impl StatusEvent {
             layer: layer.into(),
             override_errors: Vec::new(),
             permissions: BTreeMap::new(),
+            bus: None,
+            paused: false,
         }
     }
 
-    /// Sets the connection; a new connection reports its battery afresh.
+    /// Sets the connection; a new connection reports its battery and bus afresh.
     pub fn set_connection(&mut self, connection: ConnectionStatus) {
         if connection != ConnectionStatus::Connected {
             self.battery = None;
+            self.bus = None;
         }
         self.connection = connection;
     }
@@ -167,6 +176,8 @@ mod tests {
             error: ControlError("DELL U2720Q: no DDC reply".into()),
         }]);
         status.set_permissions(&check_all(|p| p == Permission::Accessibility));
+        status.bus = Some(Bus::Bluetooth);
+        status.paused = true;
         assert_eq!(
             serde_json::to_value(&status).unwrap(),
             serde_json::json!({
@@ -176,7 +187,9 @@ mod tests {
                 "override_errors": [
                     {"mode": "Brightness", "error": "DELL U2720Q: no DDC reply"}
                 ],
-                "permissions": {"Accessibility": "Granted", "InputMonitoring": "Missing"}
+                "permissions": {"Accessibility": "Granted", "InputMonitoring": "Missing"},
+                "bus": "Bluetooth",
+                "paused": true
             })
         );
     }
@@ -189,8 +202,10 @@ mod tests {
             level: 10,
             charging: false,
         });
+        status.bus = Some(Bus::Usb);
         status.set_connection(ConnectionStatus::Absent);
         assert_eq!(status.battery, None);
+        assert_eq!(status.bus, None);
         assert_eq!(status.connection, ConnectionStatus::Absent);
     }
 

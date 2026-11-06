@@ -18,6 +18,12 @@ export const saveConfig = (config) => invoke("save_config", { config });
 /** @returns {Promise<import("./bindings").StatusEvent>} */
 export const getStatus = () => invoke("get_status");
 
+/**
+ * Switches freewheel On or Off in the running app, as the tray toggle does;
+ * the next StatusEvent shows it. Rejects with a string when it cannot.
+ */
+export const setEnabled = (on) => invoke("set_enabled", { on });
+
 /** Calls `onChange` with every StatusEvent; resolves to the unlisten function. */
 export const onStatus = (onChange) =>
   tauri().event.listen(STATUS_EVENT, (event) => onChange(event.payload));

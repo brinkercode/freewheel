@@ -46,8 +46,9 @@ pub fn simulator_store(real: &ConfigStore) -> ConfigStore {
     ConfigStore::new(real.dir().join(SIMULATOR_DIR))
 }
 
-/// How the simulated Speed Editor is attached.
+/// How the Speed Editor (real or simulated) is attached.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum Bus {
     Usb,
     Bluetooth,
