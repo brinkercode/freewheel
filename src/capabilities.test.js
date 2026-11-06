@@ -29,6 +29,7 @@ test("the settings window may call exactly the commands its UI invokes", () => {
     "get_status",
     "open_permission_pane",
     "save_config",
+    "set_enabled",
   ]);
   const granted = new Set([...allowed("default.json"), ...allowed("settings.json")]);
   expect(sorted(granted)).toEqual(sorted(settings));

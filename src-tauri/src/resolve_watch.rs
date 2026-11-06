@@ -11,8 +11,17 @@ use freewheel_core::resolve::{HandOff, ProcessLister, ResolveWatcher};
 
 use crate::device::Command;
 
+/// What the hand-off tells the app about stepping aside for Resolve.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pause<'a> {
+    /// Stepped aside for Resolve: show this replug notification.
+    Started(&'a str),
+    /// No longer stepped aside: Resolve quit or the user switched by hand.
+    Ended,
+}
+
 /// Runs until the manual-toggle sender or the device loop is gone.
-/// `enabled` is whether freewheel starts On.
+/// `enabled` is whether freewheel starts On; `pause` hears each [`Pause`].
 pub fn run(
     mut watcher: ResolveWatcher,
     lister: &mut impl ProcessLister,
@@ -20,7 +29,7 @@ pub fn run(
     interval: Duration,
     manual: Receiver<bool>,
     commands: Sender<Command>,
-    mut notify: impl FnMut(&str),
+    mut pause: impl FnMut(Pause<'_>),
 ) {
     let mut next_poll = Instant::now();
     loop {
@@ -28,15 +37,19 @@ pub fn run(
             Ok(on) => {
                 enabled = on;
                 watcher.manual_switch();
+                pause(Pause::Ended);
             }
             Err(RecvTimeoutError::Timeout) => {
                 next_poll = Instant::now() + interval;
                 let on = match watcher.poll(lister, enabled) {
                     Some(HandOff::SwitchOff { notification }) => {
-                        notify(notification);
+                        pause(Pause::Started(notification));
                         false
                     }
-                    Some(HandOff::SwitchOn) => true,
+                    Some(HandOff::SwitchOn) => {
+                        pause(Pause::Ended);
+                        true
+                    }
                     None => continue,
                 };
                 enabled = on;
@@ -93,14 +106,24 @@ mod tests {
                 TICK,
                 manual_rx,
                 cmd_tx,
-                |text| note_tx.send(text.to_owned()).unwrap(),
+                |pause: Pause<'_>| {
+                    let note = match pause {
+                        Pause::Started(text) => Some(text.to_owned()),
+                        Pause::Ended => None,
+                    };
+                    note_tx.send(note).unwrap()
+                },
             )
         });
         *resolve.0.lock().unwrap() = true;
         assert!(!enabled(commands.recv_timeout(WAIT).unwrap()));
-        assert_eq!(notes.recv_timeout(WAIT).unwrap(), REPLUG_NOTIFICATION);
+        assert_eq!(
+            notes.recv_timeout(WAIT).unwrap().as_deref(),
+            Some(REPLUG_NOTIFICATION)
+        );
         *resolve.0.lock().unwrap() = false;
         assert!(enabled(commands.recv_timeout(WAIT).unwrap()));
+        assert_eq!(notes.recv_timeout(WAIT).unwrap(), None, "pause not ended");
         drop(manual);
         handle.join().unwrap();
     }
@@ -110,6 +133,7 @@ mod tests {
         let resolve = SharedLister::default();
         let (manual, manual_rx) = mpsc::channel();
         let (cmd_tx, commands) = mpsc::channel();
+        let (pause_tx, pauses) = mpsc::channel();
         let mut lister = resolve.clone();
         let handle = thread::spawn(move || {
             run(
@@ -119,7 +143,7 @@ mod tests {
                 TICK,
                 manual_rx,
                 cmd_tx,
-                |_| {},
+                |pause: Pause<'_>| pause_tx.send(matches!(pause, Pause::Started(_))).unwrap(),
             )
         });
         *resolve.0.lock().unwrap() = true;
@@ -133,6 +157,8 @@ mod tests {
         drop(manual);
         handle.join().unwrap();
         assert!(commands.try_recv().is_err(), "manual Off was overridden");
+        // Paused for Resolve, then no longer once switched by hand.
+        assert_eq!(pauses.try_iter().collect::<Vec<_>>(), [true, false, false]);
     }
 
     #[test]

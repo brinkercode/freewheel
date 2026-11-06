@@ -11,7 +11,17 @@
   },
   "app": {
     "withGlobalTauri": true,
-    "windows": [{ "title": "freewheel settings", "width": 800, "height": 600 }]
+    "windows": [
+      {
+        "title": "freewheel settings",
+        "width": 1000,
+        "height": 640,
+        "minWidth": 820,
+        "minHeight": 520,
+        "resizable": true,
+        "decorations": true
+      }
+    ]
   },
   "bundle": {
     "active": true,
