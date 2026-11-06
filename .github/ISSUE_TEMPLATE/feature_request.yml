@@ -1,0 +1,35 @@
+name: Feature request
+description: Suggest something new freewheel could do.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: What are you trying to do?
+      description: Tell us about the task or the problem, not the solution yet.
+      placeholder: When I edit videos, I want to...
+    validations:
+      required: true
+  - type: textarea
+    id: wish
+    attributes:
+      label: What would you like freewheel to do?
+      description: Describe how you would like it to work.
+    validations:
+      required: true
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else?
+      description: Pictures, examples or anything else that helps explain the idea.
+    validations:
+      required: false
+  - type: dropdown
+    id: os
+    attributes:
+      label: Which computer do you use?
+      options:
+        - Windows
+        - macOS
+    validations:
+      required: false
