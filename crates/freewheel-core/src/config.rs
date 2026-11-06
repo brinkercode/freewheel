@@ -21,6 +21,10 @@ pub const CONFIG_FILE: &str = "config.json";
 pub const TEMP_FILE: &str = "config.json.tmp";
 /// The prefix of a preserved bad file: `config.json.bad-<timestamp>`.
 pub const BAD_PREFIX: &str = "config.json.bad-";
+/// The prefix of the copy an import keeps: `config.json.backup-<timestamp>`.
+pub const BACKUP_PREFIX: &str = "config.json.backup-";
+/// The file name export suggests: the mappings without the app settings.
+pub const MAPPINGS_FILE: &str = "freewheel-mappings.json";
 
 /// A layer identifier.
 pub type LayerId = String;
@@ -306,18 +310,108 @@ impl ConfigStore {
         Ok(())
     }
 
+    /// Copies `config.json` to `config.json.backup-<timestamp>`; `None` when
+    /// there is no file yet (the app runs on defaults).
+    pub fn backup(&self) -> Result<Option<PathBuf>, ConfigError> {
+        let path = self.path();
+        if !path.exists() {
+            return Ok(None);
+        }
+        let backup = self.stamped_path(BACKUP_PREFIX);
+        fs::copy(&path, &backup)?;
+        Ok(Some(backup))
+    }
+
     fn bad_path(&self) -> PathBuf {
+        self.stamped_path(BAD_PREFIX)
+    }
+
+    fn stamped_path(&self, prefix: &str) -> PathBuf {
         let secs = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        let mut candidate = self.dir.join(format!("{BAD_PREFIX}{secs}"));
+        let mut candidate = self.dir.join(format!("{prefix}{secs}"));
         let mut n = 1;
         while candidate.exists() {
-            candidate = self.dir.join(format!("{BAD_PREFIX}{secs}-{n}"));
+            candidate = self.dir.join(format!("{prefix}{secs}-{n}"));
             n += 1;
         }
         candidate
+    }
+}
+
+/// `freewheel-mappings.json`: the versioned layers, jog and override
+/// bindings, without the app settings.
+#[derive(Serialize)]
+struct MappingsExport<'a> {
+    version: u32,
+    layers: &'a [Layer],
+    base_layer: &'a LayerId,
+    jog: &'a JogSettings,
+    overrides: &'a OverrideSettings,
+}
+
+impl Config {
+    /// The `freewheel-mappings.json` bytes for this config.
+    pub fn export_mappings(&self) -> Vec<u8> {
+        let export = MappingsExport {
+            version: CONFIG_VERSION,
+            layers: &self.layers,
+            base_layer: &self.base_layer,
+            jog: &self.jog,
+            overrides: &self.overrides,
+        };
+        serde_json::to_vec_pretty(&export).expect("a config always serializes")
+    }
+
+    /// This config with its mappings replaced by a `freewheel-mappings.json`,
+    /// validated as `save_config` does (T8). The file is untrusted (T1): every
+    /// imported LaunchApp is disabled unless `allow_launch` is set.
+    pub fn import_mappings(&self, bytes: &[u8], allow_launch: bool) -> Result<Config, SaveError> {
+        let malformed = |message: String| SaveError::Malformed { message };
+        let mut value: serde_json::Value =
+            serde_json::from_slice(bytes).map_err(|e| malformed(e.to_string()))?;
+        let object = value
+            .as_object_mut()
+            .ok_or_else(|| malformed("not a JSON object".into()))?;
+        if let Some(found) = object.get("version").and_then(serde_json::Value::as_u64)
+            && found > u64::from(CONFIG_VERSION)
+        {
+            return Err(SaveError::VersionMismatch {
+                found,
+                expected: CONFIG_VERSION,
+            });
+        }
+        if object.contains_key("settings") {
+            return Err(SaveError::UnknownField {
+                path: "settings".into(),
+            });
+        }
+        let settings =
+            serde_json::to_value(&self.settings).map_err(|e| malformed(e.to_string()))?;
+        object.insert("settings".into(), settings);
+        let mut config = parse_for_save(&value)?;
+        if !allow_launch {
+            config.disable_launch_apps();
+        }
+        Ok(config)
+    }
+
+    /// Turns off every LaunchApp, on keys and on the jog wheel.
+    fn disable_launch_apps(&mut self) {
+        let keys = self.layers.iter_mut().flat_map(|l| l.bindings.values_mut());
+        let jog = self
+            .jog
+            .per_mode
+            .values_mut()
+            .flat_map(|b| [b.left.as_mut(), b.right.as_mut()])
+            .flatten();
+        for action in keys.chain(jog) {
+            if let Action::LaunchApp { enabled, .. } = action {
+                *enabled = false;
+            }
+        }
     }
 }
 
@@ -762,6 +856,165 @@ mod tests {
             parse_for_save(&value),
             Err(SaveError::Malformed { .. })
         ));
+    }
+
+    fn with_launch_apps() -> Config {
+        let launch = Action::LaunchApp {
+            path: "/bin/app".into(),
+            args: vec!["-x".into()],
+            enabled: true,
+        };
+        let mut config = parse_for_save(&valid_json()).unwrap();
+        config.layers[1]
+            .bindings
+            .insert("Snap".into(), launch.clone());
+        config.jog.per_mode.get_mut(&JogMode::Scroll).unwrap().right = Some(launch);
+        config.overrides.brightness_step = 9;
+        config.settings.low_battery_threshold = 20;
+        config
+    }
+
+    fn enabled_launch_apps(config: &Config) -> usize {
+        let keys = config.layers.iter().flat_map(|l| l.bindings.values());
+        let jog = config
+            .jog
+            .per_mode
+            .values()
+            .flat_map(|b| [b.left.as_ref(), b.right.as_ref()])
+            .flatten();
+        keys.chain(jog)
+            .filter(|a| matches!(a, Action::LaunchApp { enabled: true, .. }))
+            .count()
+    }
+
+    #[test]
+    fn export_writes_the_versioned_mappings_without_the_settings() {
+        let config = with_launch_apps();
+        let value: serde_json::Value = serde_json::from_slice(&config.export_mappings()).unwrap();
+        let keys: Vec<&str> = value
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(|k| k.as_str())
+            .collect();
+        assert_eq!(
+            keys,
+            ["base_layer", "jog", "layers", "overrides", "version"]
+        );
+        assert_eq!(value["version"], CONFIG_VERSION);
+        assert_eq!(value["overrides"]["brightness_step"], 9);
+        assert_eq!(
+            value["layers"][1]["bindings"]["Cut"]["Hotkey"]["combo"]["key"],
+            "X"
+        );
+    }
+
+    #[test]
+    fn export_then_import_gives_an_identical_config() {
+        let config = with_launch_apps();
+        let back = Config::default()
+            .import_mappings(&config.export_mappings(), true)
+            .unwrap();
+        // The app settings are not in the file: the importer keeps its own.
+        assert_eq!(back.settings, Config::default().settings);
+        assert_eq!(
+            Config {
+                settings: config.settings.clone(),
+                ..back
+            },
+            config
+        );
+        assert_eq!(
+            config
+                .import_mappings(&config.export_mappings(), true)
+                .unwrap(),
+            config
+        );
+    }
+
+    #[test]
+    fn imported_launch_apps_stay_disabled_without_the_opt_in() {
+        let config = with_launch_apps();
+        assert_eq!(enabled_launch_apps(&config), 2);
+        let imported = Config::default()
+            .import_mappings(&config.export_mappings(), false)
+            .unwrap();
+        assert_eq!(enabled_launch_apps(&imported), 0);
+        assert!(matches!(
+            &imported.layers[1].bindings["Snap"],
+            Action::LaunchApp { path, enabled: false, .. } if path == "/bin/app"
+        ));
+        let opted_in = Config::default()
+            .import_mappings(&config.export_mappings(), true)
+            .unwrap();
+        assert_eq!(enabled_launch_apps(&opted_in), 2);
+    }
+
+    #[test]
+    fn import_rejects_malformed_files() {
+        let current = Config::default();
+        for bytes in [&b"{not json"[..], b"[1, 2]", b"\"layers\"", b""] {
+            assert!(
+                matches!(
+                    current.import_mappings(bytes, false),
+                    Err(SaveError::Malformed { .. })
+                ),
+                "{}",
+                String::from_utf8_lossy(bytes)
+            );
+        }
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&with_launch_apps().export_mappings()).unwrap();
+        value["layers"] = "none".into();
+        let bytes = serde_json::to_vec(&value).unwrap();
+        assert!(matches!(
+            current.import_mappings(&bytes, false),
+            Err(SaveError::Malformed { .. })
+        ));
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&current.export_mappings()).unwrap();
+        value["settings"] = serde_json::to_value(Settings::default()).unwrap();
+        let bytes = serde_json::to_vec(&value).unwrap();
+        assert_eq!(
+            current.import_mappings(&bytes, false),
+            Err(SaveError::UnknownField {
+                path: "settings".into()
+            })
+        );
+        value.as_object_mut().unwrap().remove("settings");
+        value["base_layer"] = "gone".into();
+        let bytes = serde_json::to_vec(&value).unwrap();
+        assert!(matches!(
+            current.import_mappings(&bytes, false),
+            Err(SaveError::BadLayerReference { .. })
+        ));
+    }
+
+    #[test]
+    fn import_rejects_a_newer_version_before_reading_the_rest() {
+        let bytes = br#"{"version": 2, "layers": "from the future"}"#;
+        assert_eq!(
+            Config::default().import_mappings(bytes, false),
+            Err(SaveError::VersionMismatch {
+                found: 2,
+                expected: CONFIG_VERSION
+            })
+        );
+    }
+
+    #[test]
+    fn backup_copies_config_json_and_keeps_it() {
+        let (dir, mut s) = store();
+        assert!(s.backup().unwrap().is_none());
+        let config = with_launch_apps();
+        s.save(&config).unwrap();
+        let backup = s.backup().unwrap().unwrap();
+        let name = backup.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(name.starts_with(BACKUP_PREFIX), "{name}");
+        assert_eq!(fs::read(&backup).unwrap(), fs::read(s.path()).unwrap());
+        assert_eq!(entries(dir.path()), vec![CONFIG_FILE.to_string(), name]);
+        // A second backup in the same second gets its own name.
+        assert_ne!(s.backup().unwrap().unwrap(), backup);
     }
 
     #[test]
