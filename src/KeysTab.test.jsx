@@ -60,7 +60,7 @@ test("the list has one row per Speed Editor key with its action on the selected 
   expect(rows(base)).toBe(43);
   expect(base).toContain("<td>CUT</td><td>Ctrl+C</td>");
   expect(base).toContain("<td>CAM 1</td><td>Go to page Editing</td>");
-  expect(base).toContain("<td>STOP/PLAY</td><td>Does nothing</td>");
+  expect(base).toContain("<td>STOP/PLAY</td><td>Not set</td>");
   expect(renderToString(<ButtonList config={config} page="edit" />)).toContain("<td>CUT</td><td>Hold Space</td>");
 });
 

@@ -7,7 +7,7 @@ use freewheel_core::config::ConfigStore;
 use tauri::image::Image;
 use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tauri_plugin_autostart::ManagerExt;
 
 use freewheel_core::battery::{self, Battery, LowBatteryAlert};
@@ -21,6 +21,9 @@ const STATUS: &str = "status";
 const OPEN_SETTINGS: &str = "open-settings";
 const START_AT_LOGIN: &str = "start-at-login";
 const QUIT: &str = "quit";
+/// Sent when the status line is clicked: the settings window shows the
+/// permissions screen with Done (FIX_PERMISSIONS_EVENT in settingsApi.js).
+const FIX_PERMISSIONS_EVENT: &str = "fix-permissions";
 
 /// Applies a Start at login toggle: `os` enables or disables the OS login
 /// item first, then `start_at_login` is saved to the config.
@@ -256,7 +259,13 @@ pub fn build<R: Runtime>(
                 let _ = commands.send(Command::SetEnabled(on));
                 let _ = manual.send(on);
             }
-            STATUS | OPEN_SETTINGS => show_settings(app),
+            STATUS => {
+                show_settings(app);
+                if let Err(e) = app.emit(FIX_PERMISSIONS_EVENT, ()) {
+                    tracing::warn!(error = %e, "asking the settings window for the permission fix failed");
+                }
+            }
+            OPEN_SETTINGS => show_settings(app),
             START_AT_LOGIN => {
                 let on = login.is_checked().unwrap_or(false);
                 let store = ConfigStore::from_project_dirs();

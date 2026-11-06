@@ -9,6 +9,7 @@ const COMMANDS: &[&str] = &[
     "import_mappings",
     "get_permissions",
     "open_permission_pane",
+    "open_bluetooth_settings",
     "simulate",
 ];
 

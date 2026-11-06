@@ -5,23 +5,26 @@ import UpdateBanner from "./UpdateBanner.jsx";
 import { download, restart, startupCheck } from "./updater.js";
 import Simulator from "./Simulator.jsx";
 import Backup from "./Backup.jsx";
-import Permissions from "./Permissions.jsx";
+import FirstRun from "./FirstRun.jsx";
+import Permissions, { PermissionsScreen } from "./Permissions.jsx";
 import Status from "./Status.jsx";
 import KeysTab from "./KeysTab.jsx";
 import { NoticeBar, Toast, Toolbar } from "./SettingsWindow.jsx";
-import { getStatus, onStatus, setEnabled } from "./settingsApi.js";
-import { TABS, fromStatusEvent, showToast, switchOn } from "./shell.js";
+import { getStatus, onFixPermissions, onStatus, setEnabled } from "./settingsApi.js";
+import { TABS, finishFirstRun, firstRunDone, fromStatusEvent, showToast, switchOn } from "./shell.js";
 
-export default function App({ autoUpdate = true }) {
+export default function App({ autoUpdate = true, storage = globalThis.localStorage }) {
   // The Simulator window exists only in `freewheel --simulate` (main.rs).
   if (globalThis.location?.hash === "#simulator") return <Simulator />;
-  return <Settings autoUpdate={autoUpdate} />;
+  return <Settings autoUpdate={autoUpdate} storage={storage} />;
 }
 
-function Settings({ autoUpdate }) {
+function Settings({ autoUpdate, storage }) {
   const [update, setUpdate] = useState(null);
   const [tab, setTab] = useState(TABS[0]);
   const [status, setStatus] = useState(null);
+  const [firstRun, setFirstRun] = useState(() => !firstRunDone(storage));
+  const [fixing, setFixing] = useState(false);
   const pending = useRef(null);
   useEffect(() => {
     startupCheck({ check, autoUpdate, onState: setUpdate }).then((u) => (pending.current = u));
@@ -29,8 +32,8 @@ function Settings({ autoUpdate }) {
   useEffect(() => {
     if (!globalThis.window?.__TAURI__) return undefined;
     getStatus().then(setStatus, () => {});
-    const unlisten = onStatus(setStatus);
-    return () => unlisten.then((stop) => stop(), () => {});
+    const unlisten = [onStatus(setStatus), onFixPermissions(() => setFixing(true))];
+    return () => unlisten.forEach((u) => u.then((stop) => stop(), () => {}));
   }, []);
   const state = fromStatusEvent(status ?? { connection: "Absent" });
   const [toast, setToast] = useState(null);
@@ -39,6 +42,19 @@ function Settings({ autoUpdate }) {
     switchOn(setEnabled, on).then(
       (text) => showToast(setToast, text),
       (error) => console.error("freewheel: turning", on ? "on" : "off", "failed:", String(error)),
+    );
+  if (firstRun)
+    return (
+      <FirstRun
+        state={state}
+        permissions={status?.permissions}
+        onFinish={() => {
+          finishFirstRun(storage);
+          console.info("freewheel: first run finished");
+          setTab("Keys");
+          setFirstRun(false);
+        }}
+      />
     );
   return (
     <>
@@ -49,14 +65,18 @@ function Settings({ autoUpdate }) {
         onLater={() => setUpdate(null)}
         onRestart={() => restart(pending.current, relaunch, setUpdate)}
       />
-      {status && <NoticeBar state={state} onFix={() => document.getElementById("permissions")?.scrollIntoView()} onTurnOn={() => turn(true)} />}
-      <main>
-        <h1>freewheel settings</h1>
-        <Status />
-        {tab === "Keys" && <KeysTab />}
-        <Permissions />
-        {tab === "Help & backup" && <Backup onToast={(text) => showToast(setToast, text)} />}
-      </main>
+      {status && !fixing && <NoticeBar state={state} onFix={() => setFixing(true)} onTurnOn={() => turn(true)} />}
+      {fixing ? (
+        <PermissionsScreen button="Done" onDone={() => setFixing(false)} />
+      ) : (
+        <main>
+          <h1>freewheel settings</h1>
+          <Status />
+          {tab === "Keys" && <KeysTab />}
+          <Permissions />
+          {tab === "Help & backup" && <Backup onToast={(text) => showToast(setToast, text)} />}
+        </main>
+      )}
       <Toast text={toast} />
     </>
   );
