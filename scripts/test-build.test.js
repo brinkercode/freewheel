@@ -36,13 +36,13 @@ test("test-build job runs tauri build on hosted Windows with updater artifacts o
   for (const uses of wf.match(/uses: \S+/g)) expect(uses).toMatch(/@[0-9a-f]{40}$/);
 });
 
-test("test-build job uploads the NSIS setup and the portable freewheel.exe, kept 1 day", () => {
+test("test-build job uploads only the portable freewheel.exe, kept 1 day", () => {
   const upload = wf.match(/- uses: actions\/upload-artifact@[0-9a-f]{40}.*\r?\n((?:\s{8,}.*\r?\n)*)/);
   expect(upload).not.toBeNull();
   expect(upload[1]).toMatch(/^\s+retention-days: 1$/m);
   expect(upload[1]).toMatch(/^\s+if-no-files-found: error$/m);
-  expect(upload[1]).toContain("target/release/freewheel.exe");
-  expect(upload[1]).toContain("target/release/bundle/nsis/*-setup.exe");
+  expect(upload[1]).toMatch(/^\s+path: target\/release\/freewheel\.exe$/m);
+  expect(upload[1]).not.toMatch(/bundle|setup/);
 });
 
 // The zero-install gate release.yml runs on what ships, minus its Windows-only
@@ -74,5 +74,7 @@ test("README explains how to get and run an unsigned test build", () => {
   expect(section).toContain("](../../actions/workflows/test-build.yml)");
   expect(section).toMatch(/artifact/i);
   expect(section).toMatch(/unsigned/i);
+  expect(section).toContain("`freewheel.exe`");
+  expect(section).not.toMatch(/setup\.exe|NSIS installer/);
   expect(section).toMatch(/SmartScreen[\s\S]*\*\*More info\*\*[\s\S]*\*\*Run anyway\*\*/);
 });
