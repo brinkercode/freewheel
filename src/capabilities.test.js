@@ -25,10 +25,12 @@ test("the settings window may call exactly the commands its UI invokes", () => {
   const settings = invoked(uiSources.filter((f) => f !== "Simulator.jsx"));
   expect(sorted(settings)).toEqual([
     "app_version",
+    "export_mappings",
     "get_config",
     "get_permissions",
     "get_start_at_login",
     "get_status",
+    "import_mappings",
     "open_permission_pane",
     "save_config",
     "set_enabled",

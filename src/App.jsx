@@ -5,8 +5,10 @@ import UpdateBanner from "./UpdateBanner.jsx";
 import { checkNow, download, restart, startupCheck } from "./updater.js";
 import General, { applyAppearance, changeSetting, switchLogin } from "./General.jsx";
 import Simulator from "./Simulator.jsx";
+import Backup from "./Backup.jsx";
 import Permissions from "./Permissions.jsx";
 import Status from "./Status.jsx";
+import KeysTab from "./KeysTab.jsx";
 import { NoticeBar, Toast, Toolbar } from "./SettingsWindow.jsx";
 import {
   getConfig,
@@ -89,7 +91,9 @@ function Settings() {
         <main>
           <h1>freewheel settings</h1>
           <Status />
+          {tab === "Keys" && <KeysTab />}
           <Permissions />
+          {tab === "Help & backup" && <Backup onToast={(text) => showToast(setToast, text)} />}
         </main>
       )}
       <Toast text={toast} />

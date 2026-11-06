@@ -8,6 +8,8 @@ const COMMANDS: &[&str] = &[
     "get_start_at_login",
     "set_start_at_login",
     "app_version",
+    "export_mappings",
+    "import_mappings",
     "get_permissions",
     "open_permission_pane",
     "simulate",

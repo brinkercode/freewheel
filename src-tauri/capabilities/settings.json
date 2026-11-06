@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "settings",
-  "description": "The settings window reads and saves the config, switches freewheel On and Off and start at login, reads the app version, hears the status and key-pressed events and shows the macOS permissions.",
+  "description": "The settings window reads and saves the config, exports and imports the mappings, switches freewheel On and Off and start at login, reads the app version, hears the status and key-pressed events and shows the macOS permissions.",
   "windows": ["main"],
   "permissions": [
     "core:event:default",
@@ -12,6 +12,8 @@
     "allow-get-start-at-login",
     "allow-set-start-at-login",
     "allow-app-version",
+    "allow-export-mappings",
+    "allow-import-mappings",
     "allow-get-permissions",
     "allow-open-permission-pane"
   ]
