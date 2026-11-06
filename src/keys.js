@@ -76,7 +76,7 @@ const pageName = (config, id) => config.layers.find((l) => l.id === id)?.name ??
 
 /** What a key does, in plain words, for the button list and the drawing. */
 export function describeAction(action, config) {
-  if (!action) return "Does nothing";
+  if (!action) return "Not set";
   const [kind, v] = Object.entries(action)[0];
   switch (kind) {
     case "Hotkey":

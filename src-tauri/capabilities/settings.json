@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "settings",
-  "description": "The settings window reads and saves the config, exports and imports the mappings, switches freewheel On and Off, hears the status and key-pressed events and shows the macOS permissions.",
+  "description": "The settings window reads and saves the config, exports and imports the mappings, switches freewheel On and Off, hears the status and key-pressed events, shows the macOS permissions and opens the Bluetooth settings.",
   "windows": ["main"],
   "permissions": [
     "core:event:default",
@@ -12,6 +12,7 @@
     "allow-export-mappings",
     "allow-import-mappings",
     "allow-get-permissions",
-    "allow-open-permission-pane"
+    "allow-open-permission-pane",
+    "allow-open-bluetooth-settings"
   ]
 }
