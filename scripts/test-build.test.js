@@ -36,13 +36,34 @@ test("test-build job runs tauri build on hosted Windows with updater artifacts o
   for (const uses of wf.match(/uses: \S+/g)) expect(uses).toMatch(/@[0-9a-f]{40}$/);
 });
 
-test("test-build job uploads the NSIS setup and the portable freewheel.exe, kept 1 day", () => {
+test("test-build job uploads only the portable freewheel.exe, kept 1 day", () => {
   const upload = wf.match(/- uses: actions\/upload-artifact@[0-9a-f]{40}.*\r?\n((?:\s{8,}.*\r?\n)*)/);
   expect(upload).not.toBeNull();
   expect(upload[1]).toMatch(/^\s+retention-days: 1$/m);
   expect(upload[1]).toMatch(/^\s+if-no-files-found: error$/m);
-  expect(upload[1]).toContain("target/release/freewheel.exe");
-  expect(upload[1]).toContain("target/release/bundle/nsis/*-setup.exe");
+  expect(upload[1]).toMatch(/^\s+path: target\/release\/freewheel\.exe$/m);
+  expect(upload[1]).not.toMatch(/bundle|setup/);
+});
+
+// The zero-install gate release.yml runs on what ships, minus its Windows-only
+// `if:` (test-build runs only on Windows): the same script, arguments,
+// installer flag and installed-exe smoke.
+const releaseGate = read("../.github/workflows/release.yml")
+  .match(/ {6}- name: Import check and smoke \(built exe\)\r?\n(?: {8,}.*\r?\n)*(?: {6}- name: Install silently.*\r?\n(?: {8,}.*\r?\n)*)/)[0]
+  .replace(/^ {8}if: runner\.os == 'Windows'\r?\n/gm, "");
+
+test("test-build runs release.yml's zero-install gate after the build and before the upload", () => {
+  expect(releaseGate).toContain("run: node scripts/check-windows-exe.mjs target/release/freewheel.exe");
+  expect(releaseGate).toContain("-ArgumentList '/S' -Wait -PassThru");
+  expect(releaseGate).toContain('node scripts/check-windows-exe.mjs "$env:LOCALAPPDATA\\freewheel\\freewheel.exe"');
+  const gate = wf.indexOf(releaseGate);
+  expect(gate).toBeGreaterThan(wf.indexOf("run: npx tauri build"));
+  expect(gate).toBeLessThan(wf.indexOf("uses: actions/upload-artifact"));
+  expect(wf.indexOf("uses: actions/upload-artifact")).toBe(wf.lastIndexOf("uses: actions/upload-artifact"));
+});
+
+test("a failed check fails the job, so nothing is uploaded", () => {
+  expect(wf).not.toMatch(/continue-on-error|always\(\)|^\s+if:/m);
 });
 
 test("README explains how to get and run an unsigned test build", () => {
@@ -53,5 +74,7 @@ test("README explains how to get and run an unsigned test build", () => {
   expect(section).toContain("](../../actions/workflows/test-build.yml)");
   expect(section).toMatch(/artifact/i);
   expect(section).toMatch(/unsigned/i);
+  expect(section).toContain("`freewheel.exe`");
+  expect(section).not.toMatch(/setup\.exe|NSIS installer/);
   expect(section).toMatch(/SmartScreen[\s\S]*\*\*More info\*\*[\s\S]*\*\*Run anyway\*\*/);
 });
