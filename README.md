@@ -23,6 +23,15 @@ layer page so you can see pages and lit keys change.
   focused app.
 - Window titles contain "Simulator" so you can tell it from the real app.
 
+## Back up and share your keys
+
+In the settings window, **Help & backup** → **Back up…** saves your keys,
+wheel and dial settings to `freewheel-mappings.json`. **Restore from a
+backup…** checks the file, asks "Replace your keys?" and keeps a copy of your
+current `config.json` (`config.json.backup-<timestamp>`) before it replaces
+them. Keys in the file that open apps stay off unless you tick **Let restored
+keys open apps**: leave it off for a file someone sent you.
+
 ## Test builds
 
 Every push to main (or a manual **Run workflow**) runs the `test-build`

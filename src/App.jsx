@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import UpdateBanner from "./UpdateBanner.jsx";
 import { download, restart, startupCheck } from "./updater.js";
 import Simulator from "./Simulator.jsx";
+import Backup from "./Backup.jsx";
 import Permissions from "./Permissions.jsx";
 import Status from "./Status.jsx";
 import { NoticeBar, Toast, Toolbar } from "./SettingsWindow.jsx";
@@ -52,6 +53,7 @@ function Settings({ autoUpdate }) {
         <h1>freewheel settings</h1>
         <Status />
         <Permissions />
+        {tab === "Help & backup" && <Backup onToast={(text) => showToast(setToast, text)} />}
       </main>
       <Toast text={toast} />
     </>
