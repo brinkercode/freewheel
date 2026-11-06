@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import ActionEditor from "./ActionEditor.jsx";
 import {
   COMBO_KINDS,
   DRAWING,
@@ -231,6 +232,7 @@ export default function KeysTab({ initial = null, initialSelected = null, initia
           }
         />
       )}
+      <ActionEditor key={`${page}-${selected}`} keyName={selected} page={page} initialConfig={config} save={save} onSaved={setConfig} />
     </section>
   );
 }
