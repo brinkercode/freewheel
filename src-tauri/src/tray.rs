@@ -36,14 +36,14 @@ pub fn set_start_at_login(
 }
 
 /// Whether the OS login item is registered now (false when unknown).
-fn autostart_enabled<R: Runtime>(app: &AppHandle<R>) -> bool {
+pub(crate) fn autostart_enabled<R: Runtime>(app: &AppHandle<R>) -> bool {
     app.autolaunch().is_enabled().unwrap_or_else(|e| {
         tracing::warn!(error = %e, "cannot read the start-at-login state");
         false
     })
 }
 
-fn set_autostart<R: Runtime>(app: &AppHandle<R>, on: bool) -> Result<(), String> {
+pub(crate) fn set_autostart<R: Runtime>(app: &AppHandle<R>, on: bool) -> Result<(), String> {
     let autolaunch = app.autolaunch();
     let result = if on {
         autolaunch.enable()

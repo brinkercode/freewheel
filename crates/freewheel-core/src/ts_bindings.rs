@@ -9,8 +9,8 @@ use ts_rs::TS;
 
 use crate::battery::Battery;
 use crate::config::{
-    Action, Config, JogBinding, JogMode, JogSettings, KeyCombo, Layer, Modifier, OverrideMode,
-    OverrideSettings, SaveError, Settings,
+    Action, Appearance, Config, JogBinding, JogMode, JogSettings, KeyCombo, Layer, Modifier,
+    OverrideMode, OverrideSettings, SaveError, Settings,
 };
 use crate::connection::ConnectionStatus;
 use crate::permissions::Grant;
@@ -24,6 +24,7 @@ fn generated() -> String {
     let decls = [
         Config::decl(),
         Settings::decl(),
+        Appearance::decl(),
         Layer::decl(),
         Action::decl(),
         KeyCombo::decl(),

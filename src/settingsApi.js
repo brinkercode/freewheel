@@ -24,6 +24,15 @@ export const getStatus = () => invoke("get_status");
  */
 export const setEnabled = (on) => invoke("set_enabled", { on });
 
+/** @returns {Promise<boolean>} whether the OS login item is registered now. */
+export const getStartAtLogin = () => invoke("get_start_at_login");
+
+/** Sets the OS login item and the config; resolves to what the OS has now. */
+export const setStartAtLogin = (on) => invoke("set_start_at_login", { on });
+
+/** @returns {Promise<string>} the app's version. */
+export const getVersion = () => invoke("app_version");
+
 /** Calls `onChange` with every StatusEvent; resolves to the unlisten function. */
 export const onStatus = (onChange) =>
   tauri().event.listen(STATUS_EVENT, (event) => onChange(event.payload));

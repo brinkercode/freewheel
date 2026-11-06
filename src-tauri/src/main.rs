@@ -222,6 +222,9 @@ fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::
             settings::save_config,
             settings::get_status,
             settings::set_enabled,
+            settings::get_start_at_login,
+            settings::set_start_at_login,
+            settings::app_version,
             permissions::get_permissions,
             permissions::open_permission_pane
         ])
@@ -280,6 +283,9 @@ fn main() {
             settings::save_config,
             settings::get_status,
             settings::set_enabled,
+            settings::get_start_at_login,
+            settings::set_start_at_login,
+            settings::app_version,
             permissions::get_permissions,
             permissions::open_permission_pane
         ])

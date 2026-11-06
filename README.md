@@ -45,6 +45,7 @@ the draft unpublished. Tick the items in a copy of this list for each release.
 
 - [ ] Settings window: it opens at 1000×640 with the system's own title bar, resizes down to 820×520 and no smaller, and closing it hides it while freewheel keeps running in the tray (Open settings... brings it back).
 - [ ] Settings window toolbar: the tabs Keys, Wheel, DaVinci Resolve, General and Help & backup; the status reads Connected (USB) over a cable and Connected (Bluetooth · N%) over Bluetooth. The On/Off switch and the notice bar's Turn on really switch freewheel (the keys stop and start working, the tray toggle and icon follow) and a short "freewheel is Off." / "freewheel is On." toast shows bottom-centre.
+- [ ] General tab: picking Match my computer, Light or Dark changes the window at once and is kept after a restart; "Start freewheel when I log in" matches the OS login item and switching it adds or removes the item (the tray's Start at login follows after a restart); the version reads "freewheel <version>"; Check for updates shows Checking for updates…, then You're up to date. or the download and Restart to update; Update automatically is on on a fresh install and, switched off, a newer version is offered instead of downloaded.
 - [ ] Resolve pause: with DaVinci Resolve open the status reads Paused (Resolve) and the notice bar says Paused for DaVinci Resolve (never Off or Turn on); quitting Resolve brings back Connected.
 
 ### Windows 11

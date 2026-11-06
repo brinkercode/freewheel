@@ -1,6 +1,7 @@
 /** The update banner for each updater state; renders nothing without an update. */
 export default function UpdateBanner({ update, onInstall, onLater, onRestart }) {
-  if (!update) return null;
+  // Checking and up to date show only on the General tab.
+  if (!update || update.status === "checking" || update.status === "current") return null;
   const { status, version, progress } = update;
   return (
     <div role="status" className="update-banner">

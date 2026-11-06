@@ -60,6 +60,20 @@ impl Settings {
         lock(&self.status).bus = bus;
     }
 
+    /// The General tab's Start at login switch: `os` sets the OS login item
+    /// first, then `start_at_login` is saved in the running config, so a
+    /// later save from the window keeps it.
+    pub fn set_start_at_login(
+        &self,
+        os: impl FnOnce(bool) -> Result<(), String>,
+        on: bool,
+    ) -> Result<(), String> {
+        os(on)?;
+        let mut config = lock(&self.config);
+        config.settings.start_at_login = on;
+        lock(&self.store).save(&config).map_err(|e| e.to_string())
+    }
+
     /// Records whether freewheel stepped aside for Resolve; returns the new
     /// status when it changed.
     pub fn set_paused(&self, paused: bool) -> Option<StatusEvent> {
@@ -146,6 +160,32 @@ pub fn set_enabled(settings: tauri::State<'_, Settings>, on: bool) -> Result<(),
     settings.set_enabled(on)
 }
 
+/// Whether the OS login item is registered now.
+#[tauri::command]
+pub fn get_start_at_login(app: tauri::AppHandle) -> bool {
+    crate::tray::autostart_enabled(&app)
+}
+
+/// Sets the OS login item and the config; resolves to what the OS has now.
+#[tauri::command]
+pub fn set_start_at_login(
+    app: tauri::AppHandle,
+    settings: tauri::State<'_, Settings>,
+    on: bool,
+) -> Result<bool, String> {
+    tracing::info!(on, "settings window switched start at login");
+    settings
+        .set_start_at_login(|on| crate::tray::set_autostart(&app, on), on)
+        .inspect_err(|e| tracing::error!(error = %e, on, "cannot change start at login"))?;
+    Ok(crate::tray::autostart_enabled(&app))
+}
+
+/// The app's version, for 'freewheel <version>' on the General tab.
+#[tauri::command]
+pub fn app_version(app: tauri::AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,6 +213,33 @@ mod tests {
         let (manual, manual_rx) = mpsc::channel();
         let settings = Settings::new(ConfigStore::new(dir.path()), Config::default(), tx, manual);
         (dir, settings, rx, manual_rx)
+    }
+
+    #[test]
+    fn start_at_login_sets_the_os_item_then_the_running_config() {
+        let (_dir, settings, _commands) = settings();
+        let mut asked = None;
+        settings
+            .set_start_at_login(
+                |on| {
+                    asked = Some(on);
+                    Ok(())
+                },
+                true,
+            )
+            .unwrap();
+        assert_eq!(asked, Some(true));
+        assert!(settings.config().settings.start_at_login);
+        assert!(
+            lock(&settings.store)
+                .load()
+                .unwrap()
+                .settings
+                .start_at_login
+        );
+        let err = settings.set_start_at_login(|_| Err("denied".into()), false);
+        assert_eq!(err, Err("denied".to_string()));
+        assert!(settings.config().settings.start_at_login);
     }
 
     #[test]

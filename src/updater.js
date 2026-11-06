@@ -16,6 +16,19 @@ export async function startupCheck({ check, autoUpdate = true, onState, log = co
   return update;
 }
 
+/** 'Check for updates': checking, then up to date (`current`) or as startupCheck; a failed check goes back to idle (null). */
+export async function checkNow({ check, autoUpdate = true, onState, log = console.error }) {
+  onState({ status: "checking" });
+  let failed = false;
+  const logFailure = (...args) => {
+    failed = true;
+    log(...args);
+  };
+  const update = await startupCheck({ check, autoUpdate, onState, log: logFailure });
+  if (!update) onState(failed ? null : { status: "current" });
+  return update;
+}
+
 /** Downloads the update, reporting progress (0-100, or null when the size is unknown), then marks it ready. */
 export async function download(update, onState, log = console.error) {
   let total = 0;
