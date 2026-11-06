@@ -109,6 +109,17 @@ jobs:
 
       - run: cargo test --workspace --locked
 
+      # Zero-install gate: the exe imports only Windows system DLLs (static
+      # CRT) and `--simulate --smoke` loads the main window and exits 0.
+      # custom-protocol serves the built UI, as `tauri build` does. Skipped on
+      # pull requests to keep per-PR CI fast; runs on main, dispatch and tags.
+      - name: Build freewheel.exe
+        if: runner.os == 'Windows' && github.event_name != 'pull_request'
+        run: cargo build --release --locked -p freewheel --features tauri/custom-protocol
+      - name: Import check and smoke (built exe)
+        if: runner.os == 'Windows' && github.event_name != 'pull_request'
+        run: node scripts/check-windows-exe.mjs target/release/freewheel.exe
+
       # P5: build freewheel.app (no updater artifacts, no signing secrets),
       # register it so tccutil knows com.brinkercode.freewheel, then run the
       # ignored-by-default test that resets its Accessibility and Input
