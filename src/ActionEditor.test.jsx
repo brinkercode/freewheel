@@ -1,6 +1,7 @@
 import { renderToString } from "react-dom/server";
 import { expect, test, vi } from "vitest";
 import App from "./App.jsx";
+import KeysTab from "./KeysTab.jsx";
 import ActionEditor, { ActionForm, blank, saveAction, validate } from "./ActionEditor.jsx";
 
 const config = (bindings = {}) => ({
@@ -128,6 +129,16 @@ test("no rendered text says 'layer'; layers are pages", () => {
   expect(text(renderToString(<App autoUpdate={false} />))).not.toMatch(/layer/i);
 });
 
-test("the Keys tab says to pick a key until one is pressed", () => {
-  expect(renderToString(<App autoUpdate={false} />)).toContain("Pick a key");
+test("the Keys tab says to pick a key until one is selected", () => {
+  expect(renderToString(<KeysTab initial={config()} />)).toContain("Pick a key");
+});
+
+test("the Keys tab edits the selected key on the selected page", () => {
+  const c = config();
+  c.layers[1].bindings = { Cam1: { SetJogMode: { mode: "Shuttle" } } };
+  c.base_layer = "edit";
+  const html = renderToString(<KeysTab initial={c} initialSelected="Cam1" />);
+  expect(html).toContain("When I press Cam1…");
+  expect(html).toMatch(/value="Shuttle" selected=""/);
+  expect(text(html)).not.toMatch(/layer/i);
 });

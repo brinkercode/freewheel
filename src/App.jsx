@@ -4,9 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import UpdateBanner from "./UpdateBanner.jsx";
 import { download, restart, startupCheck } from "./updater.js";
 import Simulator from "./Simulator.jsx";
-import ActionEditor from "./ActionEditor.jsx";
+import Backup from "./Backup.jsx";
 import Permissions from "./Permissions.jsx";
 import Status from "./Status.jsx";
+import KeysTab from "./KeysTab.jsx";
 import { NoticeBar, Toast, Toolbar } from "./SettingsWindow.jsx";
 import { getStatus, onStatus, setEnabled } from "./settingsApi.js";
 import { TABS, fromStatusEvent, showToast, switchOn } from "./shell.js";
@@ -21,7 +22,6 @@ function Settings({ autoUpdate }) {
   const [update, setUpdate] = useState(null);
   const [tab, setTab] = useState(TABS[0]);
   const [status, setStatus] = useState(null);
-  const [key, setKey] = useState(null);
   const pending = useRef(null);
   useEffect(() => {
     startupCheck({ check, autoUpdate, onState: setUpdate }).then((u) => (pending.current = u));
@@ -52,9 +52,10 @@ function Settings({ autoUpdate }) {
       {status && <NoticeBar state={state} onFix={() => document.getElementById("permissions")?.scrollIntoView()} onTurnOn={() => turn(true)} />}
       <main>
         <h1>freewheel settings</h1>
-        <Status onPress={setKey} />
-        {tab === "Keys" && <ActionEditor keyName={key} />}
+        <Status />
+        {tab === "Keys" && <KeysTab />}
         <Permissions />
+        {tab === "Help & backup" && <Backup onToast={(text) => showToast(setToast, text)} />}
       </main>
       <Toast text={toast} />
     </>

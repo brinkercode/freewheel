@@ -222,6 +222,8 @@ fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::
             settings::save_config,
             settings::get_status,
             settings::set_enabled,
+            settings::export_mappings,
+            settings::import_mappings,
             permissions::get_permissions,
             permissions::open_permission_pane
         ])
@@ -264,6 +266,7 @@ fn main() {
             tray::show_settings(app)
         }))
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -280,6 +283,8 @@ fn main() {
             settings::save_config,
             settings::get_status,
             settings::set_enabled,
+            settings::export_mappings,
+            settings::import_mappings,
             permissions::get_permissions,
             permissions::open_permission_pane
         ])

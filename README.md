@@ -23,12 +23,22 @@ layer page so you can see pages and lit keys change.
   focused app.
 - Window titles contain "Simulator" so you can tell it from the real app.
 
+## Back up and share your keys
+
+In the settings window, **Help & backup** → **Back up…** saves your keys,
+wheel and dial settings to `freewheel-mappings.json`. **Restore from a
+backup…** checks the file, asks "Replace your keys?" and keeps a copy of your
+current `config.json` (`config.json.backup-<timestamp>`) before it replaces
+them. Keys in the file that open apps stay off unless you tick **Let restored
+keys open apps**: leave it off for a file someone sent you.
+
 ## Test builds
 
 Every push to main (or a manual **Run workflow**) runs the `test-build`
-workflow. To get a Windows build, open that workflow's run on the repository's
-**Actions** tab and download the `freewheel-windows-…` artifact from the
-run's artifacts. It holds the NSIS installer (`freewheel_…_x64-setup.exe`) and
+workflow. To get a Windows build, open the latest run of
+[test-build on the **Actions** tab](../../actions/workflows/test-build.yml)
+and download the `freewheel-windows-…` artifact from the run's
+**Artifacts** section at the bottom of its summary page. It holds the NSIS installer (`freewheel_…_x64-setup.exe`) and
 the portable `freewheel.exe`, and is kept for 1 day.
 
 The build is unsigned, so Windows SmartScreen warns when you start it: click
@@ -45,7 +55,8 @@ the draft unpublished. Tick the items in a copy of this list for each release.
 
 - [ ] Settings window: it opens at 1000×640 with the system's own title bar, resizes down to 820×520 and no smaller, and closing it hides it while freewheel keeps running in the tray (Open settings... brings it back).
 - [ ] Settings window toolbar: the tabs Keys, Wheel, DaVinci Resolve, General and Help & backup; the status reads Connected (USB) over a cable and Connected (Bluetooth · N%) over Bluetooth. The On/Off switch and the notice bar's Turn on really switch freewheel (the keys stop and start working, the tray toggle and icon follow) and a short "freewheel is Off." / "freewheel is On." toast shows bottom-centre.
-- [ ] Action editor (Keys tab): press a key, pick Open an app (path, one argument per line, the allow toggle), Go to a page, Set the wheel mode or Turn the wheel into a dial, and Save; the key does it at once and after a restart. An empty app path or a missing page shows an error under the field and saves nothing.
+- [ ] Keys tab: pressing a key on the Speed Editor shows "You pressed X" for 2 s and selects that key in the drawing; recording Ctrl+Shift+K as its Hotkey and saving makes that key send Ctrl+Shift+K. Held keeps the shortcut down while the key is held; Latched keeps it down until the next press.
+- [ ] Action editor (Keys tab): select a key, pick Open an app (path, one argument per line, the allow toggle), Go to a page, Set the wheel mode or Turn the wheel into a dial, and Save; the key does it at once and after a restart. An empty app path or a missing page shows an error under the field and saves nothing.
 - [ ] Resolve pause: with DaVinci Resolve open the status reads Paused (Resolve) and the notice bar says Paused for DaVinci Resolve (never Off or Turn on); quitting Resolve brings back Connected.
 
 ### Windows 11

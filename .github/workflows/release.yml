@@ -50,9 +50,7 @@ jobs:
 
       - run: npm ci
 
-      # Pin to the commit of the tauri-action v0 release tag; verify the SHA
-      # on github.com/tauri-apps/tauri-action before enabling this workflow.
-      - uses: tauri-apps/tauri-action@0000000000000000000000000000000000000000 # v0
+      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -71,6 +69,20 @@ jobs:
           prerelease: false
           uploadUpdaterJson: true
           args: ${{ matrix.args }}
+
+      # Zero-install gate on what ships: the built exe, then the exe the
+      # NSIS installer puts in the per-user install dir.
+      - name: Import check and smoke (built exe)
+        if: runner.os == 'Windows'
+        run: node scripts/check-windows-exe.mjs target/release/freewheel.exe
+      - name: Install silently and smoke the installed exe
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          $install = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "installer exit $($install.ExitCode)" }
+          node scripts/check-windows-exe.mjs "$env:LOCALAPPDATA\freewheel\freewheel.exe"
 
   # Checks the draft's latest.json lists every platform the updater serves.
   # Draft releases are hidden from read-only tokens, hence contents: write.

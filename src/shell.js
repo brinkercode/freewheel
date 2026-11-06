@@ -68,8 +68,8 @@ export async function switchOn(setEnabled, on) {
   return on ? "freewheel is On." : "freewheel is Off.";
 }
 
-/** Shows a confirmation toast, then clears it after TOAST_MS. Never for errors that need action. */
-export function showToast(setToast, text, timers = globalThis) {
+/** Shows a confirmation toast, then clears it after `ms`. Never for errors that need action. */
+export function showToast(setToast, text, timers = globalThis, ms = TOAST_MS) {
   setToast(text);
-  return timers.setTimeout(() => setToast(null), TOAST_MS);
+  return timers.setTimeout(() => setToast(null), ms);
 }

@@ -4,10 +4,13 @@
 //! `save_config` validates before it writes or applies anything (T8), then
 //! hands the config to the running device loop: no restart.
 
+use std::path::Path;
 use std::sync::Mutex;
 use std::sync::mpsc::Sender;
 
-use freewheel_core::config::{Config, ConfigStore, SaveError, parse_for_save};
+use freewheel_core::config::{
+    Config, ConfigError, ConfigStore, MAPPINGS_FILE, SaveError, parse_for_save,
+};
 use freewheel_core::permissions::Permissions;
 use freewheel_core::simulator::Bus;
 use freewheel_core::status::StatusEvent;
@@ -77,7 +80,51 @@ impl Settings {
     /// Validates `value`, writes it to `config.json` and applies it to the
     /// running engine. An invalid config changes nothing.
     pub fn save(&self, value: &serde_json::Value) -> Result<(), SaveError> {
-        let config = parse_for_save(value)?;
+        self.replace(parse_for_save(value)?)
+    }
+
+    /// Writes the running config's mappings to `path` (freewheel-mappings.json).
+    pub fn export_to(&self, path: &Path) -> Result<(), SaveError> {
+        std::fs::write(path, self.config().export_mappings()).map_err(|e| {
+            tracing::error!(error = %e, "exporting the mappings failed");
+            SaveError::SaveFailed {
+                message: e.to_string(),
+            }
+        })?;
+        tracing::info!("mappings exported");
+        Ok(())
+    }
+
+    /// Validates a mappings file, asks `confirm`, backs up `config.json`,
+    /// then replaces the mappings. `Ok(false)` when the user kept their keys.
+    /// LaunchApp bindings stay disabled unless `allow_launch` (T1).
+    pub fn import(
+        &self,
+        bytes: &[u8],
+        allow_launch: bool,
+        confirm: impl FnOnce() -> bool,
+    ) -> Result<bool, SaveError> {
+        let config = self
+            .config()
+            .import_mappings(bytes, allow_launch)
+            .inspect_err(|e| tracing::warn!(error = %e, "mappings file rejected"))?;
+        if !confirm() {
+            tracing::info!("mappings import cancelled");
+            return Ok(false);
+        }
+        let failed = |e: ConfigError| {
+            tracing::error!(error = %e, "backing up config.json failed; import stopped");
+            SaveError::SaveFailed {
+                message: format!("backing up config.json failed: {e}"),
+            }
+        };
+        lock(&self.store).backup().map_err(failed)?;
+        self.replace(config)?;
+        tracing::info!(allow_launch, "mappings imported");
+        Ok(true)
+    }
+
+    fn replace(&self, config: Config) -> Result<(), SaveError> {
         lock(&self.store)
             .save(&config)
             .map_err(|e| SaveError::SaveFailed {
@@ -136,6 +183,67 @@ pub fn save_config(
     settings.save(&config)
 }
 
+/// Asks for a file in a save dialog and exports the mappings to it; `false`
+/// when the user cancelled. Async so the blocking dialog is off the main thread.
+#[tauri::command]
+pub async fn export_mappings(
+    app: tauri::AppHandle,
+    settings: tauri::State<'_, Settings>,
+) -> Result<bool, SaveError> {
+    use tauri_plugin_dialog::DialogExt;
+    let picked = app
+        .dialog()
+        .file()
+        .set_file_name(MAPPINGS_FILE)
+        .add_filter("freewheel mappings", &["json"])
+        .blocking_save_file();
+    match picked.map(|p| p.into_path()) {
+        None => Ok(false),
+        Some(Ok(path)) => settings.export_to(&path).map(|()| true),
+        Some(Err(e)) => Err(SaveError::SaveFailed {
+            message: e.to_string(),
+        }),
+    }
+}
+
+/// Asks for a mappings file, validates it, confirms "Replace your keys?",
+/// backs up config.json and replaces the mappings; `false` when the user
+/// cancelled or kept their keys.
+#[tauri::command]
+pub async fn import_mappings(
+    app: tauri::AppHandle,
+    settings: tauri::State<'_, Settings>,
+    allow_launch: bool,
+) -> Result<bool, SaveError> {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+    let Some(picked) = app
+        .dialog()
+        .file()
+        .add_filter("freewheel mappings", &["json"])
+        .blocking_pick_file()
+    else {
+        return Ok(false);
+    };
+    let unreadable = |e: String| {
+        tracing::warn!(error = %e, "mappings file cannot be read");
+        SaveError::Malformed {
+            message: format!("the file cannot be read: {e}"),
+        }
+    };
+    let path = picked.into_path().map_err(|e| unreadable(e.to_string()))?;
+    let bytes = std::fs::read(path).map_err(|e| unreadable(e.to_string()))?;
+    settings.import(&bytes, allow_launch, || {
+        app.dialog()
+            .message("Your keys, wheel and dial settings are replaced by the ones in this file. A copy of your current settings is kept first.")
+            .title("Replace your keys?")
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Replace my keys".into(),
+                "Keep my keys".into(),
+            ))
+            .blocking_show()
+    })
+}
+
 #[tauri::command]
 pub fn get_status(settings: tauri::State<'_, Settings>) -> StatusEvent {
     settings.status()
@@ -150,7 +258,7 @@ pub fn set_enabled(settings: tauri::State<'_, Settings>, on: bool) -> Result<(),
 mod tests {
     use super::*;
     use freewheel_core::battery::Battery;
-    use freewheel_core::config::{Action, CONFIG_FILE};
+    use freewheel_core::config::{Action, BACKUP_PREFIX, CONFIG_FILE};
     use freewheel_core::connection::ConnectionStatus;
     use freewheel_core::permissions::{Grant, check_all};
     use std::sync::mpsc::{self, Receiver};
@@ -254,6 +362,95 @@ mod tests {
         assert_eq!(settings.config(), Config::default());
         assert!(commands.try_recv().is_err());
         assert!(!dir.path().join(CONFIG_FILE).exists());
+    }
+
+    fn mappings() -> Config {
+        let mut config = Config::default();
+        config.layers[0].bindings.insert(
+            "Snap".into(),
+            Action::LaunchApp {
+                path: "/bin/app".into(),
+                args: vec![],
+                enabled: true,
+            },
+        );
+        config
+    }
+
+    #[test]
+    fn export_writes_the_mappings_file() {
+        let (dir, settings, _commands) = settings();
+        let path = dir.path().join(MAPPINGS_FILE);
+        settings.export_to(&path).unwrap();
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            Config::default().export_mappings()
+        );
+        assert!(matches!(
+            settings.export_to(dir.path()),
+            Err(SaveError::SaveFailed { .. })
+        ));
+    }
+
+    #[test]
+    fn import_confirms_then_backs_up_then_replaces_and_applies() {
+        let (dir, settings, commands) = settings();
+        settings
+            .save(&serde_json::to_value(Config::default()).unwrap())
+            .unwrap();
+        let _ = commands.try_recv();
+        let before = std::fs::read(dir.path().join(CONFIG_FILE)).unwrap();
+        let bytes = mappings().export_mappings();
+
+        let mut asked = false;
+        assert_eq!(
+            settings.import(&bytes, true, || {
+                asked = true;
+                false
+            }),
+            Ok(false)
+        );
+        assert!(asked);
+        assert_eq!(settings.config(), Config::default());
+        assert!(commands.try_recv().is_err());
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+
+        assert_eq!(settings.import(&bytes, true, || true), Ok(true));
+        assert_eq!(settings.config(), mappings());
+        assert!(matches!(commands.try_recv(), Ok(Command::Reload(c)) if *c == mappings()));
+        let backup = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .find(|p| p.to_string_lossy().contains(BACKUP_PREFIX))
+            .expect("a backup of config.json");
+        assert_eq!(std::fs::read(backup).unwrap(), before);
+        assert_eq!(ConfigStore::new(dir.path()).load().unwrap(), mappings());
+    }
+
+    #[test]
+    fn import_rejects_a_bad_file_before_asking_and_changes_nothing() {
+        let (dir, settings, commands) = settings();
+        for bytes in [&b"{oops"[..], br#"{"version": 2}"#] {
+            let result = settings.import(bytes, true, || panic!("asked for a bad file"));
+            assert!(matches!(
+                result,
+                Err(SaveError::Malformed { .. } | SaveError::VersionMismatch { .. })
+            ));
+        }
+        assert_eq!(settings.config(), Config::default());
+        assert!(commands.try_recv().is_err());
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn import_without_the_opt_in_enables_no_launch_app() {
+        let (_dir, settings, _commands) = settings();
+        let bytes = mappings().export_mappings();
+        assert_eq!(settings.import(&bytes, false, || true), Ok(true));
+        assert!(matches!(
+            settings.config().layers[0].bindings["Snap"],
+            Action::LaunchApp { enabled: false, .. }
+        ));
     }
 
     #[test]

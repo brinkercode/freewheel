@@ -10,7 +10,7 @@ const status = {
   permissions: { Accessibility: "Granted" },
 };
 
-test("the status shows connection, battery, layer and override errors", () => {
+test("the status shows connection, battery, page and override errors", () => {
   const html = renderToString(<Status initial={status} />);
   for (const text of [
     "Speed Editor: Connected",
@@ -20,13 +20,6 @@ test("the status shows connection, battery, layer and override errors", () => {
   ]) {
     expect(html).toContain(text);
   }
-});
-
-test("a key press shows its printed label", () => {
-  const html = renderToString(
-    <Status initial={status} initialPress={{ key: "SmartInsrt", label: "SMART INSRT" }} />,
-  );
-  expect(html).toContain("You pressed SMART INSRT");
 });
 
 test("a lost connection reads Not connected without a battery", () => {

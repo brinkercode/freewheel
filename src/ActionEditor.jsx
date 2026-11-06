@@ -130,14 +130,16 @@ export function ActionForm({ action, config, layerId, errors = {}, onChange }) {
  * Edits what `keyName` does on the base page and saves it with save_config.
  * Invalid input and a rejected save show inline, never as a toast.
  */
-export default function ActionEditor({ keyName, initialConfig = null, load = getConfig, save = saveConfig }) {
+export default function ActionEditor({ keyName, page = null, initialConfig = null, load = getConfig, save = saveConfig, onSaved }) {
   const [config, setConfig] = useState(initialConfig);
-  const layerId = config?.base_layer;
+  const layerId = page ?? config?.base_layer;
   const bound = config?.layers.find((l) => l.id === layerId)?.bindings[keyName];
   const [action, setAction] = useState(null);
   const [errors, setErrors] = useState({});
   useEffect(() => {
-    if (!initialConfig) Promise.resolve().then(load).then(setConfig, (e) => console.error("freewheel: loading the config failed:", String(e)));
+    // The Keys tab owns the config: follow its renames, pages and key saves.
+    if (initialConfig) setConfig(initialConfig);
+    else Promise.resolve().then(load).then(setConfig, (e) => console.error("freewheel: loading the config failed:", String(e)));
   }, [initialConfig, load]);
   useEffect(() => {
     setAction(null);
@@ -149,7 +151,9 @@ export default function ActionEditor({ keyName, initialConfig = null, load = get
   const onSave = () =>
     saveAction({ config, layerId, key: keyName, action: current, save }).then((r) => {
       setErrors(r.errors);
-      if (r.config) setConfig(r.config);
+      if (!r.config) return;
+      setConfig(r.config);
+      onSaved?.(r.config);
     });
   return (
     <section id="action-editor">

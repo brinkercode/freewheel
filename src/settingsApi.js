@@ -24,6 +24,27 @@ export const getStatus = () => invoke("get_status");
  */
 export const setEnabled = (on) => invoke("set_enabled", { on });
 
+/**
+ * Asks for a file in a save dialog and writes freewheel-mappings.json to it.
+ * Resolves to false when the user cancelled; rejects with a SaveError.
+ */
+export const exportMappings = () => invoke("export_mappings");
+
+/**
+ * Asks for a mappings file, validates it, asks "Replace your keys?", backs up
+ * config.json and replaces the mappings. Imported keys that open apps stay off
+ * unless `allowLaunch`. Resolves to false when cancelled; rejects with a SaveError.
+ */
+export const importMappings = (allowLaunch) => invoke("import_mappings", { allowLaunch });
+
+/** What the UI says about a rejected import. */
+export function importErrorText(error) {
+  if (error?.kind === "VersionMismatch" && error.found > error.expected)
+    return "This file is from a newer version of freewheel. Update freewheel, then try again.";
+  if (error?.kind === "Malformed") return `This is not a freewheel mappings file: ${error.message}`;
+  return saveErrorText(error);
+}
+
 /** Calls `onChange` with every StatusEvent; resolves to the unlisten function. */
 export const onStatus = (onChange) =>
   tauri().event.listen(STATUS_EVENT, (event) => onChange(event.payload));
@@ -40,9 +61,9 @@ export function saveErrorText(error) {
     case "UnknownField":
       return `Unknown setting ${error.path}.`;
     case "UnknownKey":
-      return `Page ${error.layer} binds ${error.key}, which is not a Speed Editor key.`;
+      return `Page ${error.layer} uses ${error.key}, which is not a Speed Editor key.`;
     case "BadLayerReference":
-      return `A key goes to page ${error.target}, which does not exist.`;
+      return `${error.location} refers to page ${error.target}, which does not exist.`;
     case "Malformed":
       return `The config is not valid: ${error.message}`;
     case "SaveFailed":
