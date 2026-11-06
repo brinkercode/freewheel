@@ -1,6 +1,6 @@
-# CI for freewheel: a fast Linux lint job (fmt, workflow lint, npm test, UI
-# build, clippy), then npm test, the UI build, clippy and cargo test on hosted
-# Windows and macOS runners. Reusable via workflow_call (the release workflow
+# CI for freewheel: a fast Linux lint job that needs no system packages (fmt,
+# workflow lint, npm test, UI build), then npm test, the UI build, clippy and
+# cargo test on hosted Windows and macOS runners. Reusable via workflow_call (the release workflow
 # gates on it). Tests use fakes only; no secrets, no real input. the build pipeline's
 # .opal/checks.toml runs the same Linux checks in its sandbox before it pushes.
 name: ci
@@ -56,33 +56,6 @@ jobs:
       - run: npm test
       # The UI build runs before cargo: tauri::generate_context! needs dist/.
       - run: npm run build
-
-      # Tauri's Linux system libraries, for clippy over src-tauri.
-      # A hung mirror fails this step in minutes instead of the whole job at
-      # 15: apt retries each fetch, update is time-boxed, and the whole
-      # update-and-install sequence runs at most twice before the step fails.
-      - name: Install Tauri Linux dependencies
-        timeout-minutes: 5
-        shell: bash
-        run: |
-          install_deps() {
-            sudo timeout 60 apt-get -o Acquire::Retries=3 update &&
-              sudo timeout 150 apt-get -o Acquire::Retries=3 install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev
-          }
-          for attempt in 1 2; do
-            if install_deps; then
-              exit 0
-            fi
-            echo "::warning::apt update/install attempt ${attempt} failed or timed out"
-          done
-          echo "::error::apt update/install failed twice"
-          exit 1
-
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with:
-          workspaces: ". -> target"
-
-      - run: cargo clippy --workspace --all-targets -- -D warnings
 
   test:
     name: test (${{ matrix.os }})
