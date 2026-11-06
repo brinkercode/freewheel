@@ -18,6 +18,15 @@ export const saveConfig = (config) => invoke("save_config", { config });
 /** @returns {Promise<import("./bindings").StatusEvent>} */
 export const getStatus = () => invoke("get_status");
 
+// Opens the OS Bluetooth settings. Rejects with a string when it cannot.
+export const openBluetoothSettings = () => invoke("open_bluetooth_settings");
+
+// The tray's 'Needs permission (click to fix)' line asks for the permission fix.
+export const FIX_PERMISSIONS_EVENT = "fix-permissions";
+
+// Calls `onFix` when the tray asks for the permission fix; resolves to the unlisten function.
+export const onFixPermissions = (onFix) => tauri().event.listen(FIX_PERMISSIONS_EVENT, () => onFix());
+
 /**
  * Switches freewheel On or Off in the running app, as the tray toggle does;
  * the next StatusEvent shows it. Rejects with a string when it cannot.

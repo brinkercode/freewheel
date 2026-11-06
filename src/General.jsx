@@ -33,11 +33,13 @@ export function applyAppearance(appearance, root = globalThis.document?.document
 }
 
 /** Changes one setting: shows it at once, then saves the config; a failed save is logged. */
-export async function changeSetting({ config, key, value, setConfig, save, root, log = console.error }) {
-  const next = { ...config, settings: { ...config.settings, [key]: value } };
-  setConfig(next);
+export async function changeSetting({ config, key, value, setConfig, save, load, root, log = console.error }) {
   if (key === "appearance") applyAppearance(value, root);
   try {
+    // The running config, read fresh: mappings changed since this window loaded must not be saved over.
+    const current = load ? await load() : config;
+    const next = { ...current, settings: { ...current.settings, [key]: value } };
+    setConfig(next);
     await save(next);
   } catch (error) {
     log("freewheel: saving", key, "failed:", error);

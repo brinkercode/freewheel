@@ -6,7 +6,8 @@ import { checkNow, download, restart, startupCheck } from "./updater.js";
 import General, { applyAppearance, changeSetting, switchLogin } from "./General.jsx";
 import Simulator from "./Simulator.jsx";
 import Backup from "./Backup.jsx";
-import Permissions from "./Permissions.jsx";
+import FirstRun from "./FirstRun.jsx";
+import Permissions, { PermissionsScreen } from "./Permissions.jsx";
 import Status from "./Status.jsx";
 import KeysTab from "./KeysTab.jsx";
 import { NoticeBar, Toast, Toolbar } from "./SettingsWindow.jsx";
@@ -15,26 +16,29 @@ import {
   getStartAtLogin,
   getStatus,
   getVersion,
+  onFixPermissions,
   onStatus,
   saveConfig,
   setEnabled,
   setStartAtLogin,
 } from "./settingsApi.js";
-import { TABS, fromStatusEvent, showToast, switchOn } from "./shell.js";
+import { TABS, finishFirstRun, firstRunDone, fromStatusEvent, showToast, switchOn } from "./shell.js";
 
-export default function App() {
+export default function App({ autoUpdate = true, storage = globalThis.localStorage }) {
   // The Simulator window exists only in `freewheel --simulate` (main.rs).
   if (globalThis.location?.hash === "#simulator") return <Simulator />;
-  return <Settings />;
+  return <Settings autoUpdate={autoUpdate} storage={storage} />;
 }
 
-function Settings() {
+function Settings({ autoUpdate, storage }) {
   const [update, setUpdate] = useState(null);
   const [tab, setTab] = useState(TABS[0]);
   const [status, setStatus] = useState(null);
   const [config, setConfig] = useState(null);
   const [login, setLogin] = useState(null);
   const [version, setVersion] = useState(null);
+  const [firstRun, setFirstRun] = useState(() => !firstRunDone(storage));
+  const [fixing, setFixing] = useState(false);
   const pending = useRef(null);
   useEffect(() => {
     // 'Update automatically' comes from the config; on when it cannot be read.
@@ -42,18 +46,18 @@ function Settings() {
     loaded
       .then((c) => {
         setConfig(c);
-        if (c) applyAppearance(c.settings.appearance);
-        return startupCheck({ check, autoUpdate: c?.settings.auto_update ?? true, onState: setUpdate });
+        if (c?.settings) applyAppearance(c.settings.appearance);
+        return startupCheck({ check, autoUpdate: c?.settings?.auto_update ?? autoUpdate, onState: setUpdate });
       })
       .then((u) => (pending.current = u));
-  }, []);
+  }, [autoUpdate]);
   useEffect(() => {
     if (!globalThis.window?.__TAURI__) return undefined;
     getStartAtLogin().then(setLogin, () => {});
     getVersion().then(setVersion, () => {});
     getStatus().then(setStatus, () => {});
-    const unlisten = onStatus(setStatus);
-    return () => unlisten.then((stop) => stop(), () => {});
+    const unlisten = [onStatus(setStatus), onFixPermissions(() => setFixing(true))];
+    return () => unlisten.forEach((u) => u.then((stop) => stop(), () => {}));
   }, []);
   const state = fromStatusEvent(status ?? { connection: "Absent" });
   const [toast, setToast] = useState(null);
@@ -62,6 +66,19 @@ function Settings() {
     switchOn(setEnabled, on).then(
       (text) => showToast(setToast, text),
       (error) => console.error("freewheel: turning", on ? "on" : "off", "failed:", String(error)),
+    );
+  if (firstRun)
+    return (
+      <FirstRun
+        state={state}
+        permissions={status?.permissions}
+        onFinish={() => {
+          finishFirstRun(storage);
+          console.info("freewheel: first run finished");
+          setTab("Keys");
+          setFirstRun(false);
+        }}
+      />
     );
   return (
     <>
@@ -72,17 +89,19 @@ function Settings() {
         onLater={() => setUpdate(null)}
         onRestart={() => restart(pending.current, relaunch, setUpdate)}
       />
-      {status && <NoticeBar state={state} onFix={() => document.getElementById("permissions")?.scrollIntoView()} onTurnOn={() => turn(true)} />}
-      {tab === "General" ? (
+      {status && !fixing && <NoticeBar state={state} onFix={() => setFixing(true)} onTurnOn={() => turn(true)} />}
+      {fixing ? (
+        <PermissionsScreen button="Done" onDone={() => setFixing(false)} />
+      ) : tab === "General" ? (
         <General
           settings={config?.settings}
-          onSetting={config ? (key, value) => changeSetting({ config, key, value, setConfig, save: saveConfig }) : undefined}
+          onSetting={config ? (key, value) => changeSetting({ config, key, value, setConfig, save: saveConfig, load: getConfig }) : undefined}
           startAtLogin={login}
           onStartAtLogin={(on) => switchLogin({ on, set: setStartAtLogin, get: getStartAtLogin, setLogin, setConfig })}
           version={version}
           update={update}
           onCheck={() =>
-            checkNow({ check, autoUpdate: config?.settings.auto_update ?? true, onState: setUpdate }).then(
+            checkNow({ check, autoUpdate: config?.settings?.auto_update ?? autoUpdate, onState: setUpdate }).then(
               (u) => (pending.current = u),
             )
           }

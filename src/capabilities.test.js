@@ -31,6 +31,7 @@ test("the settings window may call exactly the commands its UI invokes", () => {
     "get_start_at_login",
     "get_status",
     "import_mappings",
+    "open_bluetooth_settings",
     "open_permission_pane",
     "save_config",
     "set_enabled",

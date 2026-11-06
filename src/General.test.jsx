@@ -29,6 +29,15 @@ test("choosing an appearance applies it at once and saves it in the config", asy
   expect(root.style.colorScheme).toBe("light dark");
 });
 
+test("a setting change saves over the config read fresh, keeping mappings changed since the window loaded", async () => {
+  const fresh = { ...config, layers: [{ id: "base", name: "Base", bindings: { Cut: { kind: "Keystroke" } } }] };
+  const setConfig = vi.fn();
+  const save = vi.fn(async () => {});
+  await changeSetting({ config, key: "auto_update", value: false, setConfig, save, load: async () => fresh });
+  expect(save).toHaveBeenCalledWith({ ...fresh, settings: { ...settings, auto_update: false } });
+  expect(setConfig).toHaveBeenCalledWith({ ...fresh, settings: { ...settings, auto_update: false } });
+});
+
 test("a failed save is logged", async () => {
   const log = vi.fn();
   await changeSetting({ config, key: "auto_update", value: false, setConfig: () => {}, save: async () => Promise.reject("disk full"), log });

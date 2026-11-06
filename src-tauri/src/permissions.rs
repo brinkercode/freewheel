@@ -102,6 +102,38 @@ pub fn open_permission_pane(permission: String) -> Result<(), String> {
     open_pane_with(&SystemOpener, &permission)
 }
 
+/// The program and URL that open the OS Bluetooth settings, with no shell:
+/// System Settings > Bluetooth on macOS 13+, Settings > Bluetooth & devices
+/// on Windows; none elsewhere.
+pub fn bluetooth_settings() -> Result<(&'static str, &'static str), String> {
+    if cfg!(target_os = "macos") {
+        Ok((
+            "/usr/bin/open",
+            "x-apple.systempreferences:com.apple.Bluetooth-Settings.extension",
+        ))
+    } else if cfg!(windows) {
+        Ok(("explorer.exe", "ms-settings:bluetooth"))
+    } else {
+        Err("Bluetooth settings open only on macOS and Windows".into())
+    }
+}
+
+/// Opens the OS Bluetooth settings for the first run's 'Open Bluetooth settings'.
+#[tauri::command]
+pub fn open_bluetooth_settings() -> Result<(), String> {
+    let result = bluetooth_settings().and_then(|(program, url)| {
+        std::process::Command::new(program)
+            .arg(url)
+            .spawn()
+            .map(drop)
+            .map_err(|e| format!("{program} {url}: {e}"))
+    });
+    if let Err(error) = &result {
+        tracing::warn!(%error, "opening the Bluetooth settings failed");
+    }
+    result
+}
+
 /// `freewheel --probe-permissions`: prints [`probe_report`] and exits. CI's
 /// P5 check launches it from inside freewheel.app, so the probe reads the
 /// bundle's own grants.
@@ -174,6 +206,25 @@ mod tests {
         );
         assert!(open_pane_with(&opener, "Camera").is_err());
         assert_eq!(opener.0.borrow().len(), 2);
+    }
+
+    #[test]
+    fn bluetooth_settings_open_the_os_pane() {
+        let target = bluetooth_settings();
+        if cfg!(target_os = "macos") {
+            assert_eq!(
+                target.unwrap(),
+                (
+                    "/usr/bin/open",
+                    "x-apple.systempreferences:com.apple.Bluetooth-Settings.extension"
+                )
+            );
+        } else if cfg!(windows) {
+            assert_eq!(target.unwrap(), ("explorer.exe", "ms-settings:bluetooth"));
+        } else {
+            assert!(target.is_err());
+            assert!(open_bluetooth_settings().is_err());
+        }
     }
 
     #[test]
