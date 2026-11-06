@@ -66,7 +66,7 @@ test("every typed save error has its own message", () => {
   );
   expect(
     saveErrorText({ kind: "BadLayerReference", location: "base_layer", target: "gone" }),
-  ).toBe("base_layer refers to layer gone, which does not exist.");
+  ).toBe("base_layer refers to page gone, which does not exist.");
   expect(saveErrorText({ kind: "Malformed", message: "bad" })).toContain("bad");
   expect(saveErrorText({ kind: "SaveFailed", message: "disk full" })).toContain("disk full");
 });

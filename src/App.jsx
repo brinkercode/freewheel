@@ -6,6 +6,7 @@ import { download, restart, startupCheck } from "./updater.js";
 import Simulator from "./Simulator.jsx";
 import Permissions from "./Permissions.jsx";
 import Status from "./Status.jsx";
+import KeysTab from "./KeysTab.jsx";
 import { NoticeBar, Toast, Toolbar } from "./SettingsWindow.jsx";
 import { getStatus, onStatus, setEnabled } from "./settingsApi.js";
 import { TABS, fromStatusEvent, showToast, switchOn } from "./shell.js";
@@ -51,6 +52,7 @@ function Settings({ autoUpdate }) {
       <main>
         <h1>freewheel settings</h1>
         <Status />
+        {tab === "Keys" && <KeysTab />}
         <Permissions />
       </main>
       <Toast text={toast} />

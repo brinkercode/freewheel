@@ -40,9 +40,9 @@ export function saveErrorText(error) {
     case "UnknownField":
       return `Unknown setting ${error.path}.`;
     case "UnknownKey":
-      return `Layer ${error.layer} binds ${error.key}, which is not a Speed Editor key.`;
+      return `Page ${error.layer} uses ${error.key}, which is not a Speed Editor key.`;
     case "BadLayerReference":
-      return `${error.location} refers to layer ${error.target}, which does not exist.`;
+      return `${error.location} refers to page ${error.target}, which does not exist.`;
     case "Malformed":
       return `The config is not valid: ${error.message}`;
     case "SaveFailed":
