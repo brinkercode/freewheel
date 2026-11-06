@@ -24,9 +24,10 @@ layer page so you can see pages and lit keys change.
 ## Test builds
 
 Every push to main (or a manual **Run workflow**) runs the `test-build`
-workflow. To get a Windows build, open that workflow's run on the repository's
-**Actions** tab and download the `freewheel-windows-…` artifact from the
-run's artifacts. It holds the NSIS installer (`freewheel_…_x64-setup.exe`) and
+workflow. To get a Windows build, open the latest run of
+[test-build on the **Actions** tab](../../actions/workflows/test-build.yml)
+and download the `freewheel-windows-…` artifact from the run's
+**Artifacts** section at the bottom of its summary page. It holds the NSIS installer (`freewheel_…_x64-setup.exe`) and
 the portable `freewheel.exe`, and is kept for 1 day.
 
 The build is unsigned, so Windows SmartScreen warns when you start it: click
