@@ -1,0 +1,67 @@
+name: Bug report
+description: Something in freewheel does not work the way it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to tell us. The more you fill in, the faster we can fix it.
+  - type: input
+    id: os
+    attributes:
+      label: Your computer's system and version
+      description: For example, Windows 11 24H2 or macOS 15.1.
+      placeholder: Windows 11 24H2
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: freewheel version
+      description: >-
+        On Windows, open Settings > Apps > Installed apps and look under freewheel.
+        On a Mac, select freewheel in Applications and press Command + I.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: connection
+    attributes:
+      label: How is your Speed Editor connected?
+      options:
+        - USB
+        - Bluetooth
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What did you do, step by step, before the problem happened?
+      placeholder: |
+        1. Open freewheel
+        2. Press the CUT key
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log files
+      description: >-
+        Log files help us see what went wrong. They do not contain what you type.
+        [SUPPORT.md](https://github.com/brinkercode/freewheel/blob/main/SUPPORT.md)
+        explains where to find them. Drag the files into this box to attach them.
+    validations:
+      required: false
