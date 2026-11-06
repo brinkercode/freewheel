@@ -10,15 +10,28 @@ const ABOUT = {
   InputMonitoring: "Lets freewheel hear the keys on your Speed Editor.",
 };
 
+// Runs `check` now, every `poll` ms and whenever `target` (the window) regains
+// focus, e.g. on coming back from System Settings; returns the unsubscribe.
+export function watch(check, target, poll) {
+  check();
+  const timer = setInterval(check, poll);
+  target.addEventListener("focus", check);
+  return () => {
+    clearInterval(timer);
+    target.removeEventListener("focus", check);
+  };
+}
+
 /** Polls freewheel-m5-5's checks (get_permissions) unless `initial` is given. */
 function usePermissions(initial, poll) {
   const [permissions, setPermissions] = useState(initial);
   useEffect(() => {
     if (initial) return undefined;
-    const check = () => invoke("get_permissions").then(setPermissions, () => {});
-    check();
-    const timer = setInterval(check, poll);
-    return () => clearInterval(timer);
+    const check = () =>
+      invoke("get_permissions").then(setPermissions, (error) =>
+        console.error("freewheel: checking permissions failed:", String(error)),
+      );
+    return watch(check, window, poll);
   }, [initial, poll]);
   return permissions;
 }

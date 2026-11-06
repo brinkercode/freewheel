@@ -1,7 +1,22 @@
 import { readFileSync } from "node:fs";
 import { renderToString } from "react-dom/server";
-import { expect, test } from "vitest";
-import Permissions from "./Permissions.jsx";
+import { expect, test, vi } from "vitest";
+import Permissions, { watch } from "./Permissions.jsx";
+
+test("the status is checked again when the window regains focus, until unmounted", () => {
+  vi.useFakeTimers();
+  const window = new EventTarget();
+  const check = vi.fn();
+  const stop = watch(check, window, 60_000);
+  expect(check).toHaveBeenCalledTimes(1);
+  window.dispatchEvent(new Event("focus"));
+  expect(check).toHaveBeenCalledTimes(2);
+  stop();
+  window.dispatchEvent(new Event("focus"));
+  vi.advanceTimersByTime(60_000);
+  expect(check).toHaveBeenCalledTimes(2);
+  vi.useRealTimers();
+});
 
 test("a missing permission shows Needs permission and a button to its pane", () => {
   const html = renderToString(
