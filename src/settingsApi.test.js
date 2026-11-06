@@ -66,7 +66,10 @@ test("every typed save error has its own message", () => {
   );
   expect(
     saveErrorText({ kind: "BadLayerReference", location: "base_layer", target: "gone" }),
-  ).toBe("base_layer refers to layer gone, which does not exist.");
+  ).toBe("A key goes to page gone, which does not exist.");
+  expect(saveErrorText({ kind: "UnknownKey", layer: "base", key: "Turbo" })).toBe(
+    "Page base binds Turbo, which is not a Speed Editor key.",
+  );
   expect(saveErrorText({ kind: "Malformed", message: "bad" })).toContain("bad");
   expect(saveErrorText({ kind: "SaveFailed", message: "disk full" })).toContain("disk full");
 });

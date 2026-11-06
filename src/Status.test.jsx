@@ -15,7 +15,7 @@ test("the status shows connection, battery, layer and override errors", () => {
   for (const text of [
     "Speed Editor: Connected",
     "battery 64% (charging)",
-    "Layer: edit",
+    "Page: edit",
     "Brightness: DELL U2720Q: no DDC reply",
   ]) {
     expect(html).toContain(text);

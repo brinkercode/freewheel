@@ -35,7 +35,7 @@ export default function Status({ initial = null, initialPress = null, onPress })
   return (
     <section id="status">
       <p>{`Speed Editor: ${connection}${charge}`}</p>
-      <p>{`Layer: ${status.layer}`}</p>
+      <p>{`Page: ${status.layer}`}</p>
       {status.override_errors.map((e) => (
         <p key={`${e.mode}-${e.error}`} role="alert">
           {`${e.mode}: ${e.error}`}
