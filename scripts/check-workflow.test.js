@@ -49,8 +49,32 @@ test("the lint job fails formatting first", () => {
   expect(steps[0]).toBe("run: cargo fmt --all -- --check");
   expect(steps).toEqual(expect.arrayContaining([
     "run: npm ci", "run: npm test", "run: npm run build",
-    "run: cargo clippy --workspace --all-targets -- -D warnings",
   ]));
+  expect(job("lint")).toContain("node scripts/check-workflow.mjs .github/workflows/ci.yml");
+  expect(job("lint")).toContain("node scripts/check-workflow.mjs --release .github/workflows/release.yml");
+});
+
+test("the lint job needs no system packages: no apt step and no clippy", () => {
+  const lint = job("lint");
+  expect(lint).not.toContain("Install Tauri Linux dependencies");
+  expect(lint).not.toMatch(/\bapt(-get)?\b/);
+  expect(lint).not.toMatch(/cargo clippy/);
+});
+
+test("clippy runs in the test job on every matrix runner, windows-2025 included", () => {
+  const test_ = job("test");
+  expect(test_).toMatch(/os: \[windows-2025, macos-15, macos-15-intel\]/);
+  expect(test_).toMatch(/^      - run: cargo clippy --workspace --all-targets -- -D warnings$/m);
+  expect(test_).not.toMatch(/if: .*\r?\n\s+run: cargo clippy/);
+});
+
+test("the required job names stay exactly", () => {
+  expect(job("lint")).toMatch(/^    name: lint \(ubuntu-latest\)$/m);
+  expect(job("test")).toMatch(/^    name: test \(\$\{\{ matrix\.os \}\}\)$/m);
+  const names = job("test").match(/os: \[(.*)\]/)[1].split(", ").map((os) => `test (${os})`);
+  expect(["lint (ubuntu-latest)", ...names]).toEqual([
+    "lint (ubuntu-latest)", "test (windows-2025)", "test (macos-15)", "test (macos-15-intel)",
+  ]);
 });
 
 test("ci.yml uses the pinned toolchain, caches, and runs every check", () => {
@@ -69,8 +93,8 @@ test("ci.yml uses the pinned toolchain, caches, and runs every check", () => {
   for (const uses of ci.match(/uses: \S+/g)) {
     expect(uses).toMatch(/@[0-9a-f]{40}$/);
   }
+  expect(job("test")).toMatch(/uses: Swatinem\/rust-cache@[0-9a-f]{40} # v2\r?\n\s+with:\r?\n\s+workspaces: "\. -> target"/);
   for (const j of ["lint", "test"]) {
-    expect(job(j)).toMatch(/uses: Swatinem\/rust-cache@[0-9a-f]{40} # v2\r?\n\s+with:\r?\n\s+workspaces: "\. -> target"/);
     expect(job(j)).toMatch(/uses: actions\/setup-node@[0-9a-f]{40}.*\r?\n\s+with:\r?\n(?:\s+.*\r?\n)*?\s+cache: npm/);
   }
   const toolchain = readFileSync(new URL("../rust-toolchain.toml", import.meta.url), "utf8");
