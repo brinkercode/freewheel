@@ -4,6 +4,7 @@ const COMMANDS: &[&str] = &[
     "get_config",
     "save_config",
     "get_status",
+    "set_enabled",
     "get_permissions",
     "open_permission_pane",
     "simulate",

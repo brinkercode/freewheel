@@ -38,6 +38,12 @@ The build is unsigned, so Windows SmartScreen warns when you start it: click
 
 The release gate, checked by hand on each OS before a release.
 
+### Both
+
+- [ ] Settings window: it opens at 1000×640 with the system's own title bar, resizes down to 820×520 and no smaller, and closing it hides it while freewheel keeps running in the tray (Open settings... brings it back).
+- [ ] Settings window toolbar: the tabs Keys, Wheel, DaVinci Resolve, General and Help & backup; the status reads Connected (USB) over a cable and Connected (Bluetooth · N%) over Bluetooth. The On/Off switch and the notice bar's Turn on really switch freewheel (the keys stop and start working, the tray toggle and icon follow) and a short "freewheel is Off." / "freewheel is On." toast shows bottom-centre.
+- [ ] Resolve pause: with DaVinci Resolve open the status reads Paused (Resolve) and the notice bar says Paused for DaVinci Resolve (never Off or Turn on); quitting Resolve brings back Connected.
+
 ### Windows 11
 
 - [ ] System volume dial override: turning the jog wheel right raises and left lowers the default output device's volume (the Windows volume flyout moves), and it follows a change of default output device.

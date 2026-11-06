@@ -1,13 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "settings",
-  "description": "The settings window reads and saves the config, hears the status and key-pressed events and shows the macOS permissions.",
+  "description": "The settings window reads and saves the config, switches freewheel On and Off, hears the status and key-pressed events and shows the macOS permissions.",
   "windows": ["main"],
   "permissions": [
     "core:event:default",
     "allow-get-config",
     "allow-save-config",
     "allow-get-status",
+    "allow-set-enabled",
     "allow-get-permissions",
     "allow-open-permission-pane"
   ]
