@@ -3,7 +3,9 @@
 
 export type Config = { version: number, settings: Settings, layers: Array<Layer>, base_layer: string, jog: JogSettings, overrides: OverrideSettings, };
 
-export type Settings = { enabled: boolean, start_at_login: boolean, resolve_process_name: string, low_battery_threshold: number, };
+export type Settings = { enabled: boolean, start_at_login: boolean, resolve_process_name: string, low_battery_threshold: number, appearance: Appearance, auto_update: boolean, };
+
+export type Appearance = "System" | "Light" | "Dark";
 
 export type Layer = { id: string, name: string, bindings: { [key in string]?: Action }, };
 

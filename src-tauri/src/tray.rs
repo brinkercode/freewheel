@@ -39,14 +39,14 @@ pub fn set_start_at_login(
 }
 
 /// Whether the OS login item is registered now (false when unknown).
-fn autostart_enabled<R: Runtime>(app: &AppHandle<R>) -> bool {
+pub(crate) fn autostart_enabled<R: Runtime>(app: &AppHandle<R>) -> bool {
     app.autolaunch().is_enabled().unwrap_or_else(|e| {
         tracing::warn!(error = %e, "cannot read the start-at-login state");
         false
     })
 }
 
-fn set_autostart<R: Runtime>(app: &AppHandle<R>, on: bool) -> Result<(), String> {
+pub(crate) fn set_autostart<R: Runtime>(app: &AppHandle<R>, on: bool) -> Result<(), String> {
     let autolaunch = app.autolaunch();
     let result = if on {
         autolaunch.enable()
@@ -268,12 +268,16 @@ pub fn build<R: Runtime>(
             OPEN_SETTINGS => show_settings(app),
             START_AT_LOGIN => {
                 let on = login.is_checked().unwrap_or(false);
-                let store = ConfigStore::from_project_dirs();
-                let result = match store {
-                    Some(mut store) => {
-                        set_start_at_login(|on| set_autostart(app, on), &mut store, on)
-                    }
-                    None => set_autostart(app, on),
+                // Through the running config when the window has one, so its
+                // next save keeps this choice.
+                let result = match app.try_state::<crate::settings::Settings>() {
+                    Some(settings) => settings.set_start_at_login(|on| set_autostart(app, on), on),
+                    None => match ConfigStore::from_project_dirs() {
+                        Some(mut store) => {
+                            set_start_at_login(|on| set_autostart(app, on), &mut store, on)
+                        }
+                        None => set_autostart(app, on),
+                    },
                 };
                 if let Err(e) = result {
                     tracing::error!(error = %e, on, "cannot change start at login");

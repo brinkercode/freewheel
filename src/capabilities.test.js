@@ -24,15 +24,18 @@ const sorted = (set) => [...set].sort();
 test("the settings window may call exactly the commands its UI invokes", () => {
   const settings = invoked(uiSources.filter((f) => f !== "Simulator.jsx"));
   expect(sorted(settings)).toEqual([
+    "app_version",
     "export_mappings",
     "get_config",
     "get_permissions",
+    "get_start_at_login",
     "get_status",
     "import_mappings",
     "open_bluetooth_settings",
     "open_permission_pane",
     "save_config",
     "set_enabled",
+    "set_start_at_login",
   ]);
   const granted = new Set([...allowed("default.json"), ...allowed("settings.json")]);
   expect(sorted(granted)).toEqual(sorted(settings));

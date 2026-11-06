@@ -33,6 +33,15 @@ export const onFixPermissions = (onFix) => tauri().event.listen(FIX_PERMISSIONS_
  */
 export const setEnabled = (on) => invoke("set_enabled", { on });
 
+/** @returns {Promise<boolean>} whether the OS login item is registered now. */
+export const getStartAtLogin = () => invoke("get_start_at_login");
+
+/** Sets the OS login item and the config; resolves to what the OS has now. */
+export const setStartAtLogin = (on) => invoke("set_start_at_login", { on });
+
+/** @returns {Promise<string>} the app's version. */
+export const getVersion = () => invoke("app_version");
+
 /**
  * Asks for a file in a save dialog and writes freewheel-mappings.json to it.
  * Resolves to false when the user cancelled; rejects with a SaveError.
