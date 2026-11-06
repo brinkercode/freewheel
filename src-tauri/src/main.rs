@@ -218,6 +218,12 @@ fn open_simulator(app: &tauri::App) -> tauri::Result<()> {
 
 fn main() {
     let _logger = init_logging();
+    if permissions::probe_requested(std::env::args()) {
+        let report = permissions::probe_report(&permissions::current());
+        tracing::info!(%report, "permission probe");
+        print!("{report}");
+        return;
+    }
     let context = tauri::generate_context!();
     debug_assert_eq!(
         context.config().product_name.as_deref(),

@@ -106,4 +106,18 @@ jobs:
       - run: npm run build
 
       - run: cargo clippy --workspace --all-targets -- -D warnings
+
       - run: cargo test --workspace --locked
+
+      # P5: build freewheel.app (no updater artifacts, no signing secrets),
+      # register it so tccutil knows com.brinkercode.freewheel, then run the
+      # ignored-by-default test that resets its Accessibility and Input
+      # Monitoring grants and probes them from inside the bundle.
+      - name: P5 permission check inside freewheel.app (macOS)
+        if: runner.os == 'macOS'
+        env:
+          FREEWHEEL_APP: ${{ github.workspace }}/target/debug/bundle/macos/freewheel.app
+        run: |
+          npx tauri build --debug --bundles app --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$FREEWHEEL_APP"
+          cargo test -p freewheel --locked -- --ignored p5_
