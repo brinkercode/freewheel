@@ -16,7 +16,7 @@ test("the UI uses the system font and loads no network fonts or icons", () => {
     (f) => /\.(jsx?|tsx?|css)$/.test(f) && !/\.test\./.test(f),
   );
   expect(sources).toContain("Status.jsx");
-  expect(sources).toEqual(expect.arrayContaining(["FirstRun.jsx", "Permissions.jsx", "Keys.jsx"]));
+  expect(sources).toEqual(expect.arrayContaining(["FirstRun.jsx", "Permissions.jsx", "KeysTab.jsx"]));
   const ui = [html, ...sources.map((f) => readFileSync(new URL(`./${f}`, import.meta.url), "utf8"))].join("\n");
   expect(html).toMatch(/font-family:[^;]*system-ui/);
   expect(ui).not.toMatch(/fonts\.googleapis|fonts\.gstatic|Material\sSymbols|https?:\/\//);

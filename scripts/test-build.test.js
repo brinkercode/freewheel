@@ -2,10 +2,20 @@ import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import { checkWorkflow } from "./check-workflow.mjs";
 
-// The proposed .github/workflows/test-build.yml: the owner commits it (only a
-// chore card may change CI control files), as with proposed-ci.yml before it.
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
-const wf = read("./fixtures/proposed-test-build.yml");
+const wf = read("../.github/workflows/test-build.yml");
+const workflows = ["ci.yml", "release.yml", "test-build.yml"].map((f) => [f, read(`../.github/workflows/${f}`)]);
+
+// Repo rules: SHA pinning required, selected actions only.
+test.each(workflows)("%s pins every action to a commit SHA from an allowed owner", (_file, text) => {
+  const uses = text.match(/uses: \S+/g);
+  expect(uses.length).toBeGreaterThan(0);
+  for (const u of uses) {
+    if (u === "uses: ./.github/workflows/ci.yml") continue;
+    expect(u).toMatch(/^uses: (actions\/[\w-]+|Swatinem\/rust-cache|tauri-apps\/tauri-action)@[0-9a-f]{40}$/);
+    expect(u).not.toMatch(/@0{40}$/);
+  }
+});
 
 test("test-build workflow passes the workflow lint (no secrets, contents: read)", () => {
   expect(checkWorkflow(wf)).toEqual([]);
@@ -40,6 +50,7 @@ test("README explains how to get and run an unsigned test build", () => {
   const section = readme.split(/^## /m).find((s) => s.startsWith("Test builds"));
   expect(section).toBeDefined();
   expect(section).toMatch(/Actions/);
+  expect(section).toContain("](../../actions/workflows/test-build.yml)");
   expect(section).toMatch(/artifact/i);
   expect(section).toMatch(/unsigned/i);
   expect(section).toMatch(/SmartScreen[\s\S]*\*\*More info\*\*[\s\S]*\*\*Run anyway\*\*/);

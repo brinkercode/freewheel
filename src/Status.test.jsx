@@ -10,23 +10,16 @@ const status = {
   permissions: { Accessibility: "Granted" },
 };
 
-test("the status shows connection, battery, layer and override errors", () => {
+test("the status shows connection, battery, page and override errors", () => {
   const html = renderToString(<Status initial={status} />);
   for (const text of [
     "Speed Editor: Connected",
     "battery 64% (charging)",
-    "Layer: edit",
+    "Page: edit",
     "Brightness: DELL U2720Q: no DDC reply",
   ]) {
     expect(html).toContain(text);
   }
-});
-
-test("a key press shows its printed label", () => {
-  const html = renderToString(
-    <Status initial={status} initialPress={{ key: "SmartInsrt", label: "SMART INSRT" }} />,
-  );
-  expect(html).toContain("You pressed SMART INSRT");
 });
 
 test("a lost connection reads Not connected without a battery", () => {

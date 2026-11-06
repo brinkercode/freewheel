@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
 import App from "./App.jsx";
-import { KEYS } from "./Keys.jsx";
+import { KEYS, LABELS } from "./keys.js";
 
 afterEach(() => {
   cleanup();
@@ -38,7 +38,7 @@ const connected = { connection: "Connected", bus: "Usb", battery: null, layer: "
 test("KEYS names every Speed Editor key by its printed label, as status.rs does", () => {
   const rust = readFileSync("crates/freewheel-core/src/status.rs", "utf8");
   const printed = [...rust.matchAll(/Key::(\w+) => "([^"]+)"/g)].map((m) => [m[1], m[2]]);
-  expect(KEYS).toEqual(printed);
+  expect(KEYS.map((k) => [k, LABELS[k]])).toEqual(printed);
 });
 
 test("first launch shows Welcome in place of the content; once finished the Keys tab shows every key Not set, and the flow does not show again", async () => {
@@ -50,7 +50,9 @@ test("first launch shows Welcome in place of the content; once finished the Keys
   fireEvent.click(screen.getByText("Get started"));
   await screen.findByText("Found it!");
   fireEvent.click(screen.getByText("Continue"));
-  await waitFor(() => expect(screen.getAllByText("Not set")).toHaveLength(KEYS.length));
+  await waitFor(() => expect(screen.getAllByTitle("Not set")).toHaveLength(KEYS.length));
+  fireEvent.click(screen.getByText("List"));
+  expect(screen.getAllByText("Not set")).toHaveLength(KEYS.length);
   expect(screen.getByRole("button", { name: "Keys", pressed: true })).toBeTruthy();
   // The first run leaves the default config (no bindings, the wheel scrolls) as it is.
   expect(calls).not.toContain("save_config");

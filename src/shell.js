@@ -78,8 +78,8 @@ export const FIRST_RUN_DONE = "freewheel.first-run-done";
 export const firstRunDone = (storage) => storage?.getItem(FIRST_RUN_DONE) === "1";
 export const finishFirstRun = (storage) => storage?.setItem(FIRST_RUN_DONE, "1");
 
-/** Shows a confirmation toast, then clears it after TOAST_MS. Never for errors that need action. */
-export function showToast(setToast, text, timers = globalThis) {
+/** Shows a confirmation toast, then clears it after `ms`. Never for errors that need action. */
+export function showToast(setToast, text, timers = globalThis, ms = TOAST_MS) {
   setToast(text);
-  return timers.setTimeout(() => setToast(null), TOAST_MS);
+  return timers.setTimeout(() => setToast(null), ms);
 }
