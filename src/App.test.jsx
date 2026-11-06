@@ -6,7 +6,8 @@ import App from "./App.jsx";
 import Simulator from "./Simulator.jsx";
 
 test("App renders the settings heading", () => {
-  expect(renderToString(<App />)).toContain("freewheel settings");
+  const done = { getItem: () => "1" };
+  expect(renderToString(<App storage={done} />)).toContain("freewheel settings");
 });
 
 test("the UI uses the system font and loads no network fonts or icons", () => {
@@ -15,6 +16,7 @@ test("the UI uses the system font and loads no network fonts or icons", () => {
     (f) => /\.(jsx?|tsx?|css)$/.test(f) && !/\.test\./.test(f),
   );
   expect(sources).toContain("Status.jsx");
+  expect(sources).toEqual(expect.arrayContaining(["FirstRun.jsx", "Permissions.jsx", "Keys.jsx"]));
   const ui = [html, ...sources.map((f) => readFileSync(new URL(`./${f}`, import.meta.url), "utf8"))].join("\n");
   expect(html).toMatch(/font-family:[^;]*system-ui/);
   expect(ui).not.toMatch(/fonts\.googleapis|fonts\.gstatic|Material\sSymbols|https?:\/\//);

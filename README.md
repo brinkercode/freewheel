@@ -8,6 +8,15 @@ The NSIS installer needs nothing else: it downloads and installs WebView2 if
 it is missing. The portable `freewheel.exe` has the C runtime built in but
 needs WebView2, which every Windows 11 has built in.
 
+## First run
+
+The first time you open the settings window, it walks you through setup.
+After the welcome screen it waits for your Speed Editor to connect, by USB or
+over Bluetooth (**Open Bluetooth settings** helps you pair it). On macOS it
+then asks for Accessibility and Input Monitoring. When you finish, every key
+is Not set and the wheel scrolls. If a permission goes missing later, **Fix
+this** or the tray's 'Needs permission' item opens the same permissions screen.
+
 ## Try it without a Speed Editor
 
 Run `freewheel --simulate`. The app starts with a simulated device instead of the real one and opens an

@@ -223,7 +223,8 @@ fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::
             settings::get_status,
             settings::set_enabled,
             permissions::get_permissions,
-            permissions::open_permission_pane
+            permissions::open_permission_pane,
+            permissions::open_bluetooth_settings
         ])
 }
 
@@ -281,7 +282,8 @@ fn main() {
             settings::get_status,
             settings::set_enabled,
             permissions::get_permissions,
-            permissions::open_permission_pane
+            permissions::open_permission_pane,
+            permissions::open_bluetooth_settings
         ])
     };
     let app = builder

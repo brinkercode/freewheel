@@ -7,6 +7,7 @@ const COMMANDS: &[&str] = &[
     "set_enabled",
     "get_permissions",
     "open_permission_pane",
+    "open_bluetooth_settings",
     "simulate",
 ];
 

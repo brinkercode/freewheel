@@ -68,6 +68,16 @@ export async function switchOn(setEnabled, on) {
   return on ? "freewheel is On." : "freewheel is Off.";
 }
 
+// How the found device is attached, for the first run's 'Found it!'.
+export function connectionText(bus) {
+  return BUS[bus] ? `Connected over ${BUS[bus]}` : "Connected";
+}
+
+// The first run shows until finished; the webview's storage keeps the flag.
+export const FIRST_RUN_DONE = "freewheel.first-run-done";
+export const firstRunDone = (storage) => storage?.getItem(FIRST_RUN_DONE) === "1";
+export const finishFirstRun = (storage) => storage?.setItem(FIRST_RUN_DONE, "1");
+
 /** Shows a confirmation toast, then clears it after TOAST_MS. Never for errors that need action. */
 export function showToast(setToast, text, timers = globalThis) {
   setToast(text);
