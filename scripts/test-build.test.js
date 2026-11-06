@@ -45,6 +45,27 @@ test("test-build job uploads the NSIS setup and the portable freewheel.exe, kept
   expect(upload[1]).toContain("target/release/bundle/nsis/*-setup.exe");
 });
 
+// The zero-install gate release.yml runs on what ships, minus its Windows-only
+// `if:` (test-build runs only on Windows): the same script, arguments,
+// installer flag and installed-exe smoke.
+const releaseGate = read("../.github/workflows/release.yml")
+  .match(/ {6}- name: Import check and smoke \(built exe\)\r?\n(?: {8,}.*\r?\n)*(?: {6}- name: Install silently.*\r?\n(?: {8,}.*\r?\n)*)/)[0]
+  .replace(/^ {8}if: runner\.os == 'Windows'\r?\n/gm, "");
+
+test("test-build runs release.yml's zero-install gate after the build and before the upload", () => {
+  expect(releaseGate).toContain("run: node scripts/check-windows-exe.mjs target/release/freewheel.exe");
+  expect(releaseGate).toContain("-ArgumentList '/S' -Wait -PassThru");
+  expect(releaseGate).toContain('node scripts/check-windows-exe.mjs "$env:LOCALAPPDATA\\freewheel\\freewheel.exe"');
+  const gate = wf.indexOf(releaseGate);
+  expect(gate).toBeGreaterThan(wf.indexOf("run: npx tauri build"));
+  expect(gate).toBeLessThan(wf.indexOf("uses: actions/upload-artifact"));
+  expect(wf.indexOf("uses: actions/upload-artifact")).toBe(wf.lastIndexOf("uses: actions/upload-artifact"));
+});
+
+test("a failed check fails the job, so nothing is uploaded", () => {
+  expect(wf).not.toMatch(/continue-on-error|always\(\)|^\s+if:/m);
+});
+
 test("README explains how to get and run an unsigned test build", () => {
   const readme = read("../README.md");
   const section = readme.split(/^## /m).find((s) => s.startsWith("Test builds"));

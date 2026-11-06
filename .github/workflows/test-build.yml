@@ -1,6 +1,7 @@
 # Test build for freewheel: on demand or on a push to main, builds an
 # unsigned NSIS installer and the portable freewheel.exe on a hosted Windows
-# runner and uploads them as an artifact kept for 1 day. Updater artifacts
+# runner, runs release.yml's zero-install gate on them, and uploads them as
+# an artifact kept for 1 day. Updater artifacts
 # are off, so no signing secret and no updater pubkey are needed.
 name: test-build
 
@@ -49,6 +50,18 @@ jobs:
       - name: Build unsigned NSIS installer and freewheel.exe
         shell: bash
         run: npx tauri build --bundles nsis --config '{"bundle":{"createUpdaterArtifacts":false}}' -- --locked
+
+      # Zero-install gate on what ships: the built exe, then the exe the
+      # NSIS installer puts in the per-user install dir.
+      - name: Import check and smoke (built exe)
+        run: node scripts/check-windows-exe.mjs target/release/freewheel.exe
+      - name: Install silently and smoke the installed exe
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          $install = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "installer exit $($install.ExitCode)" }
+          node scripts/check-windows-exe.mjs "$env:LOCALAPPDATA\freewheel\freewheel.exe"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
