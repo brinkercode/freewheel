@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, configure, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import App from "./App.jsx";
 import { sampleConfig, sampleStatus } from "./dev/mockTauri.js";
@@ -63,6 +63,9 @@ function fakeTauri(version) {
   window.__TAURI__ = { core: { invoke }, event: { listen: async () => () => {} } };
   window.__TAURI_INTERNALS__ = { invoke, transformCallback: () => 1, metadata: {} };
 }
+
+// The first render of the whole window is slow on cold CI runners.
+configure({ asyncUtilTimeout: 10000 });
 
 beforeEach(() => fakeTauri("0.1.1"));
 afterEach(() => {
