@@ -32,6 +32,8 @@ pub struct Settings {
     manual: Mutex<Sender<Message>>,
     /// The session's file logger, when the log dir was usable.
     logger: Option<Logger>,
+    /// The log bundle saved last, for Help & backup's 'Show file'.
+    last_bundle: Mutex<Option<PathBuf>>,
 }
 
 impl Settings {
@@ -50,6 +52,7 @@ impl Settings {
             commands,
             manual: Mutex::new(manual),
             logger: None,
+            last_bundle: Mutex::new(None),
         }
     }
 
@@ -102,7 +105,22 @@ impl Settings {
             format!("Saving the logs failed: {e}")
         })?;
         tracing::info!("log bundle saved");
+        *lock(&self.last_bundle) = Some(path.clone());
         Ok(path)
+    }
+
+    /// The log bundle saved last this session, if it is still there.
+    pub fn last_bundle(&self) -> Option<PathBuf> {
+        lock(&self.last_bundle).clone().filter(|p| p.is_file())
+    }
+
+    /// The Wheel tab's 'Back to normal': the device loop leaves the dial
+    /// override, as pressing its key again does.
+    pub fn exit_override(&self) -> Result<(), String> {
+        tracing::info!("settings window put the wheel back to normal");
+        self.commands
+            .send(Command::ExitOverride)
+            .map_err(|_| "freewheel's device loop is not running".to_string())
     }
 
     /// The settings window's On/Off switch: switches the device loop, like
@@ -236,6 +254,7 @@ impl Settings {
             Update::Battery(battery) => status.battery = Some(*battery),
             Update::Layer(layer) => status.layer.clone_from(layer),
             Update::KeyPressed(_) => {}
+            Update::Override(mode) => status.wheel_override = *mode,
         })
     }
 
@@ -278,18 +297,24 @@ pub async fn export_mappings(
     settings: tauri::State<'_, Settings>,
 ) -> Result<bool, SaveError> {
     use tauri_plugin_dialog::DialogExt;
-    let picked = app
-        .dialog()
-        .file()
-        .set_file_name(MAPPINGS_FILE)
-        .add_filter("freewheel mappings", &["json"])
-        .blocking_save_file();
-    match picked.map(|p| p.into_path()) {
+    let picked = match crate::e2e::dialog(&app, crate::e2e::Dialog::SaveMappings) {
+        Some(stub) => stub.map(Ok),
+        None => app
+            .dialog()
+            .file()
+            .set_file_name(MAPPINGS_FILE)
+            .add_filter("freewheel mappings", &["json"])
+            .blocking_save_file()
+            .map(|p| p.into_path().map_err(|e| e.to_string())),
+    };
+    match picked {
         None => Ok(false),
-        Some(Ok(path)) => settings.export_to(&path).map(|()| true),
-        Some(Err(e)) => Err(SaveError::SaveFailed {
-            message: e.to_string(),
-        }),
+        Some(Ok(path)) => {
+            settings.export_to(&path)?;
+            crate::simulate::note(&app, format!("Backed up the keys to {}", path.display()));
+            Ok(true)
+        }
+        Some(Err(message)) => Err(SaveError::SaveFailed { message }),
     }
 }
 
@@ -302,24 +327,32 @@ pub async fn import_mappings(
     settings: tauri::State<'_, Settings>,
     allow_launch: bool,
 ) -> Result<bool, SaveError> {
+    use crate::e2e::Dialog;
     use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
-    let Some(picked) = app
-        .dialog()
-        .file()
-        .add_filter("freewheel mappings", &["json"])
-        .blocking_pick_file()
-    else {
-        return Ok(false);
-    };
     let unreadable = |e: String| {
         tracing::warn!(error = %e, "mappings file cannot be read");
         SaveError::Malformed {
             message: format!("the file cannot be read: {e}"),
         }
     };
-    let path = picked.into_path().map_err(|e| unreadable(e.to_string()))?;
-    let bytes = std::fs::read(path).map_err(|e| unreadable(e.to_string()))?;
-    settings.import(&bytes, allow_launch, || {
+    let picked = match crate::e2e::dialog(&app, Dialog::OpenMappings) {
+        Some(stub) => stub,
+        None => app
+            .dialog()
+            .file()
+            .add_filter("freewheel mappings", &["json"])
+            .blocking_pick_file()
+            .map(|p| p.into_path().map_err(|e| unreadable(e.to_string())))
+            .transpose()?,
+    };
+    let Some(path) = picked else {
+        return Ok(false);
+    };
+    let bytes = std::fs::read(&path).map_err(|e| unreadable(e.to_string()))?;
+    let restored = settings.import(&bytes, allow_launch, || {
+        if let Some(yes) = crate::e2e::dialog(&app, Dialog::ConfirmReplace) {
+            return yes.is_some();
+        }
         app.dialog()
             .message("Your keys, wheel and dial settings are replaced by the ones in this file. A copy of your current settings is kept first.")
             .title("Replace your keys?")
@@ -328,7 +361,11 @@ pub async fn import_mappings(
                 "Keep my keys".into(),
             ))
             .blocking_show()
-    })
+    })?;
+    if restored {
+        crate::simulate::note(&app, format!("Restored the keys from {}", path.display()));
+    }
+    Ok(restored)
 }
 
 #[tauri::command]
@@ -392,7 +429,32 @@ pub fn save_log_bundle<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<S
 /// Saves the log bundle to the Downloads folder; resolves to its path.
 #[tauri::command]
 pub async fn export_logs(app: tauri::AppHandle) -> Result<String, String> {
-    save_log_bundle(&app)
+    let path = save_log_bundle(&app)?;
+    crate::simulate::note(&app, format!("Saved the logs to {path}"));
+    Ok(path)
+}
+
+/// Help & backup's 'Show file': the saved log bundle, selected in Explorer
+/// (the Finder on macOS). Only the bundle this session saved, never a path
+/// the window names.
+#[tauri::command]
+pub async fn show_logs_file(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    let path = app
+        .state::<Settings>()
+        .last_bundle()
+        .ok_or("The log file is gone. Download the logs again.")?;
+    crate::simulate::note(&app, format!("Showed {} in its folder", path.display()));
+    tauri_plugin_opener::reveal_item_in_dir(&path).map_err(|e| {
+        tracing::error!(error = %e, "showing the log file failed");
+        format!("The folder could not be opened: {e}")
+    })
+}
+
+/// The Wheel tab's 'Back to normal': leaves the dial override.
+#[tauri::command]
+pub fn exit_wheel_override(settings: tauri::State<'_, Settings>) -> Result<(), String> {
+    settings.exit_override()
 }
 
 /// Saves `detailed_logs` and raises or lowers the log level now.

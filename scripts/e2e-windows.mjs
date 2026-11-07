@@ -15,12 +15,19 @@
 // the session goes through tauri-driver (`tauri:options`).
 // Plain fetch and the W3C WebDriver protocol: no npm dependencies.
 import { spawn } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** The env var that opens the app's DevTools port (src-tauri/src/simulate.rs). */
 export const DEVTOOLS_PORT_ENV = "FREEWHEEL_E2E_DEVTOOLS_PORT";
+
+/**
+ * The folder the e2e build's stubbed OS dialogs answer with files in
+ * (src-tauri/src/e2e.rs, built only with `--features e2e`): Back up saves
+ * there, Restore reads that file back, 'Choose file…' picks a fixed exe.
+ */
+export const DIALOG_DIR_ENV = "FREEWHEEL_E2E_DIALOG_DIR";
 
 /** How long a window may take to answer after an action. */
 export const RESPONSIVE_MS = 5000;
@@ -49,8 +56,9 @@ export function sessionBody(app, port = null) {
 }
 
 /** Starts `app --simulate` with its DevTools port open; resolves once the port answers. */
-async function launch(app, port, say) {
-  const child = spawn(app, ["--simulate"], { env: { ...process.env, [DEVTOOLS_PORT_ENV]: String(port) }, stdio: "inherit" });
+async function launch(app, port, say, dialogs) {
+  const env = { ...process.env, [DEVTOOLS_PORT_ENV]: String(port), [DIALOG_DIR_ENV]: dialogs };
+  const child = spawn(app, ["--simulate"], { env, stdio: "inherit" });
   child.on("exit", (code) => say(`app exited with ${code}`));
   const end = Date.now() + 60000;
   while (Date.now() < end) {
@@ -290,11 +298,85 @@ async function main() {
         return [...document.querySelectorAll('[role=group][aria-label="' + g + '"] button')].some((b) => b.textContent.includes(o) && b.getAttribute("aria-pressed") === "true");`, [group, option]);
     }, ["simulator", "settings"]);
 
-  try {
-    say(`starting ${opts.app} --simulate`);
-    if (opts.port) app = await launch(resolve(opts.app), opts.port, say);
-    await d.start(resolve(opts.app), opts.port);
-    // Both windows: the settings window ("main") and the Simulator (#simulator).
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  /** The running config, read through get_config in the settings window. */
+  const readConfig = async () => {
+    await use("settings");
+    const r = await d.execAsync(`const done = arguments[0];
+      window.__TAURI__.core.invoke("get_config").then((c) => done(JSON.stringify(c)), (e) => done("error " + e));`);
+    if (r.startsWith("error")) throw new Error(`get_config: ${r}`);
+    return JSON.parse(r);
+  };
+  /** Polls the config until `check(config)` holds; returns that config. */
+  const configShows = async (what, check, ms = 10000) => {
+    const end = Date.now() + ms;
+    let last;
+    while (Date.now() < end) {
+      try {
+        // The settings window may be reloading (a Simulator setup reloads it).
+        last = await readConfig();
+        if (check(last)) {
+          say(`  config: ${what}`);
+          return last;
+        }
+      } catch {
+        // not there yet
+      }
+      await sleep(200);
+    }
+    throw new Error(`the config never showed ${what}: ${JSON.stringify(last).slice(0, 600)}`);
+  };
+  const basePage = (c) => c.layers.find((l) => l.id === c.base_layer);
+  /** One of the newest lines of the Simulator's log contains `text`. */
+  const logged = (text, ms = 10000) =>
+    waitFor("simulator", `the log line "${text}"`, `return [...document.querySelectorAll(".fw-sim-log li")].slice(0, 14).some((li) => li.textContent.includes(arguments[0]))`, [text], ms);
+  const shows = (name, text, ms) => waitFor(name, `"${text}"`, `return document.body.innerText.includes(arguments[0])`, [text], ms);
+  const gone = (name, css) => waitFor(name, `no ${css}`, `return !document.querySelector(arguments[0])`, [css]);
+  /** Types `text` (WebDriver keys: \uE009 Ctrl, \uE008 Shift, \uE000 releases them, \uE007 Enter) into `css`. */
+  const typeInto = async (name, css, text) => {
+    const el = await waitFor(name, css, FIND_JS, [css, ""]);
+    await d.type(Object.values(el)[0], text);
+  };
+  const SELECT_ALL = "\uE009a\uE000";
+  /** Presses `mods` (WebDriver key codes) + `key` together, as a person does, into the focused element. */
+  const chord = async (mods, key) => {
+    const down = [...mods, key].map((value) => ({ type: "keyDown", value }));
+    const up = [key, ...[...mods].reverse()].map((value) => ({ type: "keyUp", value }));
+    await d.call("POST", "/actions", { actions: [{ type: "key", id: "keyboard", actions: [...down, ...up] }] });
+    await d.call("DELETE", "/actions");
+  };
+  /** Clicks the record box `css` (its capture input is invisible) and records the shortcut. */
+  const record = async (css, mods, key) => {
+    await click("settings", css);
+    await waitFor("settings", "the record box listening", `return document.activeElement?.classList.contains("combo-capture")`);
+    await chord(mods, key);
+  };
+  const switchState = (name, label) =>
+    waitFor(name, `the "${label}" switch`, `return document.querySelector('[role=switch][aria-label="' + arguments[0] + '"]')?.getAttribute("aria-checked")`, [label]);
+  /** Clicks switch `label` and waits until it reads `on`. */
+  const flip = async (label, on) => {
+    await click("settings", `[role=switch][aria-label="${label}"]`);
+    await waitFor("settings", `"${label}" ${on ? "on" : "off"}`, `return document.querySelector('[role=switch][aria-label="' + arguments[0] + '"]')?.getAttribute("aria-checked") === arguments[1]`, [label, String(on)]);
+  };
+  /** A press and release of `key` (printed name) with the Simulator's quick keys. */
+  const press = (key) => click("simulator", ".fw-sim-quick button", key);
+  const turn = (dir) => click("simulator", ".fw-sim-line button", dir === "left" ? "Turn wheel left" : "Turn right");
+  const choice = (text) => click("settings", ".side-panel label.choice", text);
+  const allChoices = () => click("settings", ".side-panel button.back-link", "All choices");
+  /** Back to the key panel's choices list, if a choice's detail is open. */
+  const toChoices = async () => {
+    await use("settings");
+    if (await d.exec(`return !!document.querySelector(".side-panel button.back-link")`)) await allChoices();
+  };
+  const keyIn = (key) => click("settings", `.device [data-binding="${key}"]`);
+  const tray = (id) => click("simulator", `[role=group][aria-label="Tray menu"] button[data-tray="${id}"]`);
+  const jumpTo = (text) => click("simulator", ".fw-sim-grid button", text);
+
+  /** Both windows: the settings window ("main") and the Simulator (#simulator). */
+  const findWindows = async () => {
+    delete win.settings;
+    delete win.simulator;
+    current = null;
     const end = Date.now() + 30000;
     while (!(win.settings && win.simulator)) {
       if (Date.now() > end) throw new Error(`expected the settings and Simulator windows, got ${JSON.stringify(win)}`);
@@ -307,6 +389,53 @@ async function main() {
       }
       if (!(win.settings && win.simulator)) await new Promise((r) => setTimeout(r, 300));
     }
+  };
+  /** Saves `config` through save_config from the settings window. */
+  const saveConfig = async (config) => {
+    await use("settings");
+    const r = await d.execAsync(`const [config, done] = arguments;
+      window.__TAURI__.core.invoke("save_config", { config }).then(() => done("ok"), (e) => done("error " + JSON.stringify(e)));`, [config]);
+    if (r !== "ok") throw new Error(`save_config: ${r}`);
+  };
+  /** The mappings part of a config, as a backup file holds it. */
+  const mappings = (c) => JSON.stringify({ layers: c.layers, base_layer: c.base_layer, jog: c.jog, overrides: c.overrides });
+  const titleOf = (key) => d.exec(`return document.querySelector('.device [data-binding="' + arguments[0] + '"]')?.getAttribute("title") ?? null`, [key]);
+  /** The drawing's label of each key in `want` ({ key: label }). */
+  const drawingShows = (want) =>
+    waitFor("settings", `the drawing showing ${JSON.stringify(want)}`, `const want = arguments[0];
+      return Object.entries(want).every(([k, label]) => document.querySelector('.device [data-binding="' + k + '"]')?.getAttribute("title") === label);`, [want], 15000);
+  const activePill = (name) => waitFor("settings", `the page "${name}" shown`, `return document.querySelector(".pill.is-active button[role=tab]")?.textContent.includes(arguments[0])`, [name]);
+  /** Presses `key` (binding name) with the Simulator's key picker. */
+  const pressKey = async (key) => {
+    await click("simulator", `select[aria-label="Key to press"] option[value="${key}"]`);
+    await click("simulator", ".fw-sim-line button.fw-sim-primary", "Press");
+  };
+  /** Opens the tab's More section unless it is open. */
+  const openMore = async () => {
+    await waitFor("settings", "More", `return document.querySelector("button.more")`);
+    if (await d.exec(`return document.querySelector("button.more").getAttribute("aria-expanded") !== "true"`)) await click("settings", "button.more", "More");
+  };
+  /** Help & backup → Restore from a backup… with 'Let restored keys open apps' `allow`; `file` (else the backup) via the stubbed dialog. */
+  const restoreFrom = async (file, allow) => {
+    if (file) writeFileSync(join(dialogs, "next-open.txt"), file);
+    await click("settings", "nav.toolbar button.tab", "Help & backup");
+    await waitFor("settings", "Help & backup", `return document.querySelector("#backup")`);
+    await openMore();
+    if ((await switchState("settings", "Let restored keys open apps")) !== String(allow)) await flip("Let restored keys open apps", allow);
+    await click("settings", "#backup button", "Restore from a backup");
+  };
+  const lineWith = (...parts) =>
+    waitFor("simulator", `a log line with ${parts.join(" + ")}`, `const parts = arguments[0];
+      return [...document.querySelectorAll(".fw-sim-log li")].slice(0, 14).some((li) => parts.every((p) => li.textContent.includes(p)));`, [parts]);
+  const dialogs = join(out, "dialogs");
+  let saved = null;
+
+  try {
+    say(`starting ${opts.app} --simulate`);
+    mkdirSync(dialogs, { recursive: true });
+    if (opts.port) app = await launch(resolve(opts.app), opts.port, say, dialogs);
+    await d.start(resolve(opts.app), opts.port);
+    await findWindows();
     say(`windows: ${JSON.stringify(win)}`);
 
     await step("first run: welcome", () => waitFor("settings", "the welcome screen", `return document.querySelector("button.get-started")`), ["settings", "simulator"]);
@@ -448,10 +577,517 @@ async function main() {
     await sim("DaVinci Resolve", "Closed");
     await sim("freewheel", "Off");
     await sim("freewheel", "On");
+
+    // ---- Every remaining control: click it, then see what it did -------
+    await tab("Help & backup", "Help");
+    await step("Help: Download logs", async () => {
+      await click("settings", "#logs button.btn-primary", "Download logs");
+      await waitFor("settings", "Downloaded", `return document.querySelector("#logs .success-line")?.textContent.includes("Downloaded")`);
+      await logged("Saved the logs to");
+    }, ["settings", "simulator"]);
+    await step("Help: Show file", async () => {
+      await click("settings", "#logs a.show-file", "Show file");
+      await logged("in its folder");
+      await use("settings");
+      const failed = await d.exec(`return document.querySelector("#logs [role=alert]")?.textContent ?? null`);
+      if (failed) throw new Error(`Show file failed: ${failed}`);
+    }, ["settings", "simulator"]);
+    await step("Help: Back up", async () => {
+      await click("settings", "#backup button", "Back up");
+      await shows("settings", "Your keys are backed up.");
+      await logged("Backed up the keys to");
+    }, ["settings", "simulator"]);
+    await step("Help: Restore from a backup", async () => {
+      await click("settings", "#backup button", "Restore from a backup");
+      await shows("settings", "Your keys are restored.");
+      await logged("Restored the keys from");
+    }, ["settings", "simulator"]);
+    await step("Help: More, detailed logs on and off", async () => {
+      await click("settings", "button.more", "More");
+      await flip("Turn on detailed logs for troubleshooting", true);
+      await configShows("detailed_logs on", (c) => c.settings.detailed_logs === true);
+      await flip("Turn on detailed logs for troubleshooting", false);
+      await configShows("detailed_logs off", (c) => c.settings.detailed_logs === false);
+    });
+    await step("Help: let restored keys open apps", async () => {
+      await flip("Let restored keys open apps", true);
+      await flip("Let restored keys open apps", false);
+    });
+
+    await tab("General", "Appearance");
+    await step("General: start at login on and off (simulated)", async () => {
+      await flip("Start freewheel when I log in", true);
+      await logged("would turn start at login on");
+      await configShows("start_at_login on", (c) => c.settings.start_at_login === true);
+      await flip("Start freewheel when I log in", false);
+      await logged("would turn start at login off");
+      await configShows("start_at_login off", (c) => c.settings.start_at_login === false);
+    }, ["settings", "simulator"]);
+    await step("General: appearance Match my computer", async () => {
+      await click("settings", "button.appearance-option", "Match my computer");
+      await waitFor("settings", "appearance System", `return document.documentElement.dataset.appearance === "System"`);
+      await configShows("appearance System", (c) => c.settings.appearance === "System");
+    });
+    await step("General: update automatically flipped and back", async () => {
+      const was = (await switchState("settings", "Update automatically")) === "true";
+      await flip("Update automatically", !was);
+      await configShows(`auto_update ${!was}`, (c) => c.settings.auto_update === !was);
+      await flip("Update automatically", was);
+      await configShows(`auto_update ${was}`, (c) => c.settings.auto_update === was);
+    });
+
+    await tab("DaVinci Resolve");
+    await step("Resolve: step aside off, Resolve opens, freewheel stays on", async () => {
+      await flip("Step aside automatically when DaVinci Resolve opens", false);
+      await configShows("step_aside_for_resolve off", (c) => c.settings.step_aside_for_resolve === false);
+      await click("simulator", `[role=group][aria-label="DaVinci Resolve"] button`, "Open");
+      await sleep(500);
+      const on = await waitFor("simulator", "freewheel group", `return [...document.querySelectorAll('[role=group][aria-label="freewheel"] button')].find((b) => b.getAttribute("aria-pressed") === "true")?.textContent ?? "none"`);
+      if (on !== "On") throw new Error(`freewheel stepped aside although the switch is off (${on})`);
+      await click("simulator", `[role=group][aria-label="DaVinci Resolve"] button`, "Closed");
+      await flip("Step aside automatically when DaVinci Resolve opens", true);
+      await configShows("step_aside_for_resolve on", (c) => c.settings.step_aside_for_resolve === true);
+    }, ["settings", "simulator"]);
+    await step("Resolve: program name, then Reset", async () => {
+      await click("settings", "button.more", "More");
+      await typeInto("settings", "input.program-name", `${SELECT_ALL}Resolve2.exe\uE007`);
+      await configShows("resolve_process_name Resolve2.exe", (c) => c.settings.resolve_process_name === "Resolve2.exe");
+      await click("settings", ".input-row button", "Reset");
+      await configShows("resolve_process_name Resolve.exe", (c) => c.settings.resolve_process_name === "Resolve.exe");
+    });
+
+    await tab("Wheel", "When I turn the wheel");
+    const wheelKind = (text) => click("settings", ".radio-rows button.radio-row", text);
+    await step("Wheel: SHTL changes the volume", async () => {
+      await click("settings", ".wheel-buttons button", "SHTL");
+      await wheelKind("Change the volume");
+      await configShows("SHTL: Volume", (c) => basePage(c).bindings.Shtl.SetJogMode.mode === "Volume");
+      await press("SHTL");
+      await turn("right");
+      await logged("would turn the volume up");
+    }, ["settings", "simulator"]);
+    await step("Wheel: SHTL changes the brightness", async () => {
+      await wheelKind("Change screen brightness");
+      await configShows("SHTL: Brightness", (c) => basePage(c).bindings.Shtl.SetJogMode.mode === "Brightness");
+      await press("SHTL");
+      await turn("left");
+      await logged("would turn the brightness down");
+    }, ["settings", "simulator"]);
+    await step("Wheel: SHTL does nothing", async () => {
+      await wheelKind("Nothing");
+      await configShows("SHTL: nothing", (c) => basePage(c).bindings.Shtl.SetJogMode.mode === "Shuttle" && c.jog.per_mode.Shuttle.left === null && c.jog.per_mode.Shuttle.right === null);
+    });
+    await step("Wheel: SHTL presses recorded shortcuts", async () => {
+      await wheelKind("Press shortcuts");
+      await record(".wheel-record:nth-child(1) .record-box", ["\uE009"], "k");
+      await configShows("Shuttle left Ctrl+K", (c) => JSON.stringify(c.jog.per_mode.Shuttle.left) === JSON.stringify({ Hotkey: { combo: { modifiers: ["Ctrl"], key: "K" } } }));
+      await record(".wheel-record:nth-child(2) .record-box", ["\uE009"], "j");
+      await configShows("Shuttle right Ctrl+J", (c) => c.jog.per_mode.Shuttle.right.Hotkey.combo.key === "J");
+      await press("SHTL");
+      await turn("left");
+      await logged("would press Ctrl+K");
+    }, ["settings", "simulator"]);
+    await step("Wheel: SHTL scrolls again", async () => {
+      await wheelKind("Scroll up and down");
+      await configShows("Shuttle scrolls", (c) => c.jog.per_mode.Shuttle.left.Scroll.amount === -1);
+    });
+    await step("Wheel: sensitivity slider slow, then fast", async () => {
+      await typeInto("settings", 'input[type=range][aria-label="Sensitivity"]', "\uE011");
+      await configShows("threshold 10 (slow)", (c) => c.jog.per_mode[c.jog.default_mode].threshold === 10);
+      await typeInto("settings", 'input[type=range][aria-label="Sensitivity"]', "\uE010");
+      await configShows("threshold 1 (fast)", (c) => c.jog.per_mode[c.jog.default_mode].threshold === 1);
+    });
+
+    await tab("Keys", "What each key does");
+    await step("Keys: List view, then Drawing", async () => {
+      await click("settings", ".segmented button[data-view=List]");
+      await waitFor("settings", "the list", `return document.querySelector("table.button-list")`);
+      await click("settings", ".segmented button[data-view=Drawing]");
+      await waitFor("settings", "the drawing", `return document.querySelector(".device [data-binding]")`);
+    });
+    await step("Keys: IN records Ctrl+Shift+K", async () => {
+      await keyIn("In");
+      await choice("Press a shortcut");
+      await record(".side-panel .record-box", ["\uE009", "\uE008"], "k");
+      await configShows("IN Ctrl+Shift+K", (c) => JSON.stringify(basePage(c).bindings.In) === JSON.stringify({ Hotkey: { combo: { modifiers: ["Ctrl", "Shift"], key: "K" } } }));
+      await waitFor("settings", "Saved", `return document.querySelector(".panel-try.is-saved")`);
+    });
+    await step("Keys: IN presses the Play/Pause media key", async () => {
+      await click("settings", ".side-panel button.preset", "Play/Pause");
+      await configShows("IN PlayPause", (c) => basePage(c).bindings.In.Hotkey.combo.key === "PlayPause");
+      await press("IN");
+      await logged("would press PlayPause");
+      await click("settings", ".side-panel button.preset", "Mute");
+      await configShows("IN Mute", (c) => basePage(c).bindings.In.Hotkey.combo.key === "Mute");
+      await press("IN");
+      await logged("would press Mute");
+    }, ["settings", "simulator"]);
+    await step("Keys: IN holds Shift (Quick picks)", async () => {
+      await keyIn("In");
+      await toChoices();
+      await choice("Hold a key while I hold this one");
+      await click("settings", ".side-panel button.preset", "Shift");
+      await configShows("IN holds Shift", (c) => JSON.stringify(basePage(c).bindings.In) === JSON.stringify({ Held: { combo: { modifiers: ["Shift"], key: "" } } }));
+      await press("IN");
+      await logged("would release Shift");
+    }, ["settings", "simulator"]);
+    await step("Keys: IN turns Ctrl on and off (Quick picks)", async () => {
+      await allChoices();
+      await choice("Turn a key on and off");
+      await click("settings", ".side-panel button.preset", "Ctrl");
+      await configShows("IN latches Ctrl", (c) => basePage(c).bindings.In.Latched.combo.modifiers[0] === "Ctrl");
+    });
+    await step("Keys: IN turns the wheel into a volume knob; Wheel tab: Back to normal", async () => {
+      await allChoices();
+      await choice("Turn the wheel into");
+      await click("settings", ".side-panel button.option-row", "System volume");
+      await configShows("IN volume knob", (c) => basePage(c).bindings.In.OverrideToggle.mode === "SystemVolume");
+      await press("IN");
+      await click("settings", "nav.toolbar button.tab", "Wheel");
+      await waitFor("settings", "the override notice", `return document.querySelector(".override-notice")?.textContent.includes("IN has turned the wheel into a volume knob")`);
+      await turn("right");
+      await logged("would turn the volume up");
+      await click("settings", ".override-notice button", "Back to normal");
+      await gone("settings", ".override-notice");
+      await logged("the wheel is back to normal");
+      await click("settings", "nav.toolbar button.tab", "Keys");
+    }, ["settings", "simulator"]);
+    await step("Keys: IN opens an installed app (search, pick)", async () => {
+      await keyIn("In");
+      await toChoices();
+      await choice("Open an app or website");
+      const first = await waitFor("settings", "the installed apps", `return document.querySelector(".side-panel .app-row .grow")?.textContent.trim()`, [], 20000);
+      say(`  first app: ${first}`);
+      await typeInto("settings", '.side-panel input[aria-label="Search your apps"]', first.slice(0, 4));
+      await waitFor("settings", "the search to filter", `const q = arguments[0].toLowerCase();
+        const rows = [...document.querySelectorAll(".side-panel .app-row .grow")];
+        return rows.length > 0 && rows.every((r) => r.textContent.toLowerCase().includes(q));`, [first.slice(0, 4)]);
+      await typeInto("settings", '.side-panel input[aria-label="Search your apps"]', `${SELECT_ALL}zzzz-no-such-app`);
+      await waitFor("settings", "no apps match", `return document.querySelector(".side-panel .app-none")?.textContent.includes("No apps match")`);
+      await typeInto("settings", '.side-panel input[aria-label="Search your apps"]', `${SELECT_ALL}\uE003`);
+      await click("settings", ".side-panel .app-row", first);
+      await configShows("IN opens a Start Menu app", (c) => basePage(c).bindings.In.LaunchApp.path === "explorer.exe" && /\.lnk$/i.test(basePage(c).bindings.In.LaunchApp.args[0]));
+      await press("IN");
+      await logged("would launch explorer.exe");
+    }, ["settings", "simulator"]);
+    await step("Keys: IN opens a chosen file (Choose file…)", async () => {
+      await click("settings", ".side-panel button.choose-file", "Choose file");
+      await configShows("IN opens the chosen exe", (c) => basePage(c).bindings.In.LaunchApp.path.endsWith("E2E Example App.exe"));
+      await logged("Chose the app E2E Example App");
+      await press("IN");
+      await waitFor("simulator", "would launch the chosen exe", `return [...document.querySelectorAll(".fw-sim-log li")].slice(0, 14).some((li) => li.textContent.includes("would launch") && li.textContent.includes("E2E Example App.exe"))`);
+    }, ["settings", "simulator"]);
+    await step("Keys: IN goes to a new page Music", async () => {
+      await allChoices();
+      await choice("Switch to another set of keys");
+      await click("settings", ".side-panel button.suggestion", "Music");
+      await configShows("a Music page IN goes to", (c) => {
+        const music = c.layers.find((l) => l.name === "Music");
+        return music && basePage(c).bindings.In.LayerPush.target === music.id;
+      });
+      await waitFor("settings", "the page pills", `return document.querySelectorAll(".pills .pill").length === 2`);
+    });
+    await step("Keys: on Music, IN goes back (Show the page)", async () => {
+      await click("settings", ".pill button[role=tab]", "Music");
+      await keyIn("In");
+      await waitFor("settings", "the back card", `return document.querySelector(".side-panel .back-card")`);
+      await click("settings", ".side-panel button", "Show the ");
+      await waitFor("settings", "the first page", `return document.querySelector(".pill.is-active")?.textContent.includes(arguments[0])`, [basePage(await readConfig()).name]);
+    });
+    await step("Keys: add a page, rename it, delete it", async () => {
+      await click("settings", "button.pill-add", "Add page");
+      await shows("settings", "To reach this page");
+      const added = await configShows("a third page", (c) => c.layers.length === 3);
+      const id = added.layers[2].id;
+      await click("settings", '.pill.is-active button[aria-label="Rename"]');
+      await typeInto("settings", ".pill.is-active input.pill-rename", `${SELECT_ALL}Mixer\uE007`);
+      await configShows("the page renamed Mixer", (c) => c.layers.find((l) => l.id === id)?.name === "Mixer");
+      await click("settings", ".pill.is-active button.pill-icon", "Delete page");
+      await click("settings", ".confirm-inline button", "Delete");
+      await configShows("Mixer deleted", (c) => !c.layers.some((l) => l.id === id));
+    });
+    await step("Keys: IN does nothing", async () => {
+      await keyIn("In");
+      await toChoices();
+      await choice("Do nothing");
+      await configShows("IN cleared", (c) => !("In" in basePage(c).bindings));
+    });
+    await step("Keys: SHTL is a wheel button: Set up the wheel", async () => {
+      await keyIn("Shtl");
+      await click("settings", ".side-panel button", "Set up the wheel");
+      await shows("settings", "When I turn the wheel");
+      await click("settings", "nav.toolbar button.tab", "Keys");
+    });
+    await step("Keys: close the key panel", async () => {
+      await keyIn("Cut");
+      await click("settings", '.side-panel button[aria-label="Close"]');
+      await waitFor("settings", "Pick a key", `return document.querySelector(".side-panel .panel-empty")`);
+    });
+
+    await step("Toolbar: switch Off, then the notice's Turn on", async () => {
+      await click("settings", 'button.switch[aria-label="Turn freewheel on or off"]');
+      await waitFor("settings", "Off", `return document.querySelector("button.status")?.textContent.includes("Off: Resolve can use it")`);
+      await click("settings", ".notice-off button", "Turn on");
+      await waitFor("settings", "On again", `return document.querySelector("button.status")?.textContent.includes("Connected")`);
+    }, ["settings", "simulator"]);
+
+    // ---- The Simulator window's remaining controls ---------------------
+    await step("simulator: pick SNAP and Press", async () => {
+      await click("simulator", 'select[aria-label="Key to press"] option[value="Snap"]');
+      await click("simulator", ".fw-sim-line button.fw-sim-primary", "Press");
+      await logged("You pressed SNAP");
+    }, ["simulator", "settings"]);
+    await sim("Computer appearance", "Dark");
+    await sim("Computer appearance", "Light");
+    await step("simulator: Bluetooth 12% shows the low battery notice", async () => {
+      await click("simulator", `[role=group][aria-label="Speed Editor"] button`, "Bluetooth 12%");
+      await shows("settings", "Battery is low (12%).");
+      await click("simulator", `[role=group][aria-label="Speed Editor"] button`, "USB");
+    }, ["simulator", "settings"]);
+    await step("simulator: Keys, empty setup", async () => {
+      await click("simulator", `[role=group][aria-label="Keys"] button`, "Empty setup");
+      await logged("empty setup loaded");
+      await configShows("no keys", (c) => c.layers.every((l) => Object.keys(l.bindings).length === 0));
+    }, ["simulator", "settings"]);
+    await step("simulator: Keys, sample setup with media keys", async () => {
+      await click("simulator", `[role=group][aria-label="Keys"] button`, "Several set");
+      await logged("sample mappings loaded");
+      await configShows("STOP/PLAY Play/Pause, AUDIO ONLY Mute", (c) => basePage(c).bindings.StopPlay.Hotkey.combo.key === "PlayPause" && basePage(c).bindings.AudioOnly.Hotkey.combo.key === "Mute");
+      await waitFor("settings", "the drawing's Play/Pause", `return document.querySelector('.device [data-binding="StopPlay"]')?.getAttribute("title") === "Play/Pause"`, [], 15000);
+      await click("simulator", 'select[aria-label="Key to press"] option[value="StopPlay"]');
+      await click("simulator", ".fw-sim-line button.fw-sim-primary", "Press");
+      await logged("would press PlayPause");
+      await press("FULL VIEW");
+      await click("settings", "nav.toolbar button.tab", "Wheel");
+      await waitFor("settings", "the override notice", `return document.querySelector(".override-notice")?.textContent.includes("FULL VIEW has turned the wheel into a volume knob")`);
+      await click("settings", ".override-notice button", "Back to normal");
+      await gone("settings", ".override-notice");
+      await click("settings", "nav.toolbar button.tab", "Keys");
+    }, ["simulator", "settings"]);
+    await step("simulator: macOS permission missing, tray's Needs permission line", async () => {
+      await click("simulator", `[role=group][aria-label="macOS permission"] button`, "Missing");
+      await shows("settings", "freewheel needs your permission.");
+      await tray("status");
+      await logged("Tray: ");
+      await waitFor("settings", "the permission fix", `return document.querySelector(".setup")`);
+      await click("simulator", `[role=group][aria-label="macOS permission"] button`, "Allowed");
+      // The Simulator's Record a key leaves the permission fix.
+      await jumpTo("Record a key");
+      await waitFor("settings", "the settings tabs", `return document.querySelector("nav.toolbar")`);
+    }, ["simulator", "settings"]);
+    await step("simulator: Record a key opens CUT recording", async () => {
+      await jumpTo("Record a key");
+      await logged("Recording a shortcut for CUT");
+      await waitFor("settings", "CUT's panel recording", `return document.querySelector(".side-panel .panel-title")?.textContent.includes("CUT") && document.querySelector(".side-panel .mode-title")?.textContent.includes("Press a shortcut")`);
+    }, ["simulator", "settings"]);
+    await step("simulator: Reload settings", async () => {
+      await jumpTo("Reload settings");
+      await logged("Settings window reloaded");
+      await waitFor("settings", "the reloaded window", `return document.readyState === "complete" && document.querySelector("nav.toolbar")`, [], 20000);
+    }, ["simulator", "settings"]);
+    await step("simulator: Settings window", () => jumpTo("Settings window"), ["simulator", "settings"]);
+    await step("simulator: First run, then through it again", async () => {
+      await jumpTo("First run");
+      await logged("First run opened");
+      await click("settings", "button.get-started");
+      await waitFor("settings", "Found it!", `return document.querySelector(".found")`, [], 20000);
+      await click("settings", ".first-run-buttons button.btn-primary", "Continue");
+      await waitFor("settings", "the next screen", `return document.querySelector("nav.toolbar") || [...document.querySelectorAll("button")].some((b) => b.textContent.includes("Start using freewheel"))`);
+      if (!(await d.exec(`return !!document.querySelector("nav.toolbar")`))) await click("settings", "button", "Start using freewheel");
+      await waitFor("settings", "the settings tabs", `return document.querySelector("nav.toolbar")`);
+    }, ["simulator", "settings"]);
+    await step("simulator: send keys for real on, then off", async () => {
+      await click("simulator", ".fw-sim-switch input");
+      await shows("simulator", "Shortcuts reach the apps you have open.");
+      await click("simulator", ".fw-sim-switch input");
+      await shows("simulator", "Off: shortcuts only show up in the log.");
+    }, ["simulator"]);
+    await step("tray: freewheel is On / Off", async () => {
+      await tray("toggle");
+      await logged("Tray: freewheel is");
+      await waitFor("settings", "Off", `return document.querySelector("button.status")?.textContent.includes("Off: Resolve can use it")`);
+      await waitFor("simulator", "the tray's Off", `return document.querySelector('[data-tray="toggle"]')?.textContent.includes("Off")`);
+      await tray("toggle");
+      await waitFor("settings", "On", `return document.querySelector("button.status")?.textContent.includes("Connected")`);
+    }, ["simulator", "settings"]);
+    await step("tray: Open settings", async () => {
+      await tray("open-settings");
+      await logged("Tray: Open settings");
+    }, ["simulator", "settings"]);
+    await step("tray: Start at login on and off", async () => {
+      await tray("start-at-login");
+      await logged("would turn start at login on");
+      await waitFor("simulator", "checked", `return document.querySelector('[data-tray="start-at-login"]')?.getAttribute("aria-pressed") === "true"`);
+      await configShows("start_at_login on (tray)", (c) => c.settings.start_at_login === true);
+      await tray("start-at-login");
+      await logged("would turn start at login off");
+      await configShows("start_at_login off (tray)", (c) => c.settings.start_at_login === false);
+    }, ["simulator", "settings"]);
+    await step("tray: Download logs for support", async () => {
+      await tray("download-logs");
+      await logged("Tray: Download logs");
+      await logged("Saved the logs to", 20000);
+    }, ["simulator", "settings"]);
+
+    // ---- Backups, restores and imports prove the data ------------------
+    let backedUp;
+    await step("data: a distinctive setup on two pages", async () => {
+      const cur = await readConfig();
+      await saveConfig({
+        ...cur,
+        layers: [
+          {
+            id: cur.base_layer,
+            name: basePage(cur).name,
+            bindings: {
+              In: { Hotkey: { combo: { modifiers: ["Ctrl", "Shift"], key: "S" } } },
+              Cut: { LaunchApp: { path: "C:\\Tools\\Round Trip.exe", args: ["--fw"], enabled: true } },
+              Trans: { Held: { combo: { modifiers: ["Shift"], key: "" } } },
+              Snap: { Latched: { combo: { modifiers: ["Alt"], key: "" } } },
+              Cam5: { LayerPush: { target: "studio" } },
+              Shtl: { SetJogMode: { mode: "Volume" } },
+              FullView: { OverrideToggle: { mode: "Brightness" } },
+            },
+          },
+          { id: "studio", name: "Studio", bindings: { Cut: { Hotkey: { combo: { modifiers: [], key: "PlayPause" } } }, Out: { Hotkey: { combo: { modifiers: ["Ctrl"], key: "O" } } } } },
+        ],
+        jog: {
+          default_mode: "Jog",
+          per_mode: {
+            Jog: { left: { Hotkey: { combo: { modifiers: [], key: "Left" } } }, right: { Hotkey: { combo: { modifiers: [], key: "Right" } } }, threshold: 3, shuttle_max_rate_hz: null },
+            Scroll: { left: { Scroll: { amount: -1 } }, right: { Scroll: { amount: 1 } }, threshold: 2, shuttle_max_rate_hz: null },
+            Shuttle: { left: null, right: null, threshold: 1, shuttle_max_rate_hz: 8 },
+          },
+        },
+        overrides: { ...cur.overrides, system_volume_step: 0.05, app_volume_step: 0.03, brightness_step: 7 },
+      });
+      // The Keys tab reads the config afresh; the second page is renamed by hand.
+      await click("settings", "nav.toolbar button.tab", "Wheel");
+      await click("settings", "nav.toolbar button.tab", "Keys");
+      await click("settings", ".pill button[role=tab]", "Studio");
+      await click("settings", '.pill.is-active button[aria-label="Rename"]');
+      await typeInto("settings", ".pill.is-active input.pill-rename", `${SELECT_ALL}Edit Bay\uE007`);
+      backedUp = await configShows("the page renamed Edit Bay", (c) => c.layers.find((l) => l.id === "studio")?.name === "Edit Bay");
+    });
+    await step("data: Back up writes every page, key, wheel mode and dial step", async () => {
+      await click("settings", "nav.toolbar button.tab", "Help & backup");
+      await click("settings", "#backup button", "Back up");
+      await shows("settings", "Your keys are backed up.");
+      const file = JSON.parse(readFileSync(join(dialogs, "freewheel-mappings.json"), "utf8"));
+      if (mappings(file) !== mappings(backedUp)) throw new Error(`the backup file is not the setup: ${JSON.stringify(file).slice(0, 400)}`);
+      say(`  backup file: ${file.layers.length} pages, ${file.layers.reduce((n, l) => n + Object.keys(l.bindings).length, 0)} keys, ${Object.keys(file.jog.per_mode).length} wheel modes`);
+    });
+    await step("data: Empty setup clears it", async () => {
+      await click("simulator", `[role=group][aria-label="Keys"] button`, "Empty setup");
+      await configShows("no keys and one page", (c) => c.layers.length === 1 && Object.keys(c.layers[0].bindings).length === 0);
+    }, ["simulator", "settings"]);
+    await step("data: Restore brings back exactly the backed-up setup", async () => {
+      await restoreFrom(null, true);
+      await shows("settings", "Your keys are restored.");
+      const now = await configShows("the restored mappings equal the backup", (c) => mappings(c) === mappings(backedUp));
+      say(`  restored: ${now.layers.map((l) => l.name).join(", ")}`);
+      await click("settings", "nav.toolbar button.tab", "Keys");
+      await waitFor("settings", "both pages", `return [...document.querySelectorAll(".pills .pill")].map((p) => p.textContent).join("|").includes("Edit Bay")`);
+      await drawingShows({ In: "Ctrl+Shift+S", Cut: "Opens Round Trip", Trans: "Hold Shift", Snap: "Alt on/off", Cam5: "→ Edit Bay", FullView: "Brightness" });
+    });
+    await step("data: the page key switches pages and the Keys tab follows", async () => {
+      await pressKey("Cam5");
+      await activePill("Edit Bay");
+      await waitFor("simulator", "the Speed Editor on the second page", `return document.querySelector(".fw-sim-meta")?.textContent.includes("Page studio")`);
+      await drawingShows({ Cut: "Play/Pause", Cam5: "← Back to " + basePage(backedUp).name });
+      await press("CUT");
+      await logged("would press PlayPause");
+      await pressKey("Cam5");
+      await activePill(basePage(backedUp).name);
+      await press("CUT");
+      await lineWith("would launch", "Round Trip.exe");
+    }, ["settings", "simulator"]);
+    await step("data: someone else's file, apps not allowed: its app key comes in off", async () => {
+      const theirs = join(dialogs, "someone-else.json");
+      writeFileSync(theirs, JSON.stringify({
+        version: 1,
+        base_layer: "base",
+        layers: [{ id: "base", name: "Their keys", bindings: { Cam1: { LaunchApp: { path: "C:\\Their\\Tool.exe", args: [], enabled: true } }, In: { Hotkey: { combo: { modifiers: ["Ctrl"], key: "T" } } } } }],
+        jog: backedUp.jog,
+        overrides: backedUp.overrides,
+      }, null, 2));
+      await restoreFrom(theirs, false);
+      await configShows("Cam1 imported off", (c) => basePage(c).name === "Their keys" && basePage(c).bindings.Cam1.LaunchApp.enabled === false);
+      await click("settings", "nav.toolbar button.tab", "Keys");
+      await drawingShows({ Cam1: "Opens Tool (off)", In: "Ctrl+T" });
+      await keyIn("Cam1");
+      await waitFor("settings", "the panel saying it is off", `return document.querySelector(".side-panel .panel-now")?.textContent.includes("off: restored from a file")`);
+      await press("CAM 1");
+      await logged("Tool.exe is off");
+    }, ["settings", "simulator"]);
+    await step("data: the same file with apps allowed: its app key comes in on", async () => {
+      await restoreFrom(join(dialogs, "someone-else.json"), true);
+      await configShows("Cam1 imported on", (c) => basePage(c).bindings.Cam1.LaunchApp.enabled === true);
+      await click("settings", "nav.toolbar button.tab", "Keys");
+      await drawingShows({ Cam1: "Opens Tool" });
+      await press("CAM 1");
+      await lineWith("would launch", "Tool.exe");
+    }, ["settings", "simulator"]);
+    for (const [name, text, error] of [
+      ["broken.json", "{ this is not a backup", "This is not a freewheel mappings file"],
+      ["newer.json", JSON.stringify({ version: 99, layers: "from the future" }), "This file is from a newer version of freewheel."],
+    ])
+      await step(`data: ${name} is refused, the keys stay as they were`, async () => {
+        const before = JSON.stringify(await readConfig());
+        writeFileSync(join(dialogs, name), text);
+        await restoreFrom(join(dialogs, name), true);
+        await waitFor("settings", `the error "${error}"`, `return document.querySelector("#backup [role=alert]")?.textContent.includes(arguments[0])`, [error]);
+        await sleep(500);
+        const after = JSON.stringify(await readConfig());
+        if (after !== before) throw new Error(`${name} changed the config`);
+        say(`  ${name}: "${await d.exec(`return document.querySelector("#backup [role=alert]").textContent`)}"`);
+      });
+    await step("data: restore the setup again and set the look, to check after a restart", async () => {
+      await restoreFrom(null, true);
+      await configShows("the backup again", (c) => mappings(c) === mappings(backedUp));
+      await click("settings", "nav.toolbar button.tab", "General");
+      await click("settings", "button.appearance-option", "Dark");
+      await click("settings", "nav.toolbar button.tab", "Help & backup");
+      await openMore();
+      if ((await switchState("settings", "Turn on detailed logs for troubleshooting")) !== "true") await flip("Turn on detailed logs for troubleshooting", true);
+      saved = await configShows("Dark and detailed logs saved", (c) => c.settings.appearance === "Dark" && c.settings.detailed_logs === true);
+    });
     await step("settings still clickable after the simulator", async () => {
       await click("settings", "nav.toolbar button.tab", "Wheel");
       await waitFor("settings", "the Wheel tab", `return document.body.innerText.includes("When I turn the wheel")`);
     });
+
+    say("step: tray: Quit freewheel");
+    // The app may be gone before the click answers.
+    await tray("quit").catch((e) => say(`  the Quit click: ${e.message}`));
+    if (app) {
+      const end = Date.now() + 20000;
+      while (app.exitCode === null && Date.now() < end) await sleep(200);
+      if (app.exitCode === null) throw new Error("the tray's Quit did not end the app within 20 s");
+      say(`  the app quit with ${app.exitCode}`);
+    }
+    if (app && saved) {
+      say("relaunching the app (same config folder) to check what was saved");
+      app = await launch(resolve(opts.app), opts.port, say, dialogs);
+      d.session = null;
+      await d.start(resolve(opts.app), opts.port);
+      await findWindows();
+      await step("relaunch: pages, keys, wheel, dial steps and settings are all still there", async () => {
+        await waitFor("settings", "the settings tabs (no first run)", `return document.querySelector("nav.toolbar")`, [], 20000);
+        const now = await readConfig();
+        if (JSON.stringify(now) !== JSON.stringify(saved)) throw new Error(`after a restart the config is ${JSON.stringify(now).slice(0, 600)}`);
+        say(`  after restart: ${now.layers.map((l) => `${l.name} (${Object.keys(l.bindings).length} keys)`).join(", ")}; appearance ${now.settings.appearance}`);
+        await waitFor("settings", "appearance Dark", `return document.documentElement.dataset.appearance === "Dark"`);
+        await click("settings", "nav.toolbar button.tab", "Keys");
+        await waitFor("settings", "both pages", `return [...document.querySelectorAll(".pills .pill")].map((p) => p.textContent).join("|").includes("Edit Bay")`);
+        await drawingShows({ In: "Ctrl+Shift+S", Cut: "Opens Round Trip", Cam5: "→ Edit Bay" });
+      }, ["settings", "simulator"]);
+      say("step: tray: Quit freewheel (after the restart)");
+      await tray("quit").catch((e) => say(`  the Quit click: ${e.message}`));
+      const end = Date.now() + 20000;
+      while (app.exitCode === null && Date.now() < end) await sleep(200);
+      if (app.exitCode === null) throw new Error("the tray's Quit did not end the relaunched app within 20 s");
+    }
     say("e2e: PASS");
     writeFileSync(join(out, "e2e-log.txt"), log.join("\n") + "\n");
   } catch (e) {

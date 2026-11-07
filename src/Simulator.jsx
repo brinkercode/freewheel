@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { LABELS } from "./keys.js";
+import { SIM_LOG_EVENT } from "./simulateEvents.js";
 import { WindowControls, isMac } from "./TitleBar.jsx";
 import "./styles/simulator.css";
 
@@ -9,6 +10,7 @@ import "./styles/simulator.css";
 const tauri = () => globalThis.window?.__TAURI__;
 const simulate = (control) => tauri().core.invoke("simulate", { control });
 const jump = (to) => tauri().core.invoke("sim_jump", { to });
+const trayClick = (item) => tauri().core.invoke("sim_tray", { item });
 // `to`: Settings, FirstRun, RecordKey, Light, Dark, Reload or Quit.
 
 /** The prototype's quick keys, by binding name. */
@@ -48,6 +50,17 @@ const TRAY = [
   ["attention", "Needs attention"],
 ];
 
+/** The tray menu's items, by id (src-tauri tray.rs), as the menu words them. */
+export const TRAY_ITEMS = [
+  ["toggle", (m) => (m?.on === false ? "freewheel is Off" : "freewheel is On"), (m) => m?.on !== false],
+  ["open-settings", () => "Open settings…"],
+  ["start-at-login", () => "Start at login", (m) => m?.start_at_login === true],
+  ["download-logs", () => "Download logs for support…"],
+  ["quit", () => "Quit freewheel"],
+];
+/** The permission line, in the menu only while one is missing. */
+export const TRAY_STATUS = "status";
+
 // "New version" publishes a newer version on the simulated update server;
 // the settings window finds it by itself, as after a real release.
 const UPDATE_TEXT = {
@@ -77,6 +90,7 @@ export default function Simulator({ initial = null }) {
   const [dark, setDark] = useState(false);
   // What is plugged in, as picked: the status only names the bus while freewheel is On.
   const [plug, setPlug] = useState(null);
+  const [trayMenu, setTrayMenu] = useState(null);
   const turning = useRef(null);
   const down = useRef(new Set());
 
@@ -95,7 +109,14 @@ export default function Simulator({ initial = null }) {
           }),
         Promise.resolve(),
       )
-      .then(setStatus, (e) => note([String(e)], "error"));
+      .then(
+        (s) => {
+          setStatus(s);
+          // The tray menu follows the device (its On/Off check, the permission line).
+          trayClick("State").then(setTrayMenu, () => {});
+        },
+        (e) => note([String(e)], "error"),
+      );
 
   const go = (to, said) =>
     jump(to).then(
@@ -103,9 +124,23 @@ export default function Simulator({ initial = null }) {
       (e) => note([String(e)], "error"),
     );
 
+  const tray = (item) =>
+    trayClick(item).then(
+      (m) => (setTrayMenu(m), item !== "State" && send({ type: "Status" })),
+      (e) => note([String(e)], "error"),
+    );
+
   useEffect(() => {
-    if (tauri()) send({ type: "Status" });
-    return () => clearInterval(turning.current);
+    if (!tauri()) return () => clearInterval(turning.current);
+    send({ type: "Status" });
+    tray("State");
+    // What the app did for the settings window, the tray and device
+    // commands (src-tauri simulate.rs note): shown as it happens.
+    const unlisten = tauri().event?.listen(SIM_LOG_EVENT, (e) => note(e.payload ?? [], "app"));
+    return () => {
+      clearInterval(turning.current);
+      Promise.resolve(unlisten).then((stop) => stop?.(), () => {});
+    };
   }, []);
 
   const keyDown = (key) => {
@@ -128,7 +163,7 @@ export default function Simulator({ initial = null }) {
   const keys = status?.keys ?? Object.keys(LABELS);
   const held = status?.held_keys ?? [];
   const update = status?.update;
-  const tray = trayState(status);
+  const trayIcon = trayState(status);
 
   return (
     <main className={`fw-sim${isMac() ? " is-mac" : ""}`}>
@@ -261,7 +296,7 @@ export default function Simulator({ initial = null }) {
         <h2 className="fw-sim-label">Tray icon states</h2>
         <div className="fw-sim-tray" role="list" aria-label="Tray icon states">
           {TRAY.map(([state, text]) => (
-            <span key={state} role="listitem" className="fw-sim-tray-item" aria-current={tray === state}>
+            <span key={state} role="listitem" className="fw-sim-tray-item" aria-current={trayIcon === state}>
               <span className={`fw-tray-icon is-${state}`} aria-hidden="true">
                 <span className="ring" />
                 <span className="dot" />
@@ -270,6 +305,22 @@ export default function Simulator({ initial = null }) {
               {text}
             </span>
           ))}
+        </div>
+      </section>
+
+      <section className="fw-sim-group">
+        <h2 className="fw-sim-label">Tray menu</h2>
+        <div className="fw-sim-grid fw-sim-tray-menu" role="group" aria-label="Tray menu">
+          {TRAY_ITEMS.map(([id, text, checked]) => (
+            <button key={id} data-tray={id} aria-pressed={checked ? checked(trayMenu) : undefined} onClick={() => tray(id)}>
+              {text(trayMenu)}
+            </button>
+          ))}
+          {trayMenu?.status_line && (
+            <button data-tray={TRAY_STATUS} onClick={() => tray(TRAY_STATUS)}>
+              {trayMenu.status_line}
+            </button>
+          )}
         </div>
       </section>
 

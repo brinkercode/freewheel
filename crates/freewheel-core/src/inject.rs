@@ -6,6 +6,24 @@ use std::fmt;
 
 pub use crate::config::{KeyCombo, Modifier};
 
+/// The media key names a [`KeyCombo`] may use (src/keys.js NAMED): each
+/// injector sends them as the OS media keys (Windows VK_MEDIA_* /
+/// VK_VOLUME_*, macOS NX system keys).
+pub const PLAY_PAUSE: &str = "PlayPause";
+pub const MUTE: &str = "Mute";
+pub const VOLUME_UP: &str = "VolumeUp";
+pub const VOLUME_DOWN: &str = "VolumeDown";
+pub const NEXT_TRACK: &str = "NextTrack";
+pub const PREV_TRACK: &str = "PrevTrack";
+pub const MEDIA_KEYS: [&str; 6] = [
+    PLAY_PAUSE,
+    MUTE,
+    VOLUME_UP,
+    VOLUME_DOWN,
+    NEXT_TRACK,
+    PREV_TRACK,
+];
+
 /// One key that can be pressed or released: a modifier or a named key.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Keystroke {

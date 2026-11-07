@@ -28,6 +28,8 @@ pub enum Command {
     Reload(Box<Config>),
     /// The quit hook: release every held key, then acknowledge and stop.
     Quit(Sender<()>),
+    /// The Wheel tab's 'Back to normal': leave the dial override.
+    ExitOverride,
 }
 
 /// What the tray icon shows.
@@ -48,6 +50,8 @@ pub enum Update {
     Layer(String),
     /// A key went down, named for the Keys tab.
     KeyPressed(KeyPressed),
+    /// The dial override a key turned the wheel into (None: back to normal).
+    Override(Option<OverrideMode>),
 }
 
 impl From<ConnectionStatus> for TrayState {
@@ -103,7 +107,18 @@ pub fn run<T, O, C, F>(
         };
         let mut events = match commands.recv_timeout(wait) {
             Ok(Command::SetEnabled(on)) => manager.set_enabled(on),
+            Ok(Command::ExitOverride) => {
+                let dial = engine.active_override();
+                if engine.exit_override() {
+                    dial_changed(dial, None, overrides);
+                    on_update(Update::Override(None));
+                }
+                Vec::new()
+            }
             Ok(Command::Reload(config)) => {
+                if engine.active_override().is_some() {
+                    on_update(Update::Override(None));
+                }
                 release(&mut engine, injector, overrides);
                 overrides.set_steps(config.overrides.clone());
                 engine = Engine::new(&config);
@@ -142,6 +157,7 @@ pub fn run<T, O, C, F>(
                     }
                     if engine.active_override() != dial {
                         dial_changed(dial, engine.active_override(), overrides);
+                        on_update(Update::Override(engine.active_override()));
                     }
                 }
             }

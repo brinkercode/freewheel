@@ -64,9 +64,11 @@ jobs:
       - run: npm run build
 
       # The release exe with the built UI embedded (custom-protocol), as
-      # `tauri build` makes it: no dev server.
+      # `tauri build` makes it: no dev server. `e2e` adds the stand-ins for
+      # the OS file dialogs (src-tauri/src/e2e.rs, active only in --simulate
+      # with FREEWHEEL_E2E_DIALOG_DIR set); shipped builds never have it.
       - name: Build freewheel.exe
-        run: cargo build --release --locked -p freewheel --features tauri/custom-protocol
+        run: cargo build --release --locked -p freewheel --features tauri/custom-protocol,e2e
 
       # msedgedriver must match the WebView2 runtime the app runs in.
       - name: Install the msedgedriver matching WebView2

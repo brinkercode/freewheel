@@ -41,8 +41,12 @@ pub fn set_start_at_login(
     store.save(&config).map_err(|e| e.to_string())
 }
 
-/// Whether the OS login item is registered now (false when unknown).
+/// Whether the OS login item is registered now (false when unknown). In
+/// `--simulate` the login item is the simulator's own: the OS is untouched.
 pub(crate) fn autostart_enabled<R: Runtime>(app: &AppHandle<R>) -> bool {
+    if let Some(sim) = app.try_state::<crate::simulate::SimHandle>() {
+        return sim.start_at_login();
+    }
     app.autolaunch().is_enabled().unwrap_or_else(|e| {
         tracing::warn!(error = %e, "cannot read the start-at-login state");
         false
@@ -50,6 +54,17 @@ pub(crate) fn autostart_enabled<R: Runtime>(app: &AppHandle<R>) -> bool {
 }
 
 pub(crate) fn set_autostart<R: Runtime>(app: &AppHandle<R>, on: bool) -> Result<(), String> {
+    if let Some(sim) = app.try_state::<crate::simulate::SimHandle>() {
+        sim.set_start_at_login(on);
+        crate::simulate::note(
+            app,
+            format!(
+                "would turn start at login {} (the real login item is not touched)",
+                if on { "on" } else { "off" }
+            ),
+        );
+        return Ok(());
+    }
     let autolaunch = app.autolaunch();
     let result = if on {
         autolaunch.enable()
@@ -243,28 +258,46 @@ pub fn show_settings<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-/// Builds the tray. The toggle sends On/Off to the device loop and tells the
-/// Resolve watcher (`manual`) the switch was by hand; Quit exits the app,
-/// whose exit hook releases every held key.
-pub fn build<R: Runtime>(
-    app: &AppHandle<R>,
+/// The tray menu's live parts, managed by Tauri: what a menu click (or, in
+/// `--simulate`, the Simulator window's Tray menu) acts on.
+pub struct TrayMenu<R: Runtime> {
+    toggle: CheckMenuItem<R>,
+    login: CheckMenuItem<R>,
+    menu: Menu<R>,
     commands: Sender<Command>,
     manual: Sender<Message>,
-) -> tauri::Result<(TrayIcon<R>, CheckMenuItem<R>, StatusLine<R>)> {
-    // The checkbox shows the OS login item, not the config, at startup.
-    let (menu, toggle, login, status) = menu(app, autostart_enabled(app))?;
-    let check = toggle.clone();
-    let tray = TrayIconBuilder::with_id("main")
-        .icon(icon(TrayState::NotConnected))
-        .icon_as_template(cfg!(target_os = "macos"))
-        .tooltip(status_text(TrayState::NotConnected))
-        .menu(&menu)
-        .on_menu_event(move |app, event| match event.id().as_ref() {
+}
+
+/// The tray menu as the Simulator window shows it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct TrayMenuState {
+    /// The On/Off item's check.
+    pub on: bool,
+    pub start_at_login: bool,
+    /// The 'Needs permission (click to fix)' line, while it is in the menu.
+    pub status_line: Option<String>,
+}
+
+impl<R: Runtime> TrayMenu<R> {
+    pub fn state(&self) -> TrayMenuState {
+        TrayMenuState {
+            on: self.toggle.is_checked().unwrap_or(true),
+            start_at_login: self.login.is_checked().unwrap_or(false),
+            status_line: self
+                .menu
+                .get(STATUS)
+                .and_then(|i| i.as_menuitem().and_then(|m| m.text().ok())),
+        }
+    }
+
+    /// A click on the item `id`, after the OS flipped a check item's check.
+    pub fn clicked(&self, app: &AppHandle<R>, id: &str) {
+        match id {
             TOGGLE => {
-                let on = check.is_checked().unwrap_or(true);
-                let _ = check.set_text(toggle_text(on));
-                let _ = commands.send(Command::SetEnabled(on));
-                let _ = manual.send(Message::Manual(on));
+                let on = self.toggle.is_checked().unwrap_or(true);
+                let _ = self.toggle.set_text(toggle_text(on));
+                let _ = self.commands.send(Command::SetEnabled(on));
+                let _ = self.manual.send(Message::Manual(on));
             }
             STATUS => {
                 show_settings(app);
@@ -274,6 +307,7 @@ pub fn build<R: Runtime>(
             }
             OPEN_SETTINGS => show_settings(app),
             START_AT_LOGIN => {
+                let login = &self.login;
                 let on = login.is_checked().unwrap_or(false);
                 // Through the running config when the window has one, so its
                 // next save keeps this choice.
@@ -299,15 +333,85 @@ pub fn build<R: Runtime>(
             }
             QUIT => app.exit(0),
             _ => {}
+        }
+    }
+
+    /// `--simulate`: the Simulator window clicks tray item `id`, as the OS
+    /// menu does (a check item flips its check first).
+    pub fn click(&self, app: &AppHandle<R>, id: &str) -> Result<TrayMenuState, String> {
+        let text = match id {
+            TOGGLE | START_AT_LOGIN => {
+                let item = if id == TOGGLE {
+                    &self.toggle
+                } else {
+                    &self.login
+                };
+                let checked = item.is_checked().map_err(|e| e.to_string())?;
+                item.set_checked(!checked).map_err(|e| e.to_string())?;
+                item.text().unwrap_or_default()
+            }
+            OPEN_SETTINGS => "Open settings...".into(),
+            DOWNLOAD_LOGS => "Download logs for support...".into(),
+            QUIT => "Quit freewheel".into(),
+            STATUS if self.menu.get(STATUS).is_some() => {
+                self.state().status_line.unwrap_or_default()
+            }
+            other => return Err(format!("the tray menu has no item {other}")),
+        };
+        crate::simulate::note(app, format!("Tray: {text}"));
+        self.clicked(app, id);
+        Ok(self.state())
+    }
+}
+
+/// Builds the tray. The toggle sends On/Off to the device loop and tells the
+/// Resolve watcher (`manual`) the switch was by hand; Quit exits the app,
+/// whose exit hook releases every held key. The menu's parts are managed
+/// as [`TrayMenu`].
+pub fn build<R: Runtime>(
+    app: &AppHandle<R>,
+    commands: Sender<Command>,
+    manual: Sender<Message>,
+) -> tauri::Result<(TrayIcon<R>, CheckMenuItem<R>, StatusLine<R>)> {
+    // The checkbox shows the OS login item, not the config, at startup.
+    let (menu, toggle, login, status) = menu(app, autostart_enabled(app))?;
+    app.manage(TrayMenu {
+        toggle: toggle.clone(),
+        login,
+        menu: menu.clone(),
+        commands,
+        manual,
+    });
+    let tray = TrayIconBuilder::with_id("main")
+        .icon(icon(TrayState::NotConnected))
+        .icon_as_template(cfg!(target_os = "macos"))
+        .tooltip(status_text(TrayState::NotConnected))
+        .menu(&menu)
+        .on_menu_event(move |app, event| {
+            app.state::<TrayMenu<R>>().clicked(app, event.id().as_ref());
         })
         .build(app)?;
     Ok((tray, toggle, status))
 }
 
+/// `--simulate` only: the Simulator window's Tray menu clicks a tray item
+/// (`State` just reads the menu). Async: the menu lives on the main thread.
+#[tauri::command]
+pub async fn sim_tray(app: AppHandle, item: String) -> Result<TrayMenuState, String> {
+    let menu = app.state::<TrayMenu<tauri::Wry>>();
+    if item == "State" {
+        return Ok(menu.state());
+    }
+    menu.click(&app, &item)
+}
+
 /// Saves the log bundle to Downloads and says where, or why it failed.
 fn download_logs<R: Runtime>(app: &AppHandle<R>) {
     let (title, body) = match crate::settings::save_log_bundle(app) {
-        Ok(path) => ("Logs saved", logs_saved_text(&path)),
+        Ok(path) => {
+            crate::simulate::note(app, format!("Saved the logs to {path}"));
+            ("Logs saved", logs_saved_text(&path))
+        }
         Err(e) => ("Logs not saved", e),
     };
     let shown = app.notification().builder().title(title).body(body).show();
@@ -385,7 +489,7 @@ impl TrayView {
                 }
             }
             // Only the settings window shows these.
-            Update::Layer(_) | Update::KeyPressed(_) => return,
+            Update::Layer(_) | Update::KeyPressed(_) | Update::Override(_) => return,
         }
         let _ = tray.set_tooltip(Some(self.tooltip()));
     }
@@ -394,6 +498,24 @@ impl TrayView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Tray item ids, as the Simulator window names them.
+    const SIM_ITEMS: [&str; 6] = [
+        TOGGLE,
+        STATUS,
+        OPEN_SETTINGS,
+        START_AT_LOGIN,
+        DOWNLOAD_LOGS,
+        QUIT,
+    ];
+
+    #[test]
+    fn the_simulator_window_clicks_every_tray_item() {
+        let js = include_str!("../../src/Simulator.jsx");
+        for id in SIM_ITEMS {
+            assert!(js.contains(&format!("\"{id}\"")), "{id}");
+        }
+    }
 
     #[test]
     fn each_state_has_its_own_bundled_icon() {

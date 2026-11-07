@@ -4,7 +4,7 @@ import { renderToString } from "react-dom/server";
 import { expect, test, vi } from "vitest";
 import App from "./App.jsx";
 import KeysTab from "./KeysTab.jsx";
-import ActionEditor, { ActionForm, KeyPanel, blank, saveAction, validate, websiteAction } from "./ActionEditor.jsx";
+import ActionEditor, { ActionForm, KeyPanel, appHue, blank, filterApps, saveAction, validate, websiteAction } from "./ActionEditor.jsx";
 
 const config = (bindings = {}) => ({
   version: 1,
@@ -21,26 +21,42 @@ const config = (bindings = {}) => ({
 const editor = (action) => renderToString(<ActionEditor keyName="Cam1" initialConfig={config({ Cam1: action })} />);
 const text = (html) => html.replace(/<[^>]*>/g, " ");
 
-test("Open an app or website: the app's path or a website, each with Use", () => {
+test("Open an app or website: search the installed apps, Choose file…, or a website with Use", () => {
   const html = editor({ LaunchApp: { path: "/Applications/Notes.app", args: ["--new"], enabled: true } });
   expect(html).toContain("When I press CAM 1…");
   expect(html).toContain("Right now: Opens Notes");
   expect(blank("LaunchApp", config(), "base")).toEqual({ LaunchApp: { path: "", args: [], enabled: true } });
-  const form = renderToString(<ActionForm action={{ LaunchApp: { path: "/Applications/Notes.app", args: [], enabled: true } }} />);
-  expect(form).toContain('value="/Applications/Notes.app"');
+  const apps = [
+    { name: "Spotify", path: "explorer.exe", args: ["C:/Start Menu/Spotify.lnk"] },
+    { name: "Notepad", path: "explorer.exe", args: ["C:/Start Menu/Notepad.lnk"] },
+  ];
+  const form = renderToString(<ActionForm action={{ LaunchApp: { path: "explorer.exe", args: ["C:/Start Menu/Spotify.lnk"], enabled: true } }} initialApps={apps} />);
+  expect(form).toContain('placeholder="Search your apps"');
+  expect(form).toContain("Choose file…");
   expect(form).toContain('placeholder="like youtube.com"');
-  expect(form.match(/>Use<\/button>/g)).toHaveLength(2);
+  expect(form.match(/>Use<\/button>/g)).toHaveLength(1);
+  // The current app is checked.
+  expect(form).toMatch(/aria-selected="true"[^>]*>.*Spotify/);
+  expect(filterApps(apps, " note ")).toEqual([apps[1]]);
+  expect(filterApps(apps, "")).toEqual(apps);
+  expect(appHue("Spotify")).toBe(appHue("Spotify"));
+  expect(appHue("Spotify")).toBeLessThan(12);
   expect(websiteAction(" https://youtube.com/ ").LaunchApp.args).toEqual(["https://youtube.com"]);
 });
 
-test("Use saves the app, keeping its arguments, and a website opens in the browser", () => {
+test("picking an app, Choose file… and a website each save at once", async () => {
   const onUse = vi.fn();
-  const action = { LaunchApp: { path: "/bin/app", args: ["--new"], enabled: true } };
-  render(<ActionForm action={action} onUse={onUse} />);
-  fireEvent.click(screen.getAllByText("Use")[0]);
-  expect(onUse).toHaveBeenLastCalledWith(action);
+  const apps = [{ name: "Spotify", path: "explorer.exe", args: ["C:/Start Menu/Spotify.lnk"] }];
+  const choose = vi.fn(() => Promise.resolve({ name: "Budget", path: "C:/Tools/Budget.exe", args: [] }));
+  render(<ActionForm action={blank("LaunchApp", config(), "base")} initialApps={apps} choose={choose} onUse={onUse} />);
+  fireEvent.click(screen.getByText("Spotify"));
+  expect(onUse).toHaveBeenLastCalledWith({ LaunchApp: { path: "explorer.exe", args: ["C:/Start Menu/Spotify.lnk"], enabled: true } });
+  fireEvent.change(screen.getByLabelText("Search your apps"), { target: { value: "zz" } });
+  expect(screen.getByText("No apps match “zz”.")).toBeTruthy();
+  fireEvent.click(screen.getByText("Choose file…"));
+  await vi.waitFor(() => expect(onUse.mock.lastCall[0].LaunchApp.path).toBe("C:/Tools/Budget.exe"));
   fireEvent.change(screen.getByLabelText("Website"), { target: { value: "youtube.com" } });
-  fireEvent.click(screen.getAllByText("Use")[1]);
+  fireEvent.click(screen.getByText("Use"));
   expect(onUse.mock.lastCall[0].LaunchApp.args).toEqual(["https://youtube.com"]);
   cleanup();
 });
@@ -82,7 +98,7 @@ test("invalid input shows inline errors", () => {
   expect(validate({ SetJogMode: { mode: "Fast" } }, c, "base")).toHaveProperty("mode");
   expect(validate({ OverrideToggle: { mode: "Bass" } }, c, "base")).toHaveProperty("mode");
   expect(validate({ SetJogMode: { mode: "Jog" } }, c, "base")).toEqual({});
-  const html = renderToString(<ActionForm action={blank("LaunchApp", c, "base")} errors={{ path: "Choose the app to open." }} />);
+  const html = renderToString(<ActionForm action={blank("LaunchApp", c, "base")} initialApps={[]} errors={{ path: "Choose the app to open." }} />);
   expect(html).toMatch(/aria-invalid="true"/);
   expect(html).toContain('<span role="alert">Choose the app to open.</span>');
 });

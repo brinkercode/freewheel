@@ -319,13 +319,25 @@ export default function KeysTab({
     if (record) (setSelected(record.key), setRec(record));
   }, [record]);
   const pickKey = (k) => (setRec(null), setSelected(k));
+  // A page key on the Speed Editor switches its page: the Keys tab follows.
+  const deviceLayer = useRef(null);
+  useEffect(() => {
+    const layer = status?.layer;
+    if (!config || !layer || layer === deviceLayer.current) return;
+    deviceLayer.current = layer;
+    if (config.layers.some((l) => l.id === layer)) (setPage(layer), setSelected(null), setPageError(null));
+  }, [status?.layer, config]);
   if (!config) return null;
 
-  const commit = (next) =>
-    save(next).then(
-      () => (setConfig(next), setPageError(null)),
-      (e) => setPageError(saveErrorText(e)),
+  // Shown at once (a page name follows each keystroke), undone if the save fails.
+  const commit = (next) => {
+    const before = config;
+    setConfig(next);
+    return save(next).then(
+      () => setPageError(null),
+      (e) => (setConfig(before), setPageError(saveErrorText(e))),
     );
+  };
   const onDelete = () => {
     const r = deletePage(config, page);
     if (r.error) return setPageError(r.error);

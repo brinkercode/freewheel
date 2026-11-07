@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import { checkWorkflow } from "./check-workflow.mjs";
-import { DEVTOOLS_PORT_ENV, RESPONSIVE_MS, parseArgs, sessionBody, shotName } from "./e2e-windows.mjs";
+import { DEVTOOLS_PORT_ENV, DIALOG_DIR_ENV, RESPONSIVE_MS, parseArgs, sessionBody, shotName } from "./e2e-windows.mjs";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const wf = read("../.github/workflows/e2e-windows.yml");
@@ -23,6 +23,28 @@ test("the e2e session starts the real exe with --simulate through tauri-driver",
 
 test("the DevTools port env var matches the app", () => {
   expect(read("../src-tauri/src/simulate.rs")).toContain(`"${DEVTOOLS_PORT_ENV}"`);
+});
+
+test("the dialog stubs' env var matches the app, and only the e2e build has them", () => {
+  expect(read("../src-tauri/src/e2e.rs")).toContain(`"${DIALOG_DIR_ENV}"`);
+  expect(wf).toContain("--features tauri/custom-protocol,e2e");
+});
+
+test("every user-facing control is clicked and its result checked", () => {
+  for (const control of [
+    "Download logs", "a.show-file", "Back up", "Restore from a backup", "Turn on detailed logs for troubleshooting",
+    "Let restored keys open apps", "Start freewheel when I log in", "Match my computer", "Update automatically",
+    "Step aside automatically when DaVinci Resolve opens", "input.program-name", "Reset", "Change the volume",
+    "Change screen brightness", '"Nothing"', "Press shortcuts", "Scroll up and down", "Sensitivity", "data-view=List",
+    "Press a shortcut", "Play/Pause", "Mute", "Hold a key while I hold this one", "Turn a key on and off",
+    "Turn the wheel into", "System volume", "Back to normal", "Open an app or website", "Search your apps",
+    "button.choose-file", "Switch to another set of keys", "button.pill-add", "Rename", "Delete page", "Do nothing",
+    "Set up the wheel", "Show the ", "aria-label=\"Close\"", "Turn freewheel on or off", "Turn on", "Computer appearance",
+    "Bluetooth 12%", "Empty setup", "Several set", "macOS permission", "Record a key", "New version", "Reload settings",
+    "Settings window", "First run", "fw-sim-switch", 'tray("toggle")', 'tray("open-settings")', 'tray("start-at-login")',
+    'tray("download-logs")', 'tray("status")', 'tray("quit")',
+  ])
+    expect(script, control).toContain(control);
 });
 
 test("screenshots are numbered per step and window", () => {

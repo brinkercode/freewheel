@@ -100,6 +100,7 @@ export function sampleStatus() {
     permissions: params.get("perm") === "missing" ? { Accessibility: "Missing", InputMonitoring: "Granted" } : {},
     bus: BUS[conn] ?? null,
     paused: params.get("paused") === "1",
+    wheel_override: params.get("override") ?? null,
   };
 }
 
@@ -136,6 +137,18 @@ export function installMockTauri(win = window) {
       config.settings.detailed_logs = on;
       return null;
     },
+    show_logs_file: () => null,
+    exit_wheel_override: () => {
+      status.wheel_override = null;
+      (listeners.status ?? []).forEach((f) => f({ payload: structuredClone(status) }));
+      return null;
+    },
+    list_apps: () => [
+      { name: "Calculator", path: "explorer.exe", args: ["C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Calculator.lnk"] },
+      { name: "Google Chrome", path: "explorer.exe", args: ["C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Google Chrome.lnk"] },
+      { name: "Spotify", path: "explorer.exe", args: ["C:\\Users\\you\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Spotify.lnk"] },
+    ],
+    choose_app: () => ({ name: "Budget 2026", path: "C:\\Tools\\Budget 2026.exe", args: [] }),
     "plugin:updater|check": () => null,
   };
   const invoke = async (cmd, args = {}) => {

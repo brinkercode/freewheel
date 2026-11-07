@@ -72,6 +72,29 @@ export const exportLogs = () => invoke("export_logs");
  */
 export const setDetailedLogs = (on) => invoke("set_detailed_logs", { on });
 
+/**
+ * Help & backup's 'Show file': the log bundle saved last, selected in its
+ * folder (Explorer, the Finder). Rejects with a string when it is gone.
+ * @returns {Promise<void>}
+ */
+export const showLogsFile = () => invoke("show_logs_file");
+
+/** The Wheel tab's 'Back to normal': leaves the dial override a key turned on. */
+export const exitWheelOverride = () => invoke("exit_wheel_override");
+
+/**
+ * The installed apps for the key panel (Start Menu shortcuts on Windows,
+ * .app bundles on macOS), each as the LaunchApp to save.
+ * @returns {Promise<{name: string, path: string, args: string[]}[]>}
+ */
+export const listApps = () => invoke("list_apps");
+
+/**
+ * 'Choose file…': the OS file dialog for a program; resolves to
+ * { name, path, args } or null when cancelled.
+ */
+export const chooseApp = () => invoke("choose_app");
+
 /** What the UI says about a rejected import. */
 export function importErrorText(error) {
   if (error?.kind === "VersionMismatch" && error.found > error.expected)
