@@ -29,6 +29,9 @@ import {
 import { listenSimulate } from "./simulateEvents.js";
 import { TABS, finishFirstRun, firstRunDone, fromStatusEvent, showToast, switchOn } from "./shell.js";
 
+/** The status event's permissions, when it has any (else the screen polls get_permissions). */
+const asked = (permissions) => (permissions && Object.keys(permissions).length > 0 ? permissions : null);
+
 export default function App({ autoUpdate = true, storage = globalThis.localStorage }) {
   // The Simulator window exists only in `freewheel --simulate` (main.rs).
   if (globalThis.location?.hash === "#simulator") return <Simulator />;
@@ -132,7 +135,7 @@ function Settings({ autoUpdate, storage }) {
   else if (fixing)
     content = (
       <div className="setup">
-        <PermissionsScreen button="Done" onDone={() => setFixing(false)} />
+        <PermissionsScreen initial={asked(status?.permissions)} button="Done" onDone={() => setFixing(false)} />
       </div>
     );
   else

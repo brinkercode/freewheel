@@ -75,7 +75,9 @@ export default function FirstRun({ state, permissions, step: first = 0, initialP
           </div>
         </section>
       )}
-      {step === 2 && <PermissionsScreen initial={initialPermissions} button="Start using freewheel" onDone={onFinish} />}
+      {/* The screen shows the same permissions that decided to ask for them (the
+          status event's; --simulate fakes them on any OS, where get_permissions is empty). */}
+      {step === 2 && <PermissionsScreen initial={initialPermissions ?? permissions} button="Start using freewheel" onDone={onFinish} />}
     </main>
   );
 }
