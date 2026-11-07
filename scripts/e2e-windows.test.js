@@ -73,3 +73,21 @@ test("the e2e workflow is a Windows PR check that builds the embedded UI and upl
   expect(wf).toMatch(/name: freewheel-windows-simulate\n\s+path: simulate-build/);
   expect(wf).toContain("cp target/release/freewheel.exe src-tauri/windows/freewheel-simulate.cmd simulate-build/");
 });
+
+test("the e2e checks the header never overlaps at 820px and that the tray and the window share one On/Off", async () => {
+  const { HEADER_JS } = await import("./e2e-windows.mjs");
+  for (const part of [".toolbar .tab", ".toolbar .switch", ".toolbar .window-control", "tabs clipped", "header overflows"]) expect(HEADER_JS).toContain(part);
+  for (const step of [
+    "header: Looking for your Speed Editor… at 820px never overlaps",
+    "header: every status at 820px and 1000px, light and dark",
+    "On/Off: the window's switch moves the tray's check",
+    "On/Off: tray Off, window On, window Off, tray On",
+    "On/Off: a settings window opened after the tray's Off reads Off",
+  ])
+    expect(script).toContain(step);
+  expect(script).toContain('invoke("get_status")).enabled');
+  for (const shot of ["820-${appearance.toLowerCase()}", "1000-${appearance.toLowerCase()}"]) expect(script).toContain(shot);
+  // Only the --simulate window may resize the settings window.
+  expect(read("../src-tauri/capabilities/simulator.json")).toContain('"core:window:allow-set-size"');
+  expect(read("../src-tauri/capabilities/settings.json")).not.toContain("set-size");
+});

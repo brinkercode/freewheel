@@ -8,14 +8,17 @@ export const TOAST_MS = 2800;
 const BUS = { Usb: "USB", Bluetooth: "Bluetooth" };
 
 /**
- * The shell's view of a StatusEvent (bindings.ts). Stepped aside for Resolve
- * the device loop is Off, yet freewheel is On and only lent the device to
- * Resolve, so it reads as On and connected and the status says Paused.
+ * The shell's view of a StatusEvent (bindings.ts). `enabled` is the app's
+ * one On/Off (src-tauri settings.rs set_enabled): the tray's 'freewheel is
+ * On' and this window's switch both set it, so each shows the other's
+ * change. Stepped aside for Resolve the device loop is Off, yet freewheel is
+ * On and only lent the device to Resolve, so it reads as On and connected
+ * and the status says Paused.
  */
 export function fromStatusEvent(event) {
   const paused = event.paused ?? false;
   return {
-    enabled: paused || event.connection !== "Off",
+    enabled: event.enabled ?? (paused || event.connection !== "Off"),
     permissionMissing: Object.values(event.permissions ?? {}).includes("Missing"),
     connected: paused || event.connection === "Connected",
     bus: event.bus ?? null,

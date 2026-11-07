@@ -27,7 +27,14 @@ export type OverrideSettings = { system_volume_step: number, app_volume_step: nu
 
 export type SaveError = { "kind": "VersionMismatch", found: number, expected: number, } | { "kind": "UnknownField", path: string, } | { "kind": "UnknownKey", layer: string, key: string, } | { "kind": "BadLayerReference", location: string, target: string, } | { "kind": "Malformed", message: string, } | { "kind": "SaveFailed", message: string, };
 
-export type StatusEvent = { connection: ConnectionStatus, battery: Battery | null, layer: string, override_errors: Array<OverrideErrorStatus>, 
+export type StatusEvent = { 
+/**
+ * freewheel is On: the one On/Off the app has, whoever switched it (the
+ * settings window's switch, the tray's 'freewheel is On', the
+ * Simulator). Stepping aside for Resolve leaves it On and sets
+ * `paused`; `connection` then reads Off.
+ */
+enabled: boolean, connection: ConnectionStatus, battery: Battery | null, layer: string, override_errors: Array<OverrideErrorStatus>, 
 /**
  * Permission name (`Accessibility`, `InputMonitoring`) to its grant;
  * empty outside macOS.

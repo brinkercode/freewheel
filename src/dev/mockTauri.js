@@ -96,6 +96,7 @@ const BUS = { usb: "Usb", bt: "Bluetooth", btlow: "Bluetooth" };
 export function sampleStatus() {
   const conn = params.get("conn") ?? "usb";
   return {
+    enabled: params.get("off") !== "1",
     connection: params.get("off") === "1" ? "Off" : conn === "none" ? "Absent" : "Connected",
     battery: conn === "bt" ? { level: 64, charging: false } : conn === "btlow" ? { level: 12, charging: false } : null,
     layer: "main",
@@ -145,6 +146,8 @@ export function installMockTauri(win = window) {
       uptime_ms: 73000,
     }),
     set_enabled: ({ on }) => {
+      status.enabled = on;
+      status.paused = false;
       status.connection = on ? "Connected" : "Off";
       (listeners.status ?? []).forEach((f) => f({ payload: structuredClone(status) }));
       return null;
