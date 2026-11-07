@@ -13,6 +13,7 @@ pub mod hid;
 pub mod inject;
 pub mod launch;
 pub mod logging;
+pub mod mappings_file;
 pub mod overrides;
 pub mod permissions;
 pub mod resolve;

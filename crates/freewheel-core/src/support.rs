@@ -205,6 +205,7 @@ mod tests {
                 path: "/Users/alice/SecretApp.app".into(),
                 args: vec!["--diary".into()],
                 enabled: true,
+                cwd: None,
             },
         );
         config.jog.default_mode = JogMode::Volume;

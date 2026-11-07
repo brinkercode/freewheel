@@ -16,6 +16,7 @@ mod device;
 mod e2e;
 mod hidapi_transport;
 mod inject;
+mod key_names;
 mod launch;
 #[cfg(target_os = "macos")]
 mod mac_app_volume;

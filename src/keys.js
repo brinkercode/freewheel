@@ -59,7 +59,14 @@ export const MEDIA_NAMES = {
   PlayPause: "Play/Pause", Mute: "Mute", VolumeUp: "Volume up", VolumeDown: "Volume down",
   NextTrack: "Next track", PrevTrack: "Previous track",
 };
-const SENDABLE = new Set(Object.values(NAMED));
+// What a mappings file may also press (core mappings_file/names.rs, SCHEMA.md).
+const FILE_KEYS = [
+  ...Array.from({ length: 12 }, (_, i) => `F${i + 13}`),
+  ...Array.from({ length: 10 }, (_, i) => `Num${i}`),
+  "NumAdd", "NumSubtract", "NumMultiply", "NumDivide", "NumDecimal", "NumEnter", "NumLock", "ScrollLock",
+  "Insert", "PrintScreen", "Pause", "CapsLock",
+];
+const SENDABLE = new Set([...Object.values(NAMED), ...FILE_KEYS]);
 
 /** The combo a keydown records: its modifiers plus one key ("" while only modifiers are down). */
 export function comboFromEvent(e) {

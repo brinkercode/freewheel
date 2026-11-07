@@ -98,6 +98,11 @@ pub enum Action {
         path: String,
         args: Vec<String>,
         enabled: bool,
+        /// The folder the app starts in (a mappings file's `cwd`); `None`:
+        /// freewheel's own. Left out of config.json when unset.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
+        cwd: Option<String>,
     },
     LayerPush {
         target: LayerId,
@@ -503,6 +508,14 @@ pub enum SaveError {
     Malformed { message: String },
     /// The config was valid but writing `config.json` failed.
     SaveFailed { message: String },
+    /// A mappings file (version 2) with a mistake: where it is (`at`, like
+    /// "CAM1 on Main" or "wheel.speed") and what is wrong.
+    InvalidFile {
+        line: u32,
+        column: u32,
+        at: String,
+        message: String,
+    },
 }
 
 impl fmt::Display for SaveError {
@@ -520,6 +533,18 @@ impl fmt::Display for SaveError {
             }
             SaveError::Malformed { message } => write!(f, "malformed config: {message}"),
             SaveError::SaveFailed { message } => write!(f, "saving the config failed: {message}"),
+            SaveError::InvalidFile {
+                line,
+                column,
+                at,
+                message,
+            } if at.is_empty() => write!(f, "line {line}, column {column}: {message}"),
+            SaveError::InvalidFile {
+                line,
+                column,
+                at,
+                message,
+            } => write!(f, "line {line}, column {column}, {at}: {message}"),
         }
     }
 }
@@ -664,11 +689,13 @@ mod tests {
                 path: "/bin/app".into(),
                 args: vec!["-x".into()],
                 enabled: false,
+                cwd: None,
             },
             Action::LaunchApp {
                 path: "app.exe".into(),
                 args: vec![],
                 enabled: true,
+                cwd: None,
             },
             Action::LayerPush {
                 target: "edit".into(),
@@ -1043,6 +1070,7 @@ mod tests {
             path: "/bin/app".into(),
             args: vec!["-x".into()],
             enabled: true,
+            cwd: None,
         };
         let mut config = parse_for_save(&valid_json()).unwrap();
         config.layers[1]
@@ -1245,6 +1273,7 @@ mod tests {
             path: "C:/Their/Tool.exe".into(),
             args: vec!["--x".into()],
             enabled: true,
+            cwd: None,
         };
         if let Some(jog) = theirs.jog.per_mode.values_mut().next() {
             jog.left = Some(launch.clone());

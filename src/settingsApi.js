@@ -123,7 +123,14 @@ export function importErrorText(error) {
   if (error?.kind === "VersionMismatch" && error.found > error.expected)
     return "This file is from a newer version of freewheel. Update freewheel, then try again.";
   if (error?.kind === "Malformed") return `This is not a freewheel mappings file: ${error.message}`;
+  // A mistake in a hand-written file: where it is and what is wrong (SCHEMA.md).
+  if (error?.kind === "InvalidFile") return `This file can't be restored: ${fileErrorText(error)}`;
   return saveErrorText(error);
+}
+
+/** "line 7, column 15, CAM1 on Main: unknown action …", as core SaveError's Display. */
+export function fileErrorText({ line, column, at, message }) {
+  return `line ${line}, column ${column}${at ? `, ${at}` : ""}: ${message}`;
 }
 
 /** Calls `onChange` with every StatusEvent; resolves to the unlisten function. */

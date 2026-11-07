@@ -245,6 +245,7 @@ fn every_action_type() -> Vec<Action> {
             path: "/usr/bin/app".into(),
             args: vec![],
             enabled: true,
+            cwd: None,
         },
         Action::LayerPush {
             target: "l1".into(),
