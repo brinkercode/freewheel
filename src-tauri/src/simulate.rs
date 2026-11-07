@@ -7,6 +7,7 @@
 
 use std::sync::Mutex;
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::time::Duration;
 
 use freewheel_core::battery::Battery;
 use freewheel_core::config::{Config, ConfigStore};
@@ -44,12 +45,14 @@ impl SimHandle {
         }
     }
 
+    #[cfg(test)]
     pub fn apply(&self, control: Control) -> Result<SimStatus, String> {
-        let (tx, rx) = mpsc::channel();
-        self.tx
-            .send(Msg::Ui(control, tx))
-            .map_err(|e| e.to_string())?;
-        rx.recv().map_err(|e| e.to_string())
+        apply_on(&self.tx, control, REPLY_TIMEOUT)
+    }
+
+    /// The sending end, for a control applied off the calling thread.
+    pub fn sender(&self) -> Sender<Msg> {
+        self.tx.clone()
     }
 
     fn take_receiver(&self) -> Option<Receiver<Msg>> {
@@ -58,6 +61,28 @@ impl SimHandle {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take()
     }
+}
+
+/// How long a control waits for the session's answer before it gives up
+/// with an error: a stuck session must never hang its caller.
+pub const REPLY_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Sends `control` to the session on `tx` and waits up to `timeout` for the
+/// new status.
+pub fn apply_on(
+    tx: &Sender<Msg>,
+    control: Control,
+    timeout: Duration,
+) -> Result<SimStatus, String> {
+    let (reply, answer) = mpsc::channel();
+    tx.send(Msg::Ui(control, reply))
+        .map_err(|e| e.to_string())?;
+    answer.recv_timeout(timeout).map_err(|e| match e {
+        mpsc::RecvTimeoutError::Timeout => {
+            format!("the simulator did not answer within {timeout:?}")
+        }
+        mpsc::RecvTimeoutError::Disconnected => e.to_string(),
+    })
 }
 
 /// What the session tells the rest of the app after each message.
@@ -284,6 +309,28 @@ pub fn attach(
     spawn(&handle, store, injector, sink);
 }
 
+/// `--simulate` only: the WebView2 DevTools port the Windows e2e attaches
+/// msedgedriver to (scripts/e2e-windows.mjs). On hosted windows-2025 runners
+/// WebView2 ignores the port msedgedriver passes through the environment
+/// (actions/runner-images#14738), so the app opens it itself.
+pub const E2E_DEVTOOLS_PORT_ENV: &str = "FREEWHEEL_E2E_DEVTOOLS_PORT";
+/// wry's default WebView2 arguments, kept when the port is added.
+pub const WRY_DEFAULT_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
+
+/// Every window's WebView2 arguments in this run: `None` (wry's defaults)
+/// unless `--simulate` runs with [`E2E_DEVTOOLS_PORT_ENV`] set to a port.
+pub fn browser_args(simulate: bool) -> Option<String> {
+    browser_args_for(
+        simulate,
+        std::env::var(E2E_DEVTOOLS_PORT_ENV).ok().as_deref(),
+    )
+}
+
+pub fn browser_args_for(simulate: bool, port: Option<&str>) -> Option<String> {
+    let port: u16 = port?.trim().parse().ok().filter(|p| *p != 0)?;
+    simulate.then(|| format!("{WRY_DEFAULT_ARGS} --remote-debugging-port={port}"))
+}
+
 /// Opens the Simulator window to the right of the settings window.
 pub fn open_window(app: &tauri::App) -> tauri::Result<()> {
     use tauri::Manager;
@@ -297,6 +344,10 @@ pub fn open_window(app: &tauri::App) -> tauri::Result<()> {
         .title(simulator::title(freewheel_core::APP_NAME, true))
         .inner_size(WIDTH, 860.0)
         .min_inner_size(280.0, 480.0);
+    // Both windows share one WebView2 environment, so the same arguments.
+    if let Some(args) = browser_args(true) {
+        builder = builder.additional_browser_args(&args);
+    }
     if let Some(main) = &main
         && let (Ok(pos), Ok(size), Ok(scale)) = (
             main.outer_position(),
@@ -319,15 +370,24 @@ pub fn window_spot(main_pos: (f64, f64), main_width: f64) -> (f64, f64) {
     (main_pos.0 + main_width + 8.0, main_pos.1.max(0.0))
 }
 
+/// Async, so it never runs on the main thread: the session's sink updates
+/// the tray, which waits for the main thread, so a sync command waiting
+/// here for the session's answer deadlocked the whole app (both windows
+/// froze right after the Simulator window's first `Status`). The wait
+/// itself runs on a blocking worker.
 #[tauri::command]
-pub fn simulate(
+pub async fn simulate(
     control: Control,
     sim: tauri::State<'_, SimHandle>,
     app: tauri::AppHandle,
 ) -> Result<SimStatus, String> {
     use tauri::Emitter;
     let steps_update = control == Control::StepUpdate;
-    let status = sim.apply(control)?;
+    let tx = sim.sender();
+    let status =
+        tauri::async_runtime::spawn_blocking(move || apply_on(&tx, control, REPLY_TIMEOUT))
+            .await
+            .map_err(|e| e.to_string())??;
     if steps_update {
         // The settings window's banner follows "New version".
         let _ = app.emit_to("main", SIM_UPDATE_EVENT, &status.update);
@@ -613,6 +673,53 @@ mod tests {
         assert!(sim.apply(Control::Status).is_err());
     }
 
+    /// The freeze: the sink waits for the thread that sent the control
+    /// (the tray waits for the main thread). A stuck session answers with
+    /// an error in time instead of hanging the caller.
+    #[test]
+    fn a_stuck_session_never_hangs_the_caller() {
+        let dir = tempfile::tempdir().unwrap();
+        let handle = SimHandle::new();
+        let (_never, blocked) = mpsc::channel::<()>();
+        let blocked = Mutex::new(blocked);
+        spawn(
+            &handle,
+            ConfigStore::new(dir.path()),
+            || Box::new(MockInjector::new()),
+            move |_| {
+                let _ = blocked.lock().unwrap().recv();
+            },
+        );
+        let started = std::time::Instant::now();
+        let err = apply_on(
+            &handle.sender(),
+            Control::Status,
+            Duration::from_millis(300),
+        )
+        .unwrap_err();
+        assert!(err.contains("did not answer"), "{err}");
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    /// Tauri runs sync commands on the main thread; every command that
+    /// waits for the session must be async (see `simulate`).
+    #[test]
+    fn commands_that_wait_for_the_session_are_async() {
+        let src = include_str!("simulate.rs");
+        let src = &src[..src.find("#[cfg(test)]\nmod tests").unwrap()];
+        for command in src.split("#[tauri::command]").skip(1) {
+            let body = &command[..command.find("\n}\n").unwrap_or(command.len())];
+            let waits =
+                body.contains("apply(") || body.contains("apply_on(") || body.contains(".recv");
+            assert!(
+                !waits || body.trim_start().starts_with("pub async fn"),
+                "a sync command waits for the session: {}",
+                body.lines().find(|l| l.contains("fn ")).unwrap_or_default()
+            );
+        }
+        assert!(src.contains("pub async fn simulate("));
+    }
+
     #[test]
     fn jumps_parse_and_script_the_settings_window() {
         let j: Jump = "FirstRun".parse().unwrap();
@@ -631,6 +738,26 @@ mod tests {
         assert!(jump_script(Jump::Quit).is_none());
         assert_eq!(jump_script(Jump::Reload).unwrap(), "location.reload();");
         assert!(jump_script(Jump::RecordKey).is_none());
+    }
+
+    #[test]
+    fn the_e2e_devtools_port_opens_only_in_simulate_mode() {
+        assert_eq!(
+            browser_args_for(true, Some("9222")).as_deref(),
+            Some(
+                "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port=9222"
+            )
+        );
+        assert_eq!(browser_args_for(false, Some("9222")), None);
+        assert_eq!(browser_args_for(true, None), None);
+        assert_eq!(browser_args_for(true, Some("0")), None);
+        assert_eq!(browser_args_for(true, Some("nope")), None);
+    }
+
+    #[test]
+    fn the_e2e_port_matches_the_script() {
+        let js = include_str!("../../scripts/e2e-windows.mjs");
+        assert!(js.contains(E2E_DEVTOOLS_PORT_ENV));
     }
 
     #[test]

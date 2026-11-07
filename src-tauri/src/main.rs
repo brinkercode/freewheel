@@ -252,7 +252,7 @@ fn main() {
         print!("{report}");
         return;
     }
-    let context = tauri::generate_context!();
+    let mut context = tauri::generate_context!();
     debug_assert_eq!(
         context.config().product_name.as_deref(),
         Some(freewheel_core::APP_NAME)
@@ -264,6 +264,12 @@ fn main() {
     let (commands, receiver) = mpsc::channel();
     let quit_commands = commands.clone();
     let simulate = simulator::requested(std::env::args());
+    if let Some(args) = simulate::browser_args(simulate) {
+        // The Windows e2e (scripts/e2e-windows.mjs) attaches to this port.
+        for window in &mut context.config_mut().app.windows {
+            window.additional_browser_args = Some(args.clone());
+        }
+    }
     let smoke = smoke::requested(std::env::args());
     // Registered first, so a second launch only focuses this one. `--simulate` always runs its own instance:
     // handing off would show an already-running (often older, installed) freewheel instead of this build.
