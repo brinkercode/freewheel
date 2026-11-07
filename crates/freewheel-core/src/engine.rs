@@ -18,6 +18,10 @@ use crate::report::{
 /// Shuttle repeat rate cap when the binding sets no `shuttle_max_rate_hz`.
 const DEFAULT_SHUTTLE_MAX_RATE_HZ: u32 = 20;
 
+/// How far a relative-mode wheel counts as Shuttle dial distance either
+/// way: the device's absolute modes span about -4096..4096 (bmd.py).
+const SHUTTLE_RANGE: i32 = 4096;
+
 /// Most layers on the stack, the base layer included (ADR-07 default).
 pub const MAX_LAYER_DEPTH: usize = 8;
 
@@ -33,6 +37,9 @@ pub struct Engine {
     jog_mode: JogMode,
     /// Jog/Scroll ticks not yet worth a threshold; Shuttle: the dial position.
     jog_value: i32,
+    /// The last absolute wheel position the device reported (modes 1 and 3);
+    /// `Some(0)` right after freewheel set the mode, `None` when unknown.
+    wheel_abs: Option<i32>,
     last_shuttle_fire: Option<Instant>,
     reports: Vec<Vec<u8>>,
     launch_errors: Vec<LaunchError>,
@@ -52,6 +59,7 @@ impl Engine {
             jog: config.jog.clone(),
             jog_mode: config.jog.default_mode,
             jog_value: 0,
+            wheel_abs: None,
             last_shuttle_fire: None,
             reports: Vec::new(),
             launch_errors: Vec::new(),
@@ -175,16 +183,53 @@ impl Engine {
         self.jog_mode = mode;
         self.jog_value = 0;
         self.last_shuttle_fire = None;
-        let device = match mode {
+        self.queue_device_mode();
+    }
+
+    /// The device wheel mode freewheel's wheel mode needs.
+    pub fn device_jog_mode(&self) -> DeviceJogMode {
+        match self.jog_mode {
             JogMode::Shuttle => DeviceJogMode::AbsoluteDeadzero,
             JogMode::Jog | JogMode::Scroll | JogMode::Volume | JogMode::Brightness => {
                 DeviceJogMode::Relative
             }
-        };
-        self.reports.push(set_jog_mode(device).to_vec());
+        }
     }
 
-    fn jog(&mut self, value: i32, injector: &mut dyn KeyInjector) -> Result<(), InjectError> {
+    /// Queues the 0x03 report that puts the device in the wheel mode we need.
+    /// The absolute modes count from where the wheel is when the mode is set.
+    fn queue_device_mode(&mut self) {
+        self.wheel_abs = Some(0);
+        self.reports
+            .push(set_jog_mode(self.device_jog_mode()).to_vec());
+    }
+
+    /// Turns a wheel report into (relative turn, dial position) whatever mode
+    /// the device is in: Resolve may have left it in an absolute mode, and a
+    /// mode write can be lost (Bluetooth on Windows), so the report's own mode
+    /// byte decides how its value is read.
+    fn wheel(&mut self, device_mode: u8, value: i32) -> (i32, i32) {
+        if matches!(device_mode, 1 | 3) {
+            let delta = value.saturating_sub(self.wheel_abs.unwrap_or(value));
+            self.wheel_abs = Some(value);
+            (delta, value)
+        } else {
+            self.wheel_abs = None;
+            let position = self
+                .jog_value
+                .saturating_add(value)
+                .clamp(-SHUTTLE_RANGE, SHUTTLE_RANGE);
+            (value, position)
+        }
+    }
+
+    fn jog(
+        &mut self,
+        device_mode: u8,
+        value: i32,
+        injector: &mut dyn KeyInjector,
+    ) -> Result<(), InjectError> {
+        let (value, position) = self.wheel(device_mode, value);
         // A toggled dial override wins; else a Volume/Brightness wheel mode
         // hands each tick to that control.
         if let Some(mode) = self.active_override.or(self.jog_mode.override_mode()) {
@@ -194,7 +239,7 @@ impl Engine {
             return Ok(());
         }
         if self.jog_mode == JogMode::Shuttle {
-            self.jog_value = value;
+            self.jog_value = position;
             return Ok(());
         }
         let Some(binding) = self.jog.per_mode.get(&self.jog_mode) else {
@@ -296,9 +341,20 @@ impl Engine {
                 }
                 None => Ok(()),
             },
-            DeviceEvent::Jog { value, .. } => self.jog(*value, injector),
+            DeviceEvent::Jog { mode, value } => self.jog(*mode, *value, injector),
+            // A (re)connected device is in whatever wheel mode it was left
+            // in (by Resolve, or before it slept): set ours again.
+            DeviceEvent::Connected => {
+                self.jog_value = 0;
+                self.last_shuttle_fire = None;
+                self.queue_device_mode();
+                Ok(())
+            }
             // The connection manager sends this on Off and when the device goes.
-            DeviceEvent::Disconnected => self.release_all(injector),
+            DeviceEvent::Disconnected => {
+                self.wheel_abs = None;
+                self.release_all(injector)
+            }
             _ => Ok(()),
         }
     }
@@ -535,6 +591,11 @@ mod tests {
         DeviceEvent::Jog { mode: 0, value }
     }
 
+    /// A wheel report in the absolute dead-zero mode Shuttle sets (3).
+    fn dial(value: i32) -> DeviceEvent {
+        DeviceEvent::Jog { mode: 3, value }
+    }
+
     fn jog_engine(mode: JogMode, threshold: u32, max_hz: Option<u32>) -> Engine {
         let mut config = Config::default();
         config.jog.default_mode = mode;
@@ -619,13 +680,107 @@ mod tests {
     }
 
     #[test]
+    fn absolute_reports_turn_jog_and_scroll_by_their_difference() {
+        // Resolve may leave the device in an absolute mode (1 or 3): the
+        // engine must turn by the change, never by the position.
+        let mut engine = jog_engine(JogMode::Scroll, 1, None);
+        let mut mock = MockInjector::new();
+        let mut l = MockLauncher::new();
+        // The first absolute report of unknown origin only sets the base.
+        engine
+            .handle(
+                &DeviceEvent::Jog {
+                    mode: 1,
+                    value: 2000,
+                },
+                &mut mock,
+                &mut l,
+            )
+            .unwrap();
+        assert!(mock.calls().is_empty());
+        engine
+            .handle(
+                &DeviceEvent::Jog {
+                    mode: 1,
+                    value: 2002,
+                },
+                &mut mock,
+                &mut l,
+            )
+            .unwrap();
+        engine
+            .handle(
+                &DeviceEvent::Jog {
+                    mode: 3,
+                    value: 2001,
+                },
+                &mut mock,
+                &mut l,
+            )
+            .unwrap();
+        assert_eq!(mock.calls(), &[Scroll(5), Scroll(5), Scroll(-5)]);
+        // After freewheel sets the mode the device counts from 0.
+        engine.set_jog_mode(JogMode::Scroll);
+        engine
+            .handle(&DeviceEvent::Jog { mode: 1, value: 1 }, &mut mock, &mut l)
+            .unwrap();
+        assert_eq!(mock.calls()[3..], [Scroll(5)]);
+    }
+
+    #[test]
+    fn shuttle_reads_relative_reports_as_distance_from_where_it_started() {
+        // The mode write was lost (or not yet applied): relative reports
+        // add up to the dial distance, capped at the absolute range.
+        let mut engine = jog_engine(JogMode::Shuttle, 10, Some(100));
+        let clock = FakeClock(Cell::new(Instant::now()));
+        let mut mock = MockInjector::new();
+        let mut l = MockLauncher::new();
+        engine.handle(&jog(20), &mut mock, &mut l).unwrap();
+        engine.handle(&jog(20), &mut mock, &mut l).unwrap();
+        // 40 with threshold 10: 4 Hz.
+        engine.tick(&clock, &mut mock).unwrap();
+        clock.advance(249);
+        engine.tick(&clock, &mut mock).unwrap();
+        assert_eq!(mock.calls().len(), 1);
+        clock.advance(1);
+        engine.tick(&clock, &mut mock).unwrap();
+        assert_eq!(mock.calls().len(), 2);
+        engine.handle(&jog(-40), &mut mock, &mut l).unwrap();
+        clock.advance(1000);
+        engine.tick(&clock, &mut mock).unwrap();
+        assert_eq!(mock.calls().len(), 2, "back at centre: no repeat");
+        engine.handle(&jog(1_000_000), &mut mock, &mut l).unwrap();
+        assert_eq!(engine.jog_value, SHUTTLE_RANGE);
+    }
+
+    #[test]
+    fn a_connect_sets_the_device_wheel_mode_again() {
+        for (mode, device) in [
+            (JogMode::Shuttle, DeviceJogMode::AbsoluteDeadzero),
+            (JogMode::Jog, DeviceJogMode::Relative),
+            (JogMode::Scroll, DeviceJogMode::Relative),
+            (JogMode::Volume, DeviceJogMode::Relative),
+        ] {
+            let mut engine = jog_engine(mode, 10, None);
+            assert_eq!(engine.device_jog_mode(), device);
+            assert!(engine.take_reports().is_empty());
+            let mut mock = MockInjector::new();
+            engine
+                .handle(&DeviceEvent::Connected, &mut mock, &mut MockLauncher::new())
+                .unwrap();
+            assert_eq!(engine.take_reports(), [set_jog_mode(device).to_vec()]);
+            assert!(mock.calls().is_empty());
+        }
+    }
+
+    #[test]
     fn shuttle_repeats_scaled_by_distance_and_stops_at_centre() {
         let mut engine = jog_engine(JogMode::Shuttle, 10, Some(8));
         let clock = FakeClock(Cell::new(Instant::now()));
         let mut mock = MockInjector::new();
         // 20 off-centre with threshold 10: 2 Hz, one every 500 ms.
         engine
-            .handle(&jog(20), &mut mock, &mut MockLauncher::new())
+            .handle(&dial(20), &mut mock, &mut MockLauncher::new())
             .unwrap();
         assert!(mock.calls().is_empty());
         engine.tick(&clock, &mut mock).unwrap();
@@ -638,7 +793,7 @@ mod tests {
         assert_eq!(mock.calls().len(), 2);
         // 40 to the left: 4 Hz, one every 250 ms.
         engine
-            .handle(&jog(-40), &mut mock, &mut MockLauncher::new())
+            .handle(&dial(-40), &mut mock, &mut MockLauncher::new())
             .unwrap();
         clock.advance(250);
         engine.tick(&clock, &mut mock).unwrap();
@@ -647,7 +802,7 @@ mod tests {
         assert_eq!(mock.calls()[2..], [Scroll(-5), Scroll(-5)]);
         // Far off-centre is capped at 8 Hz: 125 ms.
         engine
-            .handle(&jog(1000), &mut mock, &mut MockLauncher::new())
+            .handle(&dial(1000), &mut mock, &mut MockLauncher::new())
             .unwrap();
         clock.advance(124);
         engine.tick(&clock, &mut mock).unwrap();
@@ -657,7 +812,7 @@ mod tests {
         assert_eq!(mock.calls().len(), 5);
         // Centre stops it.
         engine
-            .handle(&jog(0), &mut mock, &mut MockLauncher::new())
+            .handle(&dial(0), &mut mock, &mut MockLauncher::new())
             .unwrap();
         for _ in 0..10 {
             clock.advance(1000);
@@ -1207,7 +1362,7 @@ mod tests {
 
         let mut engine = jog_engine(JogMode::Shuttle, 10, None);
         let clock = FakeClock(Cell::new(Instant::now()));
-        engine.handle(&jog(50), &mut mock, &mut l).unwrap();
+        engine.handle(&dial(50), &mut mock, &mut l).unwrap();
         engine.tick(&clock, &mut mock).unwrap();
         assert_eq!(mock.calls(), &[Scroll(5)]);
         engine.release_all(&mut mock).unwrap();

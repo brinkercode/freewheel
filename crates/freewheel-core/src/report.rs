@@ -90,6 +90,11 @@ pub struct ReportParser {
 }
 
 impl ReportParser {
+    /// The keys held down after the last key report, in report order.
+    pub fn held(&self) -> &[Key] {
+        &self.held
+    }
+
     /// Decodes one input report (report id in byte 0) into events.
     pub fn parse(&mut self, report: &[u8]) -> Result<Vec<DeviceEvent>, ReportError> {
         let (&id, _) = report.split_first().ok_or(ReportError::Empty)?;

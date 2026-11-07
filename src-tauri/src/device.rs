@@ -9,6 +9,7 @@ use freewheel_core::battery::Battery;
 use freewheel_core::clock::Clock;
 use freewheel_core::config::{Config, OverrideMode};
 use freewheel_core::connection::{ConnectionEvent, ConnectionManager, ConnectionStatus};
+use freewheel_core::diagnostics::DeviceDiagnostics;
 use freewheel_core::engine::Engine;
 use freewheel_core::hid::{HidError, HidTransport};
 use freewheel_core::inject::KeyInjector;
@@ -20,6 +21,10 @@ use tracing::{info, warn};
 
 /// How long one loop turn waits for an input report or a command.
 const POLL: Duration = Duration::from_millis(20);
+/// The Device test view hears at most this often while reports stream in…
+const DIAGNOSTICS_MIN: Duration = Duration::from_millis(100);
+/// …and at least this often (its re-auth countdown), whatever happens.
+const DIAGNOSTICS_MAX: Duration = Duration::from_secs(1);
 
 pub enum Command {
     /// The tray's On/Off toggle.
@@ -52,6 +57,8 @@ pub enum Update {
     KeyPressed(KeyPressed),
     /// The dial override a key turned the wheel into (None: back to normal).
     Override(Option<OverrideMode>),
+    /// The Help & backup Device test view's data changed.
+    Diagnostics(Box<DeviceDiagnostics>),
 }
 
 impl From<ConnectionStatus> for TrayState {
@@ -98,6 +105,7 @@ pub fn run<T, O, C, F>(
         launcher,
         overrides,
     } = outputs;
+    let mut diagnostics_at: Option<std::time::Instant> = None;
     loop {
         // While connected the read itself waits; otherwise the command wait does.
         let wait = if manager.status() == Some(ConnectionStatus::Connected) {
@@ -172,10 +180,26 @@ pub fn run<T, O, C, F>(
         // The worker logs each failed control call; drop them so they
         // cannot grow.
         overrides.take_errors();
-        // LED output is not wired to the device yet; drop what the engine
-        // queued so it cannot grow.
-        engine.take_reports();
+        // Output reports (the wheel mode the engine needs) go to the device.
+        // A failed write is logged and shown in the Device test view; the
+        // engine reads every wheel report by its own mode byte, so a lost
+        // mode write cannot make the wheel run away.
+        for report in engine.take_reports() {
+            if manager.status() == Some(ConnectionStatus::Connected)
+                && let Err(e) = manager.write(&report)
+            {
+                warn!(error = %e, "output report not written");
+            }
+        }
         engine.take_launch_errors();
+        let now = std::time::Instant::now();
+        let since = diagnostics_at.map(|t| now.saturating_duration_since(t));
+        if since.is_none_or(|s| s >= DIAGNOSTICS_MAX)
+            || (since.is_some_and(|s| s >= DIAGNOSTICS_MIN) && manager.take_diagnostics_changed())
+        {
+            diagnostics_at = Some(now);
+            on_update(Update::Diagnostics(Box::new(manager.diagnostics())));
+        }
     }
 }
 
@@ -212,6 +236,15 @@ mod tests {
     use std::thread;
 
     const WAIT: Duration = Duration::from_secs(5);
+
+    /// Passes every update but the Device test view's on to `f`.
+    fn skip_diagnostics(mut f: impl FnMut(Update)) -> impl FnMut(Update) {
+        move |u| {
+            if !matches!(u, Update::Diagnostics(_)) {
+                f(u)
+            }
+        }
+    }
 
     type Opener = fn() -> Result<FakeTransport, HidError>;
 
@@ -262,7 +295,7 @@ mod tests {
         thread::scope(|s| {
             let injector = &mut injector;
             s.spawn(move || {
-                let on_state = move |st| state_tx.send(st).unwrap();
+                let on_state = skip_diagnostics(move |st| state_tx.send(st).unwrap());
                 let mut launcher = MockLauncher::new();
                 run(
                     absent_manager(),
@@ -324,7 +357,7 @@ mod tests {
                         overrides: &idle_overrides(),
                     },
                     rx,
-                    move |u| update_tx.send(u).unwrap(),
+                    skip_diagnostics(move |u| update_tx.send(u).unwrap()),
                 );
             });
             assert_eq!(
@@ -525,7 +558,7 @@ mod tests {
                         overrides: &idle_overrides(),
                     },
                     rx,
-                    move |u| update_tx.send(u).unwrap(),
+                    skip_diagnostics(move |u| update_tx.send(u).unwrap()),
                 );
             });
             assert_eq!(updates.recv_timeout(WAIT), Ok(Update::Layer("base".into())));
@@ -579,7 +612,7 @@ mod tests {
                         overrides: &idle_overrides(),
                     },
                     rx,
-                    move |u| update_tx.send(u).unwrap(),
+                    skip_diagnostics(move |u| update_tx.send(u).unwrap()),
                 );
             });
             assert_eq!(
@@ -632,5 +665,98 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         drop(rx);
         assert!(!shutdown(&tx, WAIT));
+    }
+
+    #[test]
+    fn a_connect_writes_the_wheel_mode_and_the_device_test_view_hears_the_reports() {
+        use freewheel_core::hid::Written;
+        use freewheel_core::report::{DeviceJogMode, set_jog_mode};
+        use std::sync::{Arc, Mutex};
+
+        #[derive(Clone, Default)]
+        struct Shared(Arc<Mutex<FakeTransport>>);
+        impl HidTransport for Shared {
+            /// After its script the device stays quiet (no disconnect).
+            fn read_timeout(&mut self, b: &mut [u8], t: Duration) -> Result<usize, HidError> {
+                let read = self.0.lock().unwrap().read_timeout(b, t);
+                read.or_else(|_| {
+                    thread::sleep(Duration::from_millis(1));
+                    Ok(0)
+                })
+            }
+            fn write(&mut self, d: &[u8]) -> Result<usize, HidError> {
+                self.0.lock().unwrap().write(d)
+            }
+            fn get_feature_report(&mut self, b: &mut [u8]) -> Result<usize, HidError> {
+                self.0.lock().unwrap().get_feature_report(b)
+            }
+            fn send_feature_report(&mut self, d: &[u8]) -> Result<(), HidError> {
+                self.0.lock().unwrap().send_feature_report(d)
+            }
+            fn close(&mut self) {}
+        }
+
+        let dev = Shared::default();
+        {
+            let mut f = dev.0.lock().unwrap();
+            for (sub, payload) in [(0u8, 0x1234u64), (2, 0), (4, 300)] {
+                let mut r = vec![0x06, sub];
+                r.extend_from_slice(&payload.to_le_bytes());
+                f.push_feature(r);
+            }
+            f.push_input(key_report(Key::Cut));
+        }
+        let mut once = Some(dev.clone());
+        let open = move || once.take().ok_or(HidError::Disconnected);
+        let manager = ConnectionManager::new(open, SystemClock, (|c: u64| !c) as fn(u64) -> u64);
+        let mut config = Config::default();
+        config.jog.default_mode = freewheel_core::config::JogMode::Shuttle;
+        let (tx, rx) = mpsc::channel();
+        let (update_tx, updates) = mpsc::channel();
+        let mut injector = MockInjector::new();
+        thread::scope(|s| {
+            let injector = &mut injector;
+            let config = &config;
+            s.spawn(move || {
+                run(
+                    manager,
+                    Engine::new(config),
+                    &SystemClock,
+                    Outputs {
+                        injector,
+                        launcher: &mut MockLauncher::new(),
+                        overrides: &idle_overrides(),
+                    },
+                    rx,
+                    move |u| {
+                        if let Update::Diagnostics(d) = u {
+                            let _ = update_tx.send(d);
+                        }
+                    },
+                );
+            });
+            let end = std::time::Instant::now() + WAIT;
+            let seen = loop {
+                let d = updates.recv_timeout(WAIT).expect("diagnostics");
+                if d.held == ["CUT"] || std::time::Instant::now() > end {
+                    break d;
+                }
+            };
+            assert_eq!(seen.status, Some(ConnectionStatus::Connected));
+            assert_eq!(seen.presses, ["CUT"]);
+            assert!(
+                seen.reports
+                    .iter()
+                    .any(|r| r.hex == "03 03 00 00 00 00 ff" && !r.failed),
+                "{:?}",
+                seen.reports
+            );
+            assert!(shutdown(&tx, WAIT));
+        });
+        let written = dev.0.lock().unwrap().written().to_vec();
+        assert_eq!(
+            written[3],
+            Written::Output(set_jog_mode(DeviceJogMode::AbsoluteDeadzero).to_vec())
+        );
     }
 }

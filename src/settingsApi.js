@@ -5,6 +5,7 @@ const invoke = (cmd, args) => tauri().core.invoke(cmd, args);
 
 export const STATUS_EVENT = "status";
 export const KEY_PRESSED_EVENT = "key-pressed";
+export const DEVICE_DIAGNOSTICS_EVENT = "device-diagnostics";
 
 /** @returns {Promise<import("./bindings").Config>} */
 export const getConfig = () => invoke("get_config");
@@ -106,6 +107,13 @@ export function importErrorText(error) {
 /** Calls `onChange` with every StatusEvent; resolves to the unlisten function. */
 export const onStatus = (onChange) =>
   tauri().event.listen(STATUS_EVENT, (event) => onChange(event.payload));
+
+/** @returns {Promise<import("./bindings").DeviceDiagnostics>} the Device test view's data now. */
+export const getDeviceDiagnostics = () => invoke("get_device_diagnostics");
+
+/** Calls `onChange` with every DeviceDiagnostics; resolves to the unlisten function. */
+export const onDeviceDiagnostics = (onChange) =>
+  tauri().event.listen(DEVICE_DIAGNOSTICS_EVENT, (event) => onChange(event.payload));
 
 /** Calls `onPress` with every KeyPressed; resolves to the unlisten function. */
 export const onKeyPressed = (onPress) =>

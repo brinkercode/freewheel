@@ -6,6 +6,8 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::time::Duration;
 
+use crate::diagnostics::DeviceInfo;
+
 /// An error from a HID transport.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HidError {
@@ -48,6 +50,11 @@ pub trait HidTransport {
 
     /// Closes the device. Later calls fail with [`HidError::Closed`].
     fn close(&mut self);
+
+    /// What the OS says about the opened device, for the Device test view.
+    fn info(&self) -> Option<DeviceInfo> {
+        None
+    }
 }
 
 /// One scripted step of input for [`FakeTransport::read_timeout`].
@@ -81,6 +88,7 @@ pub struct FakeTransport {
     written: Vec<Written>,
     disconnected: bool,
     closed: bool,
+    info: Option<DeviceInfo>,
 }
 
 impl FakeTransport {
@@ -110,6 +118,12 @@ impl FakeTransport {
     /// Everything written so far, in order.
     pub fn written(&self) -> &[Written] {
         &self.written
+    }
+
+    /// Sets what [`HidTransport::info`] returns.
+    pub fn set_info(&mut self, info: DeviceInfo) -> &mut Self {
+        self.info = Some(info);
+        self
     }
 
     /// Whether `close` has been called.
@@ -171,6 +185,10 @@ impl HidTransport for FakeTransport {
 
     fn close(&mut self) {
         self.closed = true;
+    }
+
+    fn info(&self) -> Option<DeviceInfo> {
+        self.info.clone()
     }
 }
 
