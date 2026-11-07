@@ -68,6 +68,34 @@ copy the `readme/` stills the README and this page use into `docs/images/`
 (`light-simulator.png` is `simulator.png` here) and optimise them losslessly
 (e.g. oxipng).
 
+## Linux
+
+- Tauri's packages: `libwebkit2gtk-4.1-dev libayatana-appindicator3-dev
+  librsvg2-dev libssl-dev` (Ubuntu/Debian names). Key injection uses XTest on
+  X11 and a uinput virtual keyboard elsewhere; the Speed Editor's hidraw node
+  and `/dev/uinput` need the device rule (`src-tauri/linux/`), which the
+  first run installs through `pkexec`.
+- [e2e-linux.yml](../.github/workflows/e2e-linux.yml) runs the same
+  click-through as Windows ([scripts/e2e.mjs](../scripts/e2e.mjs), platform
+  `linux`) under Xvfb with openbox, over tauri-driver and WebKitWebDriver; the
+  footprint job ([scripts/footprint-linux.mjs](../scripts/footprint-linux.mjs))
+  measures RSS and private memory of freewheel plus its WebKitGTK processes,
+  idle CPU and disk against
+  [footprint-budgets-linux.json](../scripts/footprint-budgets-linux.json);
+  the update job builds two AppImages and updates one to the other in place
+  from a local release server ([scripts/e2e-update-linux.mjs](../scripts/e2e-update-linux.mjs)).
+- Locally: `xvfb-run -a dbus-run-session -- sh -c 'openbox & node
+  scripts/e2e-linux.mjs --app target/release/freewheel --tauri-driver
+  ~/.cargo/bin/tauri-driver --native-driver /usr/bin/WebKitWebDriver'` after
+  `npm run build` and `cargo build --release -p freewheel --features
+  tauri/custom-protocol,e2e`.
+- The release ships an AppImage built on Ubuntu 22.04 (an older glibc). It
+  updates itself in place: the file the user started (`$APPIMAGE`) is
+  swapped for the verified new one (`<name>.new`, then the running one to
+  `<name>.old`), and start at login points at that same path.
+- Closed to the tray, freewheel ends WebKitGTK's network process and trims
+  its heap (`src-tauri/src/linux_idle.rs`); the next window starts a new one.
+
 ## Test builds
 
 Every push to main builds a portable Windows exe (with

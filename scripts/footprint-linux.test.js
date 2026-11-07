@@ -58,7 +58,7 @@ test("the Linux footprint job measures the release build under Xvfb and enforces
 test("the Linux e2e job builds the embedded UI with the dialog stubs and drives it through tauri-driver", () => {
   expect(wf).toMatch(/^on:\n {2}pull_request:/m);
   expect(wf).toContain("name: e2e (ubuntu-24.04)");
-  expect(wf.match(/runs-on: \S+/g)).toEqual(["runs-on: ubuntu-24.04", "runs-on: ubuntu-24.04"]);
+  expect(wf.match(/runs-on: \S+/g)).toEqual(["runs-on: ubuntu-24.04", "runs-on: ubuntu-24.04", "runs-on: ubuntu-24.04"]);
   expect(wf).toContain("cargo build --release --locked -p freewheel --features tauri/custom-protocol,e2e");
   expect(wf).toContain("webkit2gtk-driver xvfb openbox wmctrl");
   expect(wf).toContain("cargo install tauri-driver --locked --version 2.1.0");

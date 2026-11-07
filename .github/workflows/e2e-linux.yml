@@ -11,14 +11,18 @@
 # the window open and closed to the tray, idle CPU and disk written, normal
 # and --simulate (scripts/footprint-linux.mjs), against
 # scripts/footprint-budgets-linux.json.
+#
+# The update job builds two AppImages (A and B, e2e builds with a throwaway
+# test key), signs B like the release does and updates A to B in place from
+# a local release server (scripts/e2e-update-linux.mjs).
 name: e2e-linux
 
+# No paths-ignore: these jobs are required checks, so a docs-only PR must
+# run them too (a skipped required check never reports and blocks the merge).
 on:
   pull_request:
-    paths-ignore: ["docs/**", "**.md"]
   push:
     branches: [main]
-    paths-ignore: ["docs/**", "**.md"]
   workflow_dispatch:
 
 concurrency:
@@ -154,5 +158,91 @@ jobs:
         with:
           name: footprint-linux
           path: footprint
+          retention-days: 14
+          if-no-files-found: warn
+
+  update:
+    name: update e2e (ubuntu-24.04, AppImage, local release server)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      SERVER_PORT: "8719"
+      TAURI_CLI: node_modules/@tauri-apps/cli/tauri.js
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install
+          rustc --version
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: ". -> target"
+          cache-bin: "true"
+
+      # FUSE 2 runs the AppImages as a user's desktop does.
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev \
+            libfuse2t64 file xvfb dbus-x11
+
+      - run: npm ci
+
+      # A throwaway key pair, made here and gone with the runner: never the
+      # release key. Both builds bake in its pubkey; B's AppImage is signed with it.
+      - name: Make a test updater key
+        run: |
+          key="$RUNNER_TEMP/e2e-updater.key"
+          node "$TAURI_CLI" signer generate --ci -p "" -w "$key" -f > /dev/null
+          echo "E2E_UPDATER_KEY=$key" >> "$GITHUB_ENV"
+          from=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          to=$(node scripts/e2e-update-config.mjs --next "$from")
+          echo "FROM_VERSION=$from" >> "$GITHUB_ENV"
+          echo "TO_VERSION=$to" >> "$GITHUB_ENV"
+          echo "update e2e: $from -> $to"
+
+      - name: Build and pack version B, then A
+        run: |
+          export FREEWHEEL_UPDATER_PUBKEY="$(cat "$E2E_UPDATER_KEY.pub")"
+          for v in "$TO_VERSION" "$FROM_VERSION"; do
+            rm -rf target/release/bundle/appimage
+            node "$TAURI_CLI" build --ci --features e2e --bundles appimage --config "$(node scripts/e2e-update-config.mjs "$v")" -- --locked
+            node scripts/portable-release.mjs package --os linux --version "$v" --out "$RUNNER_TEMP/release-$v" \
+              --appimage "$(ls target/release/bundle/appimage/*.AppImage | head -n 1)"
+          done
+          image="$RUNNER_TEMP/release-$TO_VERSION/freewheel-$TO_VERSION-linux-x86_64.AppImage"
+          node "$TAURI_CLI" signer sign -f "$E2E_UPDATER_KEY" -p "" --app-version "$TO_VERSION" "$image" > /dev/null
+          printf '## %s\n\n* the update e2e\n' "$TO_VERSION" > "$RUNNER_TEMP/notes.md"
+          node scripts/portable-release.mjs manifest --version "$TO_VERSION" --notes-file "$RUNNER_TEMP/notes.md" --dir "$RUNNER_TEMP/release-$TO_VERSION" --only linux \
+            --base-url "https://github.com/brinkercode/freewheel/releases/download/v$TO_VERSION" > "$RUNNER_TEMP/release-$TO_VERSION/latest.json"
+          mkdir -p "$RUNNER_TEMP/apps"
+          cp "$RUNNER_TEMP/release-$FROM_VERSION/freewheel-$FROM_VERSION-linux-x86_64.AppImage" "$RUNNER_TEMP/apps/freewheel.AppImage"
+          ls -la "$RUNNER_TEMP"/release-* "$RUNNER_TEMP/apps"
+
+      - name: Update A to B in place
+        run: |
+          b="$RUNNER_TEMP/release-$TO_VERSION"
+          xvfb-run -a -s "-screen 0 1600x1000x24" dbus-run-session -- \
+            node scripts/e2e-update-linux.mjs --appimage "$RUNNER_TEMP/apps/freewheel.AppImage" --manifest "$b/latest.json" \
+              --package "$b/freewheel-$TO_VERSION-linux-x86_64.AppImage" --server-port "$SERVER_PORT" --out e2e-update-shots
+
+      - name: Keep the log and the app's logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-update-linux
+          path: |
+            e2e-update-shots
+            ~/.local/share/freewheel/logs
           retention-days: 14
           if-no-files-found: warn
