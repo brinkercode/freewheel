@@ -11,7 +11,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use tracing::warn;
+use tracing::{debug, warn};
 
 use crate::clock::Clock;
 use crate::config::{OverrideMode, OverrideSettings};
@@ -458,9 +458,16 @@ impl<C: Clock> OverrideRunner<C> {
                 }
                 self.last_brightness = Some(now);
             }
-            if let Err(error) = self.step(mode, ticks) {
-                warn!(?mode, error = %error, "dial override failed");
-                errors.push(OverrideError { mode, error });
+            let way = if ticks < 0 { "down" } else { "up" };
+            match self.step(mode, ticks) {
+                Ok(()) => debug!("{mode:?} {way} {} step(s) ok", ticks.unsigned_abs()),
+                Err(error) => {
+                    warn!(
+                        "{mode:?} {way} {} step(s) failed: {error}",
+                        ticks.unsigned_abs()
+                    );
+                    errors.push(OverrideError { mode, error });
+                }
             }
         }
         (errors, wait)
@@ -623,6 +630,42 @@ impl OverrideWorker {
         self.shared.queue.lock().unwrap().settings = Some(steps);
         self.shared.wake.notify_one();
     }
+}
+
+/// Where the dial override ticks go: the [`OverrideWorker`] on the OS
+/// controls, in the device loop and in the Simulator with 'Do actions for
+/// real' on.
+pub trait DialOutput {
+    fn push(&mut self, mode: OverrideMode, ticks: i32);
+    fn activate(&mut self, mode: OverrideMode);
+    fn release(&mut self);
+    fn set_steps(&mut self, steps: OverrideSettings);
+}
+
+impl DialOutput for OverrideWorker {
+    fn push(&mut self, mode: OverrideMode, ticks: i32) {
+        OverrideWorker::push(self, mode, ticks);
+    }
+    fn activate(&mut self, mode: OverrideMode) {
+        OverrideWorker::activate(self, mode);
+    }
+    fn release(&mut self) {
+        OverrideWorker::release(self);
+    }
+    fn set_steps(&mut self, steps: OverrideSettings) {
+        OverrideWorker::set_steps(self, steps);
+    }
+}
+
+/// A [`DialOutput`] that changes nothing (tests, and no OS controls).
+#[derive(Debug, Default)]
+pub struct NoDial;
+
+impl DialOutput for NoDial {
+    fn push(&mut self, _: OverrideMode, _: i32) {}
+    fn activate(&mut self, _: OverrideMode) {}
+    fn release(&mut self) {}
+    fn set_steps(&mut self, _: OverrideSettings) {}
 }
 
 impl Drop for OverrideWorker {

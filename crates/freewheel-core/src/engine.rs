@@ -4,10 +4,11 @@
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::clock::Clock;
 use crate::config::{Action, Config, JogMode, JogSettings, KeyCombo, Layer, OverrideMode};
+use crate::describe::{self, Detail};
 use crate::hid::HidError;
 use crate::inject::{InjectError, KeyInjector, Keystroke};
 use crate::launch::{LaunchError, Launcher};
@@ -24,6 +25,28 @@ const SHUTTLE_RANGE: i32 = 4096;
 
 /// Most layers on the stack, the base layer included (ADR-07 default).
 pub const MAX_LAYER_DEPTH: usize = 8;
+
+/// A wheel turn ends when no report came for this long: its one INFO line
+/// (mode, total turn, what it did) is written then.
+pub const WHEEL_GESTURE_GAP: Duration = Duration::from_millis(400);
+
+/// What the Simulator's lines start with, so a log says where a press came from.
+pub const SIMULATED_SOURCE: &str = "simulated device: ";
+
+/// Said instead of the result while the Simulator's 'Do actions for real' is off.
+pub const NOT_DONE: &str = "not done: Do actions for real is off";
+
+/// One turn of the wheel, written as one INFO line when it ends.
+#[derive(Debug)]
+struct Gesture {
+    /// The wheel mode in words (`Scroll`, `volume knob`).
+    mode: String,
+    total: i32,
+    reports: u32,
+    /// What the turn did, in order, with how often.
+    outputs: Vec<(String, u32)>,
+    last: Instant,
+}
 
 /// Runtime engine state for one config.
 pub struct Engine {
@@ -47,6 +70,15 @@ pub struct Engine {
     active_override: Option<OverrideMode>,
     override_ticks: Vec<(OverrideMode, i32)>,
     override_exited: bool,
+    /// [`SIMULATED_SOURCE`] in the Simulator, else empty.
+    source: &'static str,
+    /// The Simulator with 'Do actions for real' off: results say [`NOT_DONE`].
+    dry_run: bool,
+    /// The result lines since the last [`take_outcomes`](Self::take_outcomes).
+    outcomes: Vec<String>,
+    gesture: Option<Gesture>,
+    /// Detailed logs on (settings): press lines show a website's whole address.
+    detailed_logs: bool,
 }
 
 impl Engine {
@@ -67,7 +99,154 @@ impl Engine {
             active_override: None,
             override_ticks: Vec::new(),
             override_exited: false,
+            source: "",
+            dry_run: false,
+            outcomes: Vec::new(),
+            gesture: None,
+            detailed_logs: config.settings.detailed_logs,
         }
+    }
+
+    /// Marks this engine's lines as coming from the Simulator's device.
+    pub fn set_simulated(&mut self, on: bool) {
+        self.source = if on { SIMULATED_SOURCE } else { "" };
+    }
+
+    /// The Simulator's 'Do actions for real' off: the outputs it is given do
+    /// nothing, so every result line says [`NOT_DONE`] and what it would do.
+    pub fn set_dry_run(&mut self, on: bool) {
+        self.dry_run = on;
+    }
+
+    /// Drains the result lines (also logged at INFO, failures at WARN):
+    /// `sent Ctrl+C`, `launched "Spotify" ok: …`, `page is now "Edit"`.
+    pub fn take_outcomes(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.outcomes)
+    }
+
+    fn outcome(&mut self, line: String) {
+        info!("{line}");
+        self.outcomes.push(line);
+    }
+
+    fn failure(&mut self, line: String) {
+        warn!("{line}");
+        self.outcomes.push(line);
+    }
+
+    /// The result of one action on this computer: `done` when it worked,
+    /// `failed: error` when not; with 'Do actions for real' off, what it
+    /// would have done.
+    fn did<E: std::fmt::Display>(&mut self, would: &str, done: String, result: &Result<(), E>) {
+        match result {
+            _ if self.dry_run => self.outcome(format!("{NOT_DONE} (would {would})")),
+            Ok(()) => self.outcome(done),
+            Err(e) => self.failure(format!("{would} failed: {e}")),
+        }
+    }
+
+    /// The wheel's mode in words for the gesture line.
+    fn wheel_mode_name(&self) -> String {
+        match self.active_override.or(self.jog_mode.override_mode()) {
+            Some(m) => format!("{} knob", describe::dial_control(m)),
+            None => describe::jog_mode(self.jog_mode).to_string(),
+        }
+    }
+
+    /// Adds a report (`delta`) to the wheel turn under way, or starts one.
+    fn wheel_turned(&mut self, delta: i32) {
+        let mode = self.wheel_mode_name();
+        if self.gesture.as_ref().is_some_and(|g| g.mode != mode) {
+            self.end_wheel_gesture();
+        }
+        let g = self.gesture.get_or_insert_with(|| Gesture {
+            mode,
+            total: 0,
+            reports: 0,
+            outputs: Vec::new(),
+            last: Instant::now(),
+        });
+        g.total = g.total.saturating_add(delta);
+        g.reports += 1;
+        g.last = Instant::now();
+    }
+
+    /// Counts one thing the wheel turn did (`scroll 1`, `press Right`).
+    fn wheel_did(&mut self, what: String, n: u32) {
+        if self.gesture.is_none() {
+            self.wheel_turned(0);
+            if let Some(g) = &mut self.gesture {
+                g.reports = 0;
+            }
+        }
+        let Some(g) = &mut self.gesture else {
+            return;
+        };
+        g.last = Instant::now();
+        match g.outputs.iter_mut().find(|(w, _)| *w == what) {
+            Some((_, count)) => *count += n,
+            None => g.outputs.push((what, n)),
+        }
+    }
+
+    /// Writes the line of the wheel turn under way, if any:
+    /// `wheel turned +5 in Scroll mode (5 reports) -> scroll 1 ×5`.
+    pub fn end_wheel_gesture(&mut self) {
+        let Some(g) = self.gesture.take() else {
+            return;
+        };
+        let did = g
+            .outputs
+            .iter()
+            .map(|(what, n)| format!("{what} ×{n}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let did = match (did.is_empty(), self.dry_run) {
+            (true, _) => "nothing".to_string(),
+            (false, true) => format!("{NOT_DONE} (would {did})"),
+            (false, false) => did,
+        };
+        let s = if g.reports == 1 { "" } else { "s" };
+        self.outcome(format!(
+            "{}wheel turned {:+} in {} mode ({} report{s}) -> {did}",
+            self.source, g.total, g.mode, g.reports
+        ));
+    }
+
+    /// Ends the wheel turn if it has rested [`WHEEL_GESTURE_GAP`] at `now`
+    /// (the device loop calls this every turn).
+    pub fn end_idle_wheel_gesture(&mut self, now: Instant) {
+        if self
+            .gesture
+            .as_ref()
+            .is_some_and(|g| now.saturating_duration_since(g.last) >= WHEEL_GESTURE_GAP)
+        {
+            self.end_wheel_gesture();
+        }
+    }
+
+    /// Fires a jog left/right action once, counting it in the wheel turn.
+    fn fire(
+        &mut self,
+        action: Option<Action>,
+        injector: &mut dyn KeyInjector,
+    ) -> Result<(), InjectError> {
+        let (what, result) = match &action {
+            Some(Action::Hotkey { combo }) => (
+                format!("press {}", describe::combo(combo)),
+                injector.tap_combo(combo),
+            ),
+            Some(Action::Scroll { amount }) => {
+                (format!("scroll {amount}"), injector.scroll(*amount))
+            }
+            _ => return Ok(()),
+        };
+        debug!("wheel action: {what}");
+        match &result {
+            Err(e) if !self.dry_run => self.failure(format!("wheel {what} failed: {e}")),
+            _ => self.wheel_did(what, 1),
+        }
+        result
     }
 
     /// The dial override in use, if any.
@@ -99,16 +278,23 @@ impl Engine {
 
     /// Switches the dial to `mode`, or back to jog actions if it is active.
     fn toggle_override(&mut self, mode: OverrideMode) {
+        self.end_wheel_gesture();
         self.override_exited |= self.active_override.is_some();
         self.active_override = (self.active_override != Some(mode)).then_some(mode);
         self.jog_value = 0;
         self.last_shuttle_fire = None;
+        let line = match self.active_override {
+            Some(m) => format!("the wheel is now {} knob", describe::override_mode(m)),
+            None => "the wheel is back to normal".to_string(),
+        };
+        self.outcome(line);
     }
 
     /// Releases every held and latched key and stops the active dial
     /// override and the Shuttle repeat, so nothing stays stuck. Calling it
     /// again injects nothing.
     pub fn release_all(&mut self, injector: &mut dyn KeyInjector) -> Result<(), InjectError> {
+        self.end_wheel_gesture();
         self.override_exited |= self.active_override.take().is_some();
         self.override_ticks.clear();
         self.jog_value = 0;
@@ -118,15 +304,18 @@ impl Engine {
             .into_iter()
             .map(|(_, combo)| combo);
         // Release all of them even if one fails; report the first error.
-        held.chain(latched)
+        let combos: Vec<KeyCombo> = held.chain(latched).collect();
+        combos
+            .into_iter()
             .map(|combo| {
-                log_lone(
-                    &combo,
-                    None,
-                    "released",
-                    "release all (off, disconnect, quit or config change)",
+                let result = combo_up(injector, &combo);
+                let c = describe::combo(&combo);
+                self.did(
+                    &format!("release {c}"),
+                    format!("released {c} (release all: off, disconnect, quit or config change)"),
+                    &result,
                 );
-                combo_up(injector, &combo)
+                result
             })
             .fold(Ok(()), Result::and)
     }
@@ -175,14 +364,15 @@ impl Engine {
         }
         self.last_shuttle_fire = Some(now);
         let action = if self.jog_value < 0 {
-            &binding.left
+            binding.left.clone()
         } else {
-            &binding.right
+            binding.right.clone()
         };
-        fire(action, injector)
+        self.fire(action, injector)
     }
 
     pub fn set_jog_mode(&mut self, mode: JogMode) {
+        self.end_wheel_gesture();
         self.jog_mode = mode;
         self.jog_value = 0;
         self.last_shuttle_fire = None;
@@ -232,12 +422,22 @@ impl Engine {
         value: i32,
         injector: &mut dyn KeyInjector,
     ) -> Result<(), InjectError> {
+        debug!(
+            "{}wheel report: device mode {device_mode}, value {value}",
+            self.source
+        );
         let (value, position) = self.wheel(device_mode, value);
+        self.wheel_turned(value);
         // A toggled dial override wins; else a Volume/Brightness wheel mode
         // hands each tick to that control.
         if let Some(mode) = self.active_override.or(self.jog_mode.override_mode()) {
             if value != 0 {
                 self.override_ticks.push((mode, value));
+                let way = if value < 0 { "down" } else { "up" };
+                self.wheel_did(
+                    format!("turn {} {way}", describe::dial_control(mode)),
+                    value.unsigned_abs(),
+                );
             }
             return Ok(());
         }
@@ -245,7 +445,7 @@ impl Engine {
             self.jog_value = position;
             return Ok(());
         }
-        let Some(binding) = self.jog.per_mode.get(&self.jog_mode) else {
+        let Some(binding) = self.jog.per_mode.get(&self.jog_mode).cloned() else {
             return Ok(());
         };
         let threshold = binding.threshold.max(1) as i32;
@@ -253,10 +453,10 @@ impl Engine {
         while self.jog_value.abs() >= threshold {
             if self.jog_value < 0 {
                 self.jog_value += threshold;
-                fire(&binding.left, injector)?;
+                self.fire(binding.left.clone(), injector)?;
             } else {
                 self.jog_value -= threshold;
-                fire(&binding.right, injector)?;
+                self.fire(binding.right.clone(), injector)?;
             }
         }
         Ok(())
@@ -264,96 +464,62 @@ impl Engine {
 
     /// Applies one device event, injecting through `injector` and starting
     /// apps through `launcher`. A failed launch becomes a launch error event.
+    /// Every press and release is logged with its page and mapping, and
+    /// every action with its result.
     pub fn handle(
         &mut self,
         event: &DeviceEvent,
         injector: &mut dyn KeyInjector,
         launcher: &mut dyn Launcher,
     ) -> Result<(), InjectError> {
+        if matches!(event, DeviceEvent::Press(_) | DeviceEvent::Release(_)) {
+            self.end_wheel_gesture();
+        }
         match event {
             // The button that pushed the current layer is its 'back' button,
             // whatever the layer binds it to.
             DeviceEvent::Press(key) if self.push_keys.last() == Some(key) => {
+                let below = self.layer_stack[self.layer_stack.len() - 2].clone();
+                let below = describe::page_name(&self.layers, &below).to_string();
+                self.log_press(*key, &format!("Back to page \"{below}\""));
                 self.push_keys.pop();
                 self.layer_stack.pop();
+                self.outcome(format!("page is now \"{below}\""));
                 Ok(())
             }
-            DeviceEvent::Press(key) => match self.binding(*key).cloned() {
-                Some(Action::LayerPush { target }) => {
-                    self.push_layer(*key, target);
-                    Ok(())
-                }
-                Some(Action::Hotkey { combo }) => injector.tap_combo(&combo),
-                Some(Action::Held { combo }) => {
-                    combo_down(injector, &combo)?;
-                    log_lone(&combo, Some(*key), "held", "key pressed");
-                    self.held.insert(*key, combo);
-                    Ok(())
-                }
-                Some(Action::Latched { combo }) => {
-                    if let Some(i) = self.latched.iter().position(|(_, c)| *c == combo) {
-                        self.latched.remove(i);
-                        log_lone(&combo, Some(*key), "released", "unlatched");
-                        combo_up(injector, &combo)
-                    } else {
-                        combo_down(injector, &combo)?;
-                        log_lone(&combo, Some(*key), "latched", "key pressed");
-                        self.latched.push((*key, combo));
-                        Ok(())
-                    }
-                }
-                Some(Action::SetJogMode { mode }) => {
-                    self.set_jog_mode(mode);
-                    Ok(())
-                }
-                Some(Action::OverrideToggle { mode }) => {
-                    self.toggle_override(mode);
-                    Ok(())
-                }
-                Some(Action::LaunchApp {
-                    path,
-                    args,
-                    enabled: true,
-                    cwd,
-                }) => {
-                    if let Err(e) = launcher.launch_in(&path, &args, cwd.as_deref()) {
-                        warn!(%path, error = %e, "app launch failed");
-                        self.launch_errors.push(e);
-                    }
-                    Ok(())
-                }
-                // An unbound wheel button switches to its printed mode, as the
-                // Wheel tab shows it (WheelTab.jsx WHEEL_BUTTONS), so its LED
-                // follows on a fresh config too.
-                None => {
-                    if let Some(mode) = natural_jog_mode(*key) {
-                        self.set_jog_mode(mode);
-                    }
-                    Ok(())
-                }
-                Some(Action::LaunchApp {
-                    path,
-                    enabled: false,
-                    ..
-                }) => {
-                    // Restored from a file without 'Let restored keys open
-                    // apps' (T1): nothing runs, and the user is told why.
-                    info!(%path, "app launch is off (restored from a file)");
-                    self.launch_errors.push(LaunchError(format!(
-                        "{path} is off: it came from a restored file. Pick the app again to turn it on."
-                    )));
-                    Ok(())
-                }
-                _ => Ok(()),
-            },
+            DeviceEvent::Press(key) => {
+                let action = self.binding(*key).cloned();
+                let what = match &action {
+                    Some(a) => describe::action(a, &self.layers, self.detail()),
+                    None => match natural_jog_mode(*key) {
+                        Some(mode) => format!(
+                            "not set: wheel mode {} (printed on the key)",
+                            describe::jog_mode(mode)
+                        ),
+                        None => "Do nothing (not set)".to_string(),
+                    },
+                };
+                self.log_press(*key, &what);
+                self.press(*key, action, injector, launcher)
+            }
             // Held keys release on the physical release, whatever the layer.
-            DeviceEvent::Release(key) => match self.held.remove(key) {
-                Some(combo) => {
-                    log_lone(&combo, Some(*key), "released", "key released");
-                    combo_up(injector, &combo)
+            DeviceEvent::Release(key) => {
+                info!(
+                    "{}key {} released on page \"{}\"",
+                    self.source,
+                    describe::key_label(&format!("{key:?}")),
+                    self.current_page_name()
+                );
+                match self.held.remove(key) {
+                    Some(combo) => {
+                        let result = combo_up(injector, &combo);
+                        let c = describe::combo(&combo);
+                        self.did(&format!("release {c}"), format!("released {c}"), &result);
+                        result
+                    }
+                    None => Ok(()),
                 }
-                None => Ok(()),
-            },
+            }
             DeviceEvent::Jog { mode, value } => self.jog(*mode, *value, injector),
             // A (re)connected device is in whatever wheel mode it was left
             // in (by Resolve, or before it slept): set ours again.
@@ -372,6 +538,144 @@ impl Engine {
         }
     }
 
+    /// How much of a launch target the press line shows: a website's whole
+    /// address only with detailed logs on.
+    fn detail(&self) -> Detail {
+        if self.detailed_logs {
+            Detail::Full
+        } else {
+            Detail::Path
+        }
+    }
+
+    fn current_page_name(&self) -> String {
+        describe::page_name(&self.layers, self.current_layer()).to_string()
+    }
+
+    /// `key CUT pressed on page "Base" -> Press Ctrl+C`.
+    fn log_press(&self, key: Key, what: &str) {
+        info!(
+            "{}key {} pressed on page \"{}\" -> {what}",
+            self.source,
+            describe::key_label(&format!("{key:?}")),
+            self.current_page_name()
+        );
+    }
+
+    /// Runs the mapping of a pressed key.
+    fn press(
+        &mut self,
+        key: Key,
+        action: Option<Action>,
+        injector: &mut dyn KeyInjector,
+        launcher: &mut dyn Launcher,
+    ) -> Result<(), InjectError> {
+        match action {
+            Some(Action::LayerPush { target }) => {
+                self.push_layer(key, target);
+                Ok(())
+            }
+            Some(Action::Hotkey { combo }) => {
+                let result = injector.tap_combo(&combo);
+                let c = describe::combo(&combo);
+                self.did(&format!("press {c}"), format!("sent {c}"), &result);
+                result
+            }
+            Some(Action::Held { combo }) => {
+                let result = combo_down(injector, &combo);
+                let c = describe::combo(&combo);
+                self.did(
+                    &format!("hold {c}"),
+                    format!("holding {c} until the key is released"),
+                    &result,
+                );
+                result?;
+                self.held.insert(key, combo);
+                Ok(())
+            }
+            Some(Action::Latched { combo }) => {
+                let c = describe::combo(&combo);
+                if let Some(i) = self.latched.iter().position(|(_, l)| *l == combo) {
+                    self.latched.remove(i);
+                    let result = combo_up(injector, &combo);
+                    self.did(&format!("release {c}"), format!("{c} off"), &result);
+                    result
+                } else {
+                    let result = combo_down(injector, &combo);
+                    self.did(
+                        &format!("hold {c}"),
+                        format!("{c} on until the key is pressed again"),
+                        &result,
+                    );
+                    result?;
+                    self.latched.push((key, combo));
+                    Ok(())
+                }
+            }
+            Some(Action::SetJogMode { mode }) => {
+                self.set_jog_mode(mode);
+                self.outcome(format!("wheel mode is now {}", describe::jog_mode(mode)));
+                Ok(())
+            }
+            Some(Action::OverrideToggle { mode }) => {
+                self.toggle_override(mode);
+                Ok(())
+            }
+            Some(Action::Scroll { amount }) => {
+                let result = injector.scroll(amount);
+                self.did(
+                    &format!("scroll {amount}"),
+                    format!("scrolled {amount}"),
+                    &result,
+                );
+                result
+            }
+            Some(Action::LaunchApp {
+                path,
+                args,
+                enabled: true,
+                cwd,
+            }) => {
+                let name = describe::launch_name(&path, &args);
+                let full = self.detail() == Detail::Full;
+                let command = describe::launch_command(&path, &args, full);
+                match launcher.launch_in(&path, &args, cwd.as_deref()) {
+                    _ if self.dry_run => self.outcome(format!("{NOT_DONE} (would run {command})")),
+                    Ok(()) => self.outcome(format!("launched {name} ok: {command}")),
+                    Err(e) => {
+                        self.failure(format!("launch failed: {name}: {}", e.0));
+                        self.launch_errors.push(e);
+                    }
+                }
+                Ok(())
+            }
+            Some(Action::LaunchApp {
+                path,
+                enabled: false,
+                ..
+            }) => {
+                // Restored from a file without 'Let restored keys open
+                // apps' (T1): nothing runs, and the user is told why.
+                let e = LaunchError(format!(
+                    "{path} is off: it came from a restored file. Pick the app again to turn it on."
+                ));
+                self.outcome(format!("not opened: {}", e.0));
+                self.launch_errors.push(e);
+                Ok(())
+            }
+            // An unbound wheel button switches to its printed mode, as the
+            // Wheel tab shows it (WheelTab.jsx WHEEL_BUTTONS), so its LED
+            // follows on a fresh config too.
+            None => {
+                if let Some(mode) = natural_jog_mode(key) {
+                    self.set_jog_mode(mode);
+                    self.outcome(format!("wheel mode is now {}", describe::jog_mode(mode)));
+                }
+                Ok(())
+            }
+        }
+    }
+
     /// The layer on top of the stack.
     pub fn current_layer(&self) -> &str {
         self.layer_stack
@@ -384,13 +688,19 @@ impl Engine {
     /// push beyond [`MAX_LAYER_DEPTH`] is ignored and logged.
     fn push_layer(&mut self, key: Key, target: String) {
         if !self.layers.iter().any(|l| l.id == target) {
-            warn!(layer = %target, "layer push ignored: no such layer");
+            warn!("page switch ignored: no page \"{target}\"");
         } else if self.layer_stack.len() >= MAX_LAYER_DEPTH {
-            warn!(layer = %target, depth = MAX_LAYER_DEPTH, "layer push ignored: stack full");
+            warn!("page switch to \"{target}\" ignored: already {MAX_LAYER_DEPTH} pages deep");
         } else {
+            let name = describe::page_name(&self.layers, &target).to_string();
             self.layer_stack.push(target);
             self.push_keys.push(key);
+            self.outcome(format!("page is now \"{name}\""));
+            return;
         }
+        self.outcomes.push(format!(
+            "page switch ignored: no page \"{target}\" or too many pages deep"
+        ));
     }
 
     fn binding(&self, key: Key) -> Option<&Action> {
@@ -508,15 +818,6 @@ fn natural_jog_mode(key: Key) -> Option<JogMode> {
     }
 }
 
-/// Fires a jog left/right action once.
-fn fire(action: &Option<Action>, injector: &mut dyn KeyInjector) -> Result<(), InjectError> {
-    match action {
-        Some(Action::Hotkey { combo }) => injector.tap_combo(combo),
-        Some(Action::Scroll { amount }) => injector.scroll(*amount),
-        _ => Ok(()),
-    }
-}
-
 /// The combo's keystrokes; a lone modifier (Held or Latched) has no key.
 fn keystrokes(combo: &KeyCombo) -> Vec<Keystroke> {
     let mut keys: Vec<Keystroke> = combo
@@ -528,13 +829,6 @@ fn keystrokes(combo: &KeyCombo) -> Vec<Keystroke> {
         keys.push(Keystroke::Key(combo.key.clone()));
     }
     keys
-}
-
-/// Logs a lone modifier's state change: the button and why, never the modifier.
-fn log_lone(combo: &KeyCombo, button: Option<Key>, state: &str, reason: &str) {
-    if combo.key.is_empty() {
-        info!(?button, reason, "lone modifier {state}");
-    }
 }
 
 fn combo_down(injector: &mut dyn KeyInjector, combo: &KeyCombo) -> Result<(), InjectError> {
@@ -1723,63 +2017,239 @@ mod tests {
         }
     }
 
-    #[test]
-    fn lone_modifier_logs_state_and_reason_but_not_the_modifier() {
-        use std::sync::{Arc, Mutex};
-        #[derive(Clone, Default)]
-        struct Buf(Arc<Mutex<Vec<u8>>>);
-        impl std::io::Write for Buf {
-            fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
-                self.0.lock().unwrap().extend_from_slice(b);
-                Ok(b.len())
-            }
-            fn flush(&mut self) -> std::io::Result<()> {
-                Ok(())
-            }
+    fn logged(level: tracing::Level, f: impl FnOnce()) -> String {
+        crate::logging::capture(level, f)
+    }
+
+    fn logged_lines(log: &str, want: &[&str]) {
+        for line in want {
+            assert!(log.contains(line), "{line} missing:\n{log}");
         }
-        let buf = Buf::default();
-        let writer = buf.clone();
-        let subscriber = tracing_subscriber::fmt()
-            .with_ansi(false)
-            .with_writer(move || writer.clone())
-            .finish();
-        tracing::subscriber::with_default(subscriber, || {
-            let mut config = Config::default();
-            let b = &mut config.layers[0].bindings;
-            b.insert(
-                "In".into(),
-                Action::Held {
-                    combo: lone(Modifier::Ctrl),
-                },
-            );
-            b.insert(
-                "Snap".into(),
-                Action::Latched {
-                    combo: lone(Modifier::Alt),
-                },
-            );
-            let mut engine = Engine::new(&config);
-            let mut mock = MockInjector::new();
-            let mut l = MockLauncher::new();
-            for e in [Press(Key::In), Release(Key::In), Press(Key::Snap)] {
+    }
+
+    fn spotify() -> Action {
+        Action::LaunchApp {
+            path: "explorer.exe".into(),
+            args: vec![r"C:\Start Menu\Spotify.lnk".into()],
+            enabled: true,
+            cwd: None,
+        }
+    }
+
+    fn logging_config() -> Config {
+        let mut config = Config::default();
+        config.layers[0].name = "Main".into();
+        config.layers.push(Layer {
+            id: "edit".into(),
+            name: "Edit Bay".into(),
+            bindings: BTreeMap::from([("Cut".to_string(), Action::Hotkey { combo: ctrl_s() })]),
+        });
+        let b = &mut config.layers[0].bindings;
+        b.insert("Cam1".into(), spotify());
+        b.insert(
+            "Cut".into(),
+            Action::LaunchApp {
+                path: "explorer.exe".into(),
+                args: vec!["https://example.com/private?q=1".into()],
+                enabled: true,
+                cwd: None,
+            },
+        );
+        b.insert(
+            "In".into(),
+            Action::Held {
+                combo: lone(Modifier::Shift),
+            },
+        );
+        b.insert(
+            "Snap".into(),
+            Action::Latched {
+                combo: lone(Modifier::Alt),
+            },
+        );
+        b.insert(
+            "Cam2".into(),
+            Action::LayerPush {
+                target: "edit".into(),
+            },
+        );
+        config
+    }
+
+    #[test]
+    fn every_press_and_release_says_key_page_mapping_and_result() {
+        let mut engine = Engine::new(&logging_config());
+        let mut mock = MockInjector::new();
+        let mut l = MockLauncher::new();
+        let log = logged(tracing::Level::INFO, || {
+            for e in [
+                Press(Key::Cam1),
+                Release(Key::Cam1),
+                Press(Key::Cut),
+                Press(Key::In),
+                Release(Key::In),
+                Press(Key::Snap),
+                Press(Key::Snap),
+                Press(Key::Out),
+                Press(Key::Jog),
+                Press(Key::Cam2),
+                Press(Key::Cut),
+                Press(Key::Cam2),
+            ] {
                 engine.handle(&e, &mut mock, &mut l).unwrap();
             }
-            engine.handle(&Press(Key::Snap), &mut mock, &mut l).unwrap();
-            engine.handle(&Press(Key::Snap), &mut mock, &mut l).unwrap();
-            engine.release_all(&mut mock).unwrap();
         });
-        let log = String::from_utf8(buf.0.lock().unwrap().clone()).unwrap();
-        for line in [
-            "lone modifier held",
-            "lone modifier latched",
-            "lone modifier released",
-            "reason=\"key released\"",
-            "reason=\"unlatched\"",
-            "reason=\"release all (off, disconnect, quit or config change)\"",
-        ] {
-            assert!(log.contains(line), "{line} missing: {log}");
-        }
-        assert!(!log.contains("Ctrl") && !log.contains("Alt"), "{log}");
+        logged_lines(
+            &log,
+            &[
+                r#"key CAM 1 pressed on page "Main" -> Open app "Spotify" (C:\Start Menu\Spotify.lnk)"#,
+                r#"launched "Spotify" ok: explorer.exe "C:\Start Menu\Spotify.lnk""#,
+                r#"key CAM 1 released on page "Main""#,
+                r#"key CUT pressed on page "Main" -> Open website example.com"#,
+                r#"launched example.com ok: explorer.exe "https://example.com/…""#,
+                r#"key IN pressed on page "Main" -> Hold Shift while held"#,
+                "holding Shift until the key is released",
+                "released Shift",
+                r#"key SNAP pressed on page "Main" -> Turn Alt on and off"#,
+                "Alt on until the key is pressed again",
+                "Alt off",
+                r#"key OUT pressed on page "Main" -> Do nothing (not set)"#,
+                r#"key JOG pressed on page "Main" -> not set: wheel mode Jog (printed on the key)"#,
+                "wheel mode is now Jog",
+                r#"key CAM 2 pressed on page "Main" -> Go to page "Edit Bay""#,
+                r#"page is now "Edit Bay""#,
+                r#"key CUT pressed on page "Edit Bay" -> Press Ctrl+S"#,
+                "sent Ctrl+S",
+                r#"key CAM 2 pressed on page "Edit Bay" -> Back to page "Main""#,
+                r#"page is now "Main""#,
+            ],
+        );
+        // The full address only with detailed logs.
+        assert!(!log.contains("private?q=1"), "{log}");
+        assert!(!log.contains(SIMULATED_SOURCE), "{log}");
+        assert_eq!(
+            l.calls(),
+            [
+                (
+                    "explorer.exe".to_string(),
+                    vec![r"C:\Start Menu\Spotify.lnk".to_string()]
+                ),
+                (
+                    "explorer.exe".to_string(),
+                    vec!["https://example.com/private?q=1".to_string()]
+                ),
+            ]
+        );
+        let outcomes = engine.take_outcomes();
+        assert_eq!(
+            outcomes[0],
+            r#"launched "Spotify" ok: explorer.exe "C:\Start Menu\Spotify.lnk""#
+        );
+        assert!(engine.take_outcomes().is_empty());
+
+        let mut detailed = logging_config();
+        detailed.settings.detailed_logs = true;
+        let mut engine = Engine::new(&detailed);
+        let log = logged(tracing::Level::DEBUG, || {
+            engine.handle(&Press(Key::Cut), &mut mock, &mut l).unwrap();
+        });
+        logged_lines(
+            &log,
+            &[
+                "-> Open website https://example.com/private?q=1",
+                r#"launched example.com ok: explorer.exe "https://example.com/private?q=1""#,
+            ],
+        );
+    }
+
+    #[test]
+    fn a_failed_action_says_why_and_the_simulator_says_where_and_what_it_skipped() {
+        let mut engine = Engine::new(&logging_config());
+        let mut mock = MockInjector::new();
+        let log = logged(tracing::Level::INFO, || {
+            engine
+                .handle(&Press(Key::Cam1), &mut mock, &mut MockLauncher::failing())
+                .unwrap();
+        });
+        logged_lines(
+            &log,
+            &[
+                r#"WARN"#,
+                r#"launch failed: "Spotify": cannot start explorer.exe"#,
+            ],
+        );
+        assert_eq!(engine.take_launch_errors().len(), 1);
+
+        let mut engine = Engine::new(&logging_config());
+        engine.set_simulated(true);
+        engine.set_dry_run(true);
+        let log = logged(tracing::Level::INFO, || {
+            for e in [Press(Key::Cam1), Press(Key::In), Release(Key::In)] {
+                engine
+                    .handle(&e, &mut mock, &mut MockLauncher::new())
+                    .unwrap();
+            }
+        });
+        logged_lines(
+            &log,
+            &[
+                r#"simulated device: key CAM 1 pressed on page "Main" -> Open app "Spotify""#,
+                r#"not done: Do actions for real is off (would run explorer.exe "C:\Start Menu\Spotify.lnk")"#,
+                "not done: Do actions for real is off (would hold Shift)",
+                "simulated device: key IN released",
+                "not done: Do actions for real is off (would release Shift)",
+            ],
+        );
+        // The prefix is on the press only, never on the result.
+        assert!(!log.contains("simulated device: not done"), "{log}");
+        assert!(!log.contains("simulated device: launched"), "{log}");
+    }
+
+    #[test]
+    fn a_wheel_turn_is_one_info_line_and_each_report_a_debug_line() {
+        let mut engine = jog_engine(JogMode::Scroll, 2, None);
+        let mut mock = MockInjector::new();
+        let mut l = MockLauncher::new();
+        let info = logged(tracing::Level::INFO, || {
+            for v in [1, 2, 2] {
+                engine.handle(&jog(v), &mut mock, &mut l).unwrap();
+            }
+            // Not yet rested: nothing written.
+            engine.end_idle_wheel_gesture(Instant::now());
+            assert!(engine.take_outcomes().is_empty());
+            engine.end_idle_wheel_gesture(Instant::now() + WHEEL_GESTURE_GAP);
+        });
+        logged_lines(
+            &info,
+            &["wheel turned +5 in Scroll mode (3 reports) -> scroll 5 ×2"],
+        );
+        assert!(!info.contains("wheel report"), "{info}");
+        assert_eq!(info.matches("wheel turned").count(), 1, "{info}");
+
+        let debug = logged(tracing::Level::DEBUG, || {
+            engine.set_jog_mode(JogMode::Volume);
+            engine.handle(&jog(-3), &mut mock, &mut l).unwrap();
+            // A key press ends the turn.
+            engine.handle(&Press(Key::Out), &mut mock, &mut l).unwrap();
+            engine.handle(&jog(1), &mut mock, &mut l).unwrap();
+            engine.end_wheel_gesture();
+        });
+        logged_lines(
+            &debug,
+            &[
+                "wheel report: device mode 0, value -3",
+                "wheel turned -3 in volume knob mode (1 report) -> turn volume down ×3",
+                "wheel turned +1 in volume knob mode (1 report) -> turn volume up ×1",
+            ],
+        );
+        // Under the threshold the turn did nothing, and says so.
+        let mut engine = jog_engine(JogMode::Scroll, 10, None);
+        engine.handle(&jog(1), &mut mock, &mut l).unwrap();
+        engine.end_wheel_gesture();
+        assert_eq!(
+            engine.take_outcomes(),
+            ["wheel turned +1 in Scroll mode (1 report) -> nothing"]
+        );
     }
 
     #[test]

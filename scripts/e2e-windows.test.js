@@ -41,7 +41,7 @@ test("every user-facing control is clicked and its result checked", () => {
     "button.choose-file", "Switch to another set of keys", "button.pill-add", "Rename", "Delete page", "Do nothing",
     "Set up the wheel", "Show the ", "aria-label=\"Close\"", "Turn freewheel on or off", "Turn on", "Computer appearance",
     "Bluetooth 12%", "Empty setup", "Several set", "macOS permission", "Record a key", "New version", "Reload settings",
-    "Settings window", "First run", "fw-sim-switch", 'tray("toggle")', 'tray("open-settings")', 'tray("start-at-login")',
+    "Settings window", "First run", 'aria-label="Do actions for real"', "marker-", "export_logs", 'tray("toggle")', 'tray("open-settings")', 'tray("start-at-login")',
     'tray("download-logs")', 'tray("status")', 'tray("update")', 'tray("quit")', "img.app-icon",
     "Notification: Speed Editor battery low", "Notification: freewheel — DaVinci Resolve started", "Restart to update",
   ])

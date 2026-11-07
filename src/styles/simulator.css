@@ -196,7 +196,7 @@ html:has(.fw-sim) body { overflow-y: auto; }
 .fw-tray-icon.is-absent .ring { background: none; border: 1.6px dashed #1c1c1e; opacity: 0.55; }
 .fw-tray-icon.is-absent .dot { display: none; }
 
-/* send keys for real: a dark switch row */
+/* do actions for real: a dark switch row, first under the header */
 .fw-sim-switch {
   display: flex;
   flex-direction: row;

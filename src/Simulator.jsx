@@ -226,6 +226,24 @@ export default function Simulator({ initial = null }) {
         <p>Pretend to be the computer and the Speed Editor.</p>
       </header>
 
+      <label className="fw-sim-switch">
+        <span className="fw-sim-switch-text">
+          <span className="fw-sim-switch-title">Do actions for real</span>
+          <span className="fw-sim-switch-sub">
+            {(status?.send_for_real ?? true)
+              ? "On: a press does what its key is set to on this PC: it sends keystrokes, opens apps and websites, and changes the volume."
+              : "Off: nothing happens on this PC; the log says what each press would do."}
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          role="switch"
+          aria-label="Do actions for real"
+          checked={status?.send_for_real ?? true}
+          onChange={(e) => send({ type: "SendForReal", on: e.target.checked })}
+        />
+      </label>
+
       <section className="fw-sim-group fw-sim-press">
         <h2 className="fw-sim-label">Press a key on the Speed Editor</h2>
         <div className="fw-sim-quick">
@@ -406,20 +424,6 @@ export default function Simulator({ initial = null }) {
         </div>
       </section>
 
-      <label className="fw-sim-switch">
-        <span className="fw-sim-switch-text">
-          <span className="fw-sim-switch-title">Send keys for real</span>
-          <span className="fw-sim-switch-sub">
-            {status?.send_for_real ? "Shortcuts reach the apps you have open." : "Off: shortcuts only show up in the log."}
-          </span>
-        </span>
-        <input
-          type="checkbox"
-          role="switch"
-          checked={status?.send_for_real ?? false}
-          onChange={(e) => send({ type: "SendForReal", on: e.target.checked })}
-        />
-      </label>
     </main>
   );
 }

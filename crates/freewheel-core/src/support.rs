@@ -1,9 +1,10 @@
 //! The support bundle behind "Download logs for support": every log file,
-//! oldest first, after a header and a redacted summary of the config.
+//! oldest first, after a header and a summary of the config.
 //!
-//! The summary follows the logging privacy rules: no shortcuts, launch
-//! targets, arguments, layer names or process names, only counts, kinds and
-//! the app's own switches. The log lines are already scrubbed when written.
+//! The summary lists every key as `CUT -> Open website example.com` per
+//! page, with apps shortened to their name and websites to their host: no
+//! paths, arguments or full addresses. The home path is scrubbed from the
+//! log lines when they are written.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -11,7 +12,8 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::config::{Action, Config, Settings};
+use crate::config::{Action, Config, Layer, Settings};
+use crate::describe::{self, Detail};
 use crate::logging::{LOG_FILE, MAX_FILES, hashed};
 
 /// The bundle's file name prefix: `freewheel-logs-<stamp>.txt`.
@@ -30,36 +32,23 @@ pub fn log_files(dir: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
-fn action_kind(action: &Action) -> &'static str {
-    match action {
-        Action::Hotkey { .. } => "Hotkey",
-        Action::Held { .. } => "Held",
-        Action::Latched { .. } => "Latched",
-        Action::Scroll { .. } => "Scroll",
-        Action::LaunchApp { enabled: true, .. } => "LaunchApp (on)",
-        Action::LaunchApp { enabled: false, .. } => "LaunchApp (off)",
-        Action::LayerPush { .. } => "LayerPush",
-        Action::SetJogMode { .. } => "SetJogMode",
-        Action::OverrideToggle { .. } => "OverrideToggle",
+/// `KEY -> action` for each binding, in key order.
+fn bindings_lines(out: &mut String, bindings: &BTreeMap<String, Action>, layers: &[Layer]) {
+    if bindings.is_empty() {
+        let _ = writeln!(out, "  (no keys set)");
+    }
+    for (key, action) in bindings {
+        let _ = writeln!(
+            out,
+            "  {} -> {}",
+            describe::key_label(key),
+            describe::action(action, layers, Detail::Short)
+        );
     }
 }
 
-fn kinds<'a>(actions: impl Iterator<Item = &'a Action>) -> String {
-    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
-    for action in actions {
-        *counts.entry(action_kind(action)).or_default() += 1;
-    }
-    if counts.is_empty() {
-        return "none".into();
-    }
-    counts
-        .iter()
-        .map(|(kind, n)| format!("{kind} {n}"))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-/// The config without anything private: switches, counts and kinds.
+/// The config for support: the switches, then every page with each key's
+/// mapping (`CUT -> Open app "Spotify"`), the wheel and the dial steps.
 pub fn config_summary(config: &Config) -> String {
     let s = &config.settings;
     let process = if s.resolve_process_name == Settings::default().resolve_process_name {
@@ -83,21 +72,20 @@ pub fn config_summary(config: &Config) -> String {
         } else {
             ""
         };
-        let _ = writeln!(
-            out,
-            "page {}{base}: {} keys: {}",
-            i + 1,
-            layer.bindings.len(),
-            kinds(layer.bindings.values())
-        );
+        let n = layer.bindings.len();
+        let s = if n == 1 { "" } else { "s" };
+        let _ = writeln!(out, "page {} \"{}\"{base}: {n} key{s}", i + 1, layer.name);
+        bindings_lines(&mut out, &layer.bindings, &config.layers);
     }
     let _ = writeln!(out, "wheel default mode: {:?}", config.jog.default_mode);
     for (mode, binding) in &config.jog.per_mode {
+        let side = |a: &Option<Action>| describe::maybe_action(a.as_ref(), &config.layers);
         let _ = writeln!(
             out,
-            "wheel {mode:?}: threshold {}, actions: {}",
+            "wheel {mode:?}: threshold {}, left -> {}, right -> {}",
             binding.threshold,
-            kinds(binding.left.iter().chain(&binding.right))
+            side(&binding.left),
+            side(&binding.right)
         );
     }
     let o = &config.overrides;
@@ -113,7 +101,7 @@ pub fn config_summary(config: &Config) -> String {
 /// every log file in `log_dir`, oldest first.
 pub fn bundle(log_dir: &Path, config: &Config, about: &str) -> String {
     let mut out = String::from("freewheel support bundle\n");
-    let _ = writeln!(out, "{about}\n\n== config (redacted) ==");
+    let _ = writeln!(out, "{about}\n\n== config ==");
     out.push_str(&config_summary(config));
     let files = log_files(log_dir);
     if files.is_empty() {
@@ -213,10 +201,35 @@ mod tests {
     }
 
     #[test]
-    fn the_summary_keeps_switches_and_counts_but_nothing_private() {
-        let summary = config_summary(&private_config());
-        for private in ["SecretResolve", "F13", "SecretApp", "--diary", "alice"] {
+    fn the_summary_lists_each_key_without_paths_arguments_or_addresses() {
+        let mut config = private_config();
+        config.layers[0].bindings.insert(
+            "Cam1".into(),
+            Action::LaunchApp {
+                path: "explorer.exe".into(),
+                args: vec!["https://example.com/private?token=1".into()],
+                enabled: false,
+                cwd: None,
+            },
+        );
+        let summary = config_summary(&config);
+        for private in [
+            "SecretResolve",
+            "/Users/alice",
+            "--diary",
+            "token",
+            "private?",
+        ] {
             assert!(!summary.contains(private), "{private} leaked: {summary}");
+        }
+        for line in [
+            "page 1 \"Base\" (base): 3 keys\n",
+            "  CAM 1 -> Open website example.com (off: restored from a file)\n",
+            "  CUT -> Press Ctrl+F13\n",
+            "  SNAP -> Open app \"SecretApp\"\n",
+            "wheel Scroll: threshold 1, left -> Scroll -1, right -> Scroll 1\n",
+        ] {
+            assert!(summary.contains(line), "{line} missing: {summary}");
         }
         assert!(summary.contains("detailed_logs: true"), "{summary}");
         assert!(
@@ -224,10 +237,6 @@ mod tests {
             "{summary}"
         );
         assert!(summary.contains("resolve_process_name: custom (process#"));
-        assert!(
-            summary.contains("page 1 (base): 2 keys: Hotkey 1, LaunchApp (on) 1"),
-            "{summary}"
-        );
         assert!(summary.contains("wheel default mode: Volume"), "{summary}");
         assert!(config_summary(&Config::default()).contains("resolve_process_name: default"));
     }
@@ -257,11 +266,11 @@ mod tests {
             text.find(s)
                 .unwrap_or_else(|| panic!("{s} missing: {text}"))
         };
-        assert!(at("== config (redacted) ==") < at("oldest line"));
+        assert!(at("== config ==") < at("oldest line"));
         assert!(at("oldest line") < at("middle line"));
         assert!(at("middle line") < at("newest line"));
         assert!(!text.contains("not a log"));
-        assert!(!text.contains("SecretApp"));
+        assert!(!text.contains("/Users/alice") && !text.contains("--diary"));
 
         // A second export the same second never overwrites the first.
         let again = write_bundle(

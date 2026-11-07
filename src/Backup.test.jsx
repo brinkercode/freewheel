@@ -8,7 +8,7 @@ afterEach(() => delete globalThis.window);
 
 test("the tab shows Download logs, Back up, Restore and, under More, detailed logs and the app opt-in, off by default", () => {
   const html = renderToString(<Backup />);
-  for (const text of ["Download logs for support", "Logs never include what you type, your shortcuts, or the apps you open.", "Back up…", "Restore from a backup…"]) {
+  for (const text of ["Download logs for support", "Logs never include what you type or your passwords.", "Back up…", "Restore from a backup…"]) {
     expect(html).toContain(text);
   }
   expect(html).not.toContain("Let restored");

@@ -44,7 +44,7 @@ test("it has every group of the prototype's controls column", async () => {
     "What the Speed Editor did shows up here.",
     "Jump to",
     "Tray icon states",
-    "Send keys for real",
+    "Do actions for real",
   ]) {
     expect(screen.getByText(text)).toBeTruthy();
   }
@@ -69,8 +69,25 @@ test("the Speed Editor row connects over USB or Bluetooth with its battery", asy
   expect(pressed("Speed Editor")).toEqual(["Not found"]);
 });
 
+test("Do actions for real is on at first and says what it does on this PC", async () => {
+  await mount();
+  const real = screen.getByRole("switch", { name: "Do actions for real" });
+  expect(real.checked).toBe(true);
+  expect(screen.getByText(/sends keystrokes, opens apps and websites, and changes the volume/)).toBeTruthy();
+  await click(group("Speed Editor").getByText("USB"));
+  await click(group("Keys").getByText("Several set (2 pages)"));
+  await click(screen.getByRole("button", { name: "Press" }));
+  await act(async () => fireEvent.pointerDown(screen.getByRole("button", { name: "CUT" })));
+  expect(log()).toContain("sent Ctrl+C");
+  await click(real);
+  expect(real.checked).toBe(false);
+  expect(screen.getByText(/nothing happens on this PC/)).toBeTruthy();
+  expect(log()).toContain("Do actions for real is off");
+});
+
 test("keys and the wheel go to the device and the log says what it did", async () => {
   await mount();
+  await click(screen.getByRole("switch", { name: "Do actions for real" }));
   await click(group("Speed Editor").getByText("USB"));
   await click(group("Keys").getByText("Several set (2 pages)"));
   expect(pressed("Keys")).toEqual(["Several set (2 pages)"]);
@@ -155,14 +172,17 @@ test("the notes preview counts the bullets", () => {
   expect(notesPreview("* **a:** [b](https://github.com/x) `c`\n- d")).toBe("2 changes: a: b c");
 });
 
-test("send keys for real is a switch", async () => {
+test("Do actions for real is a switch that turns back on", async () => {
   await mount();
   const real = screen.getByRole("switch");
+  expect(real.checked).toBe(true);
+  await click(real);
   expect(real.checked).toBe(false);
   await click(real);
   expect(real.checked).toBe(true);
-  expect(screen.getByText("Shortcuts reach the apps you have open.")).toBeTruthy();
+  expect(screen.getByText(/On: a press does what its key is set to on this PC/)).toBeTruthy();
 });
+
 
 test("option and tray state helpers", () => {
   expect(deviceOption(null)).toBe("none");

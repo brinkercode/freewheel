@@ -1,11 +1,14 @@
 //! Diagnostic file logging: `freewheel.log` in a log directory the app crate
 //! resolves, rotated at 2 MB with 5 files kept, INFO by default.
 //!
-//! Privacy rules: logs never hold what the user types or sends, their
-//! shortcuts, launch targets, window titles, app or audio session names,
-//! device serial numbers or auth bytes. Such values are logged only as their
-//! kind and a hash ([`hashed`]), and the home path is replaced by `~` in every
-//! line written.
+//! What the log holds: every key press and release with its page and
+//! mapping, and every action's result (engine.rs, describe.rs), so a log
+//! shows what happened. Mapped shortcuts, app paths, page names and website
+//! hosts are written (they are the user's own setup, in the user's own log);
+//! a website's whole address only with detailed logs on. Never written: what
+//! the user types, window titles, audio session names, device serial numbers
+//! or auth bytes (logged only as their kind and a hash, [`hashed`]). The home
+//! path is replaced by `~` in every line written.
 
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
@@ -236,6 +239,48 @@ pub fn hashed(kind: &'static str, value: impl AsRef<[u8]>) -> Hashed {
 /// `CUT pressed -> action hotkey`.
 pub fn button_pressed(button: &str, action_kind: &str) {
     debug!("{button} pressed -> action {action_kind}");
+}
+
+/// Tests only (it installs a global subscriber): runs `f` with this thread's log lines at `level` going to a buffer;
+/// returns what was written. One global subscriber routes each thread's
+/// lines (a per-thread default subscriber races with the callsite cache
+/// while other tests run).
+pub fn capture(level: Level, f: impl FnOnce()) -> String {
+    use std::cell::RefCell;
+    use std::sync::Once;
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::{Layer, filter};
+    thread_local! {
+        static CAPTURE: RefCell<Option<(Level, Vec<u8>)>> = const { RefCell::new(None) };
+    }
+    struct Routed;
+    impl std::io::Write for Routed {
+        fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+            CAPTURE.with(|c| {
+                if let Some((_, buf)) = &mut *c.borrow_mut() {
+                    buf.extend_from_slice(b);
+                }
+            });
+            Ok(b.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    static INSTALL: Once = Once::new();
+    INSTALL.call_once(|| {
+        let layer = tracing_subscriber::fmt::layer()
+            .with_ansi(false)
+            .with_writer(|| Routed)
+            .with_filter(filter::dynamic_filter_fn(|meta, _| {
+                CAPTURE.with(|c| c.borrow().as_ref().is_some_and(|(l, _)| meta.level() <= l))
+            }));
+        let _ = tracing::subscriber::set_global_default(tracing_subscriber::registry().with(layer));
+    });
+    CAPTURE.with(|c| *c.borrow_mut() = Some((level, Vec::new())));
+    f();
+    let (_, buf) = CAPTURE.with(|c| c.borrow_mut().take()).unwrap();
+    String::from_utf8(buf).unwrap()
 }
 
 #[cfg(test)]
