@@ -39,7 +39,7 @@ test("release.yml runs on v* tags (pushed, or dispatched on the tag by release-p
   expect(release).toMatch(/^ {2}notes:\n {4}if: startsWith\(github\.ref, 'refs\/tags\/v'\)$/m);
   expect(release).toMatch(/^ {2}build:\n {4}needs: \[test, notes\]$/m);
   expect(release).toMatch(/^ {2}publish:\n {4}needs: \[build, notes\]$/m);
-  expect(release.match(/- os: \S+/g)).toEqual(["- os: windows-2025", "- os: macos-15"]);
+  expect(release.match(/- os: \S+/g)).toEqual(["- os: windows-2025", "- os: macos-15", "- os: ubuntu-22.04"]);
   expect(release).not.toMatch(/\bstable\b|dtolnay\/rust-toolchain|self-hosted/);
   expect(release).toContain("rustup toolchain install");
   expect(read("../rust-toolchain.toml")).toMatch(/channel = "1\.99\.1"[\s\S]*"aarch64-apple-darwin", "x86_64-apple-darwin"/);
@@ -53,6 +53,8 @@ test("release.yml uploads the portable packages, their signatures and latest.jso
   expect(release).toContain("NOTES: ${{ needs.notes.outputs.body }}");
   expect(release).toContain("run: npm run tauri -- build --no-bundle -- --locked");
   expect(release).toContain("run: npm run tauri -- build --target universal-apple-darwin --bundles app -- --locked");
+  expect(release).toContain("run: npm run tauri -- build --bundles appimage -- --locked");
+  expect(release).toContain("for f in packages/*.zip packages/*.AppImage; do");
   expect(release).toContain("node scripts/portable-release.mjs package --os ${{ matrix.package }} --version \"$VERSION\" --out packages");
   expect(release).toContain('node node_modules/@tauri-apps/cli/tauri.js signer sign --app-version "$VERSION" "$f"');
   expect(release).toContain("node scripts/portable-release.mjs manifest --version \"$VERSION\" --notes-file \"$RUNNER_TEMP/notes.md\" --dir packages");
@@ -132,9 +134,10 @@ test("latest.json must point each platform at its release file", () => {
 test("the packages and the manifest the release writes are what the updater reads", () => {
   expect(PACKAGES.windows("0.1.1")).toBe("freewheel-0.1.1-windows-x64.exe");
   expect(PACKAGES.macos("0.1.1")).toBe("freewheel-0.1.1-macos-universal.dmg");
-  expect(SERVED).toEqual({ "windows-x86_64": "windows", "darwin-aarch64": "macos", "darwin-x86_64": "macos" });
+  expect(PACKAGES.linux("0.1.1")).toBe("freewheel-0.1.1-linux-x86_64.AppImage");
+  expect(SERVED).toEqual({ "windows-x86_64": "windows", "darwin-aarch64": "macos", "darwin-x86_64": "macos", "linux-x86_64": "linux" });
   const fixture = JSON.parse(read("./fixtures/portable-latest.json"));
-  const signatures = { "freewheel-0.1.1-windows-x64.exe": "c2ln\n", "freewheel-0.1.1-macos-universal.dmg": "c2ln" };
+  const signatures = { "freewheel-0.1.1-windows-x64.exe": "c2ln\n", "freewheel-0.1.1-macos-universal.dmg": "c2ln", "freewheel-0.1.1-linux-x86_64.AppImage": "c2ln" };
   const made = manifest({
     version: "0.1.1",
     notes: fixture.notes,
@@ -161,6 +164,7 @@ test.each([
   ["windows-x86_64"],
   ["darwin-aarch64"],
   ["darwin-x86_64"],
+  ["linux-x86_64"],
 ])("latest.json without %s fails", (key) => {
   const platforms = { ...latest.platforms };
   delete platforms[key];

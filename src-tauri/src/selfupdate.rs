@@ -1,19 +1,23 @@
 //! Portable self-update: freewheel is the file the user downloaded and ran
 //! (Windows: `freewheel-<ver>-windows-x64.exe`, under whatever name they
-//! keep it) or, on macOS, `freewheel.app` (from the release's .dmg), and it
-//! updates itself in place.
+//! keep it; Linux: its AppImage, `$APPIMAGE`) or, on macOS, `freewheel.app`
+//! (from the release's .dmg), and it updates itself in place.
 //!
 //! 1. Check: download the release manifest (`latest.json`, a release asset:
 //!    `releases/latest/download/latest.json`, no API rate limit) and compare
 //!    its version with the running one (semver).
 //! 2. Download: the release file for this OS and architecture
-//!    (`freewheel-<ver>-windows-x64.exe`, `freewheel-<ver>-macos-universal.dmg`)
+//!    (`freewheel-<ver>-windows-x64.exe`, `freewheel-<ver>-macos-universal.dmg`,
+//!    `freewheel-<ver>-linux-x86_64.AppImage`)
 //!    into a temp dir, with progress, then verify its minisign signature
 //!    against the pubkey baked in at release build (`FREEWHEEL_UPDATER_PUBKEY`)
 //!    and the version the signature is bound to. Nothing next to the app is
 //!    touched before the signature verifies.
 //! 3. Install: put the new version next to the running one (`<name>.new`):
-//!    the verified exe itself is copied there ([`PackageKind::File`]); on
+//!    the verified exe or AppImage itself is copied there
+//!    ([`PackageKind::File`]; Linux: the AppImage the user started,
+//!    `$APPIMAGE`, wherever they keep it; a running AppImage stays mounted
+//!    from its open file); on
 //!    macOS the verified .dmg is attached read-only and its `freewheel.app`
 //!    copied out ([`PackageKind::Dmg`]), then detached. Rename the running
 //!    one to `<name>.old` (Windows allows renaming a running exe), rename
@@ -94,6 +98,12 @@ impl PackageKind {
         }
     }
 }
+
+/// The env var an AppImage's runtime sets to its own path.
+pub const APPIMAGE_ENV: &str = "APPIMAGE";
+
+/// What the Linux updater says when freewheel is not running from its AppImage.
+pub const NOT_APPIMAGE: &str = "freewheel updates itself only when it runs from its AppImage";
 
 /// The updater pubkey baked in at release build (tauri signer format:
 /// base64 of minisign's .pub text); `None` in dev and CI builds.
@@ -298,13 +308,32 @@ pub fn install_target(exe: &Path, bundle: bool) -> Result<PathBuf, UpdateError> 
         })
 }
 
+/// The AppImage to swap, from `$APPIMAGE` (an absolute path to a file).
+pub fn appimage_target(appimage: Option<&std::ffi::OsStr>) -> Result<PathBuf, UpdateError> {
+    let path = appimage
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .ok_or_else(|| UpdateError::Install(NOT_APPIMAGE.into()))?;
+    if !path.is_file() {
+        return Err(UpdateError::Install(format!(
+            "{NOT_APPIMAGE} ({} is not there)",
+            path.display()
+        )));
+    }
+    Ok(std::fs::canonicalize(&path).unwrap_or(path))
+}
+
 /// The running app's install target.
 pub fn current_target() -> Result<PathBuf, UpdateError> {
+    if cfg!(target_os = "linux") {
+        return appimage_target(std::env::var_os(APPIMAGE_ENV).as_deref());
+    }
     let exe =
         std::env::current_exe().map_err(|e| UpdateError::Install(format!("where am I: {e}")))?;
     let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
     install_target(&dunce(exe), cfg!(target_os = "macos"))
 }
+
 
 /// `\\?\C:\x` -> `C:\x` (canonicalize on Windows), so the relaunched path
 /// and the start-at-login entry stay the plain path.
@@ -592,6 +621,26 @@ pub fn wait_after_update(args: impl IntoIterator<Item = String>, timeout: Durati
     }
 }
 
+/// The env vars the old AppImage's runtime set for itself: its own
+/// (`APPIMAGE`, `APPDIR`, `ARGV0`, `OWD`) and every one pointing into its
+/// mount (`$APPDIR`, gone once it exits: `LD_LIBRARY_PATH`, `GDK_PIXBUF_*`,
+/// `GIO_*`, `XDG_DATA_DIRS`...). The new AppImage's runtime sets its own.
+pub fn appimage_env(vars: impl IntoIterator<Item = (String, String)>) -> Vec<String> {
+    let vars: Vec<(String, String)> = vars.into_iter().collect();
+    let appdir = vars
+        .iter()
+        .find(|(k, _)| k == "APPDIR")
+        .map(|(_, v)| v.trim_end_matches('/').to_string())
+        .filter(|v| !v.is_empty());
+    vars.iter()
+        .filter(|(k, v)| {
+            ["APPIMAGE", "APPDIR", "ARGV0", "OWD"].contains(&k.as_str())
+                || appdir.as_deref().is_some_and(|d| v.contains(d))
+        })
+        .map(|(k, _)| k.clone())
+        .collect()
+}
+
 /// Starts the swapped-in `target` with [`AFTER_UPDATE_FLAG`] and this pid.
 pub fn relaunch(target: &Path) -> std::io::Result<()> {
     let pid = std::process::id().to_string();
@@ -603,6 +652,11 @@ pub fn relaunch(target: &Path) -> std::io::Result<()> {
     };
     #[cfg(not(target_os = "macos"))]
     let mut command = std::process::Command::new(target);
+    if cfg!(target_os = "linux") {
+        for key in appimage_env(std::env::vars()) {
+            command.env_remove(key);
+        }
+    }
     command.arg(AFTER_UPDATE_FLAG).arg(pid).spawn().map(drop)
 }
 
@@ -1260,7 +1314,7 @@ mod tests {
             select(&m, "windows", "aarch64").unwrap().url,
             "https://x/windows-x86_64.bin"
         );
-        let e = select(&m, "linux", "x86_64").unwrap_err();
+        let e = select(&m, "linux", "aarch64").unwrap_err();
         assert!(e.to_string().starts_with("no-package:"), "{e}");
         assert!(select(&manifest(&["windows-x86_64"]), "macos", "aarch64").is_err());
     }
@@ -1271,7 +1325,7 @@ mod tests {
         let m: Manifest = serde_json::from_str(json).unwrap();
         assert_eq!(m.version, "0.1.1");
         assert!(m.notes.contains("Features"));
-        for key in ["windows-x86_64", "darwin-aarch64", "darwin-x86_64"] {
+        for key in ["windows-x86_64", "darwin-aarch64", "darwin-x86_64", "linux-x86_64"] {
             assert!(m.platforms[key].url.starts_with(
                 "https://github.com/brinkercode/freewheel/releases/download/v0.1.1/freewheel-0.1.1-"
             ));
@@ -1775,6 +1829,78 @@ mod tests {
                 assert!(!sibling(&exe, "old").exists() && !sibling(&exe, "new").exists());
             }
         }
+    }
+
+    #[test]
+    fn an_appimage_swaps_in_place_runnable_and_the_old_one_is_cleaned_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let apps = dir.path().join("Applications");
+        std::fs::create_dir(&apps).unwrap();
+        let image = apps.join("freewheel.AppImage");
+        std::fs::write(&image, "A").unwrap();
+        let download = dir.path().join(PackageKind::File.download_name("0.2.0"));
+        std::fs::write(&download, "B").unwrap();
+        install_package(&download, &image, PackageKind::File).unwrap();
+        assert_eq!(read(&image), "B");
+        assert_eq!(read(&sibling(&image, "old")), "A");
+        assert!(!sibling(&image, "new").exists());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&image).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o755);
+        }
+        let temp = dir.path().join(TEMP_DIR_NAME);
+        std::fs::create_dir(&temp).unwrap();
+        assert_eq!(
+            cleanup(&image, &temp),
+            vec![sibling(&image, "old"), temp.clone()]
+        );
+        assert_eq!(std::fs::read_dir(&apps).unwrap().count(), 1, "only the AppImage");
+    }
+
+    #[test]
+    fn the_appimage_is_the_target_only_when_running_from_one() {
+        let e = appimage_target(None).unwrap_err();
+        assert_eq!(e, UpdateError::Install(NOT_APPIMAGE.into()));
+        assert!(appimage_target(Some("relative.AppImage".as_ref())).is_err());
+        assert!(
+            appimage_target(Some("/nonexistent/f.AppImage".as_ref()))
+                .unwrap_err()
+                .to_string()
+                .contains("is not there")
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let image = dir.path().join("freewheel-0.1.0-linux-x86_64.AppImage");
+        std::fs::write(&image, "A").unwrap();
+        assert_eq!(
+            appimage_target(Some(image.as_os_str())).unwrap(),
+            std::fs::canonicalize(&image).unwrap()
+        );
+        assert!(PackageKind::current().download_name("0.2.0").starts_with("freewheel-0.2.0."));
+    }
+
+    #[test]
+    fn the_new_appimage_starts_without_the_old_ones_mount_in_its_env() {
+        let vars = [
+            ("APPIMAGE", "/home/a/freewheel.AppImage"),
+            ("APPDIR", "/tmp/.mount_freewhXyZ/"),
+            ("ARGV0", "freewheel"),
+            ("OWD", "/home/a"),
+            ("LD_LIBRARY_PATH", "/tmp/.mount_freewhXyZ/usr/lib:/opt/x"),
+            ("GDK_PIXBUF_MODULE_FILE", "/tmp/.mount_freewhXyZ/usr/lib/loaders.cache"),
+            ("HOME", "/home/a"),
+            ("FREEWHEEL_E2E_UPDATE_URL", "http://127.0.0.1:1/latest.json"),
+        ]
+        .map(|(k, v)| (k.to_string(), v.to_string()));
+        let mut removed = appimage_env(vars.clone());
+        removed.sort();
+        assert_eq!(
+            removed,
+            ["APPDIR", "APPIMAGE", "ARGV0", "GDK_PIXBUF_MODULE_FILE", "LD_LIBRARY_PATH", "OWD"]
+        );
+        // Not from an AppImage: only the AppImage names, nothing else.
+        assert!(appimage_env([("HOME".to_string(), "/".to_string())]).is_empty());
     }
 
     /// The macOS release .dmg (scripts/portable-release.mjs: the same

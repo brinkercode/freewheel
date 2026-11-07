@@ -4,10 +4,12 @@
 //
 //   node scripts/portable-release.mjs package --os windows --version 0.1.1 --out <dir> [--exe target/release/freewheel.exe]
 //   node scripts/portable-release.mjs package --os macos --version 0.1.1 --out <dir> --app <path/to/freewheel.app>
+//   node scripts/portable-release.mjs package --os linux --version 0.1.1 --out <dir> --appimage <path/to/x.AppImage>
 //     -> <dir>/freewheel-0.1.1-windows-x64.exe (the portable exe itself)
 //        <dir>/freewheel-0.1.1-macos-universal.dmg (freewheel.app and an
 //        Applications link to drag it onto; a .app is a folder, so it needs
 //        a container: open the .dmg and run it, or drag it to Applications)
+//        <dir>/freewheel-0.1.1-linux-x86_64.AppImage (the AppImage itself, runnable)
 //   node scripts/portable-release.mjs manifest --version 0.1.1 --notes-file notes.md --dir <dir> --base-url <url> [--only windows]
 //     -> latest.json on stdout: each platform's file url and its signature
 //        (<file>.sig, made by `tauri signer sign --app-version <version>`);
@@ -16,9 +18,10 @@
 // The in-app updater (src-tauri/src/selfupdate.rs) reads latest.json from
 // releases/latest/download/latest.json, picks platforms[<os>-<arch>],
 // downloads that file, verifies its signature and swaps the app in place
-// (Windows: the exe itself; macOS: freewheel.app copied out of the .dmg).
+// (Windows: the exe itself; Linux: the AppImage itself, $APPIMAGE;
+// macOS: freewheel.app copied out of the .dmg).
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,10 +30,11 @@ import { fileURLToPath } from "node:url";
 export const PACKAGES = {
   windows: (version) => `freewheel-${version}-windows-x64.exe`,
   macos: (version) => `freewheel-${version}-macos-universal.dmg`,
+  linux: (version) => `freewheel-${version}-linux-x86_64.AppImage`,
 };
 
 /** The manifest's platform keys (selfupdate.rs platform_key) and the release file serving each. */
-export const PLATFORMS = { "windows-x86_64": "windows", "darwin-aarch64": "macos", "darwin-x86_64": "macos" };
+export const PLATFORMS = { "windows-x86_64": "windows", "darwin-aarch64": "macos", "darwin-x86_64": "macos", "linux-x86_64": "linux" };
 
 /** `hdiutil create` for the .dmg (selfupdate.rs tests make theirs the same way). */
 export const DMG_CREATE = ["create", "-volname", "freewheel", "-fs", "HFS+", "-format", "UDZO", "-ov", "-srcfolder"];
@@ -63,7 +67,7 @@ export function parseArgs(argv) {
 }
 
 /** Makes the OS's release file in `out`; returns its path. */
-export function makePackage({ os, version, out, exe = "target/release/freewheel.exe", app }) {
+export function makePackage({ os, version, out, exe = "target/release/freewheel.exe", app, appimage }) {
   if (!PACKAGES[os]) throw new Error(`unknown --os ${os}`);
   if (!VERSION.test(version ?? "")) throw new Error(`not a version: ${version}`);
   mkdirSync(out, { recursive: true });
@@ -73,6 +77,11 @@ export function makePackage({ os, version, out, exe = "target/release/freewheel.
     // The exe is the release file: download it and run it.
     if (!existsSync(exe)) throw new Error(`--exe must be an existing freewheel.exe: ${exe}`);
     copyFileSync(exe, file);
+  } else if (os === "linux") {
+    // The AppImage is the release file: one file the user runs and keeps where they like.
+    if (!appimage || !/\.AppImage$/.test(appimage) || !existsSync(appimage)) throw new Error(`--appimage must be an existing .AppImage: ${appimage}`);
+    copyFileSync(appimage, file);
+    chmodSync(file, 0o755);
   } else {
     if (!app || basename(app) !== "freewheel.app" || !existsSync(app)) throw new Error(`--app must be an existing freewheel.app: ${app}`);
     const stage = mkdtempSync(join(tmpdir(), "freewheel-dmg-"));
