@@ -78,6 +78,16 @@ impl Engine {
         std::mem::take(&mut self.override_exited)
     }
 
+    /// The Wheel tab's 'Back to normal': leaves the active dial override,
+    /// as pressing its key again does. Returns whether one was active.
+    pub fn exit_override(&mut self) -> bool {
+        let Some(mode) = self.active_override else {
+            return false;
+        };
+        self.toggle_override(mode);
+        true
+    }
+
     /// Switches the dial to `mode`, or back to jog actions if it is active.
     fn toggle_override(&mut self, mode: OverrideMode) {
         self.override_exited |= self.active_override.is_some();
@@ -940,6 +950,20 @@ mod tests {
         }
         bindings.insert("Cut".into(), Action::Hotkey { combo: ctrl_s() });
         Engine::new(&config)
+    }
+
+    #[test]
+    fn back_to_normal_leaves_the_override_as_its_key_would() {
+        let mut engine = override_engine();
+        assert!(!engine.exit_override());
+        let (mut keys, mut apps) = (MockInjector::new(), MockLauncher::new());
+        engine
+            .handle(&DeviceEvent::Press(Key::Cam1), &mut keys, &mut apps)
+            .unwrap();
+        assert_eq!(engine.active_override(), Some(OverrideMode::SystemVolume));
+        assert!(engine.exit_override());
+        assert_eq!(engine.active_override(), None);
+        assert!(engine.take_override_exit());
     }
 
     #[test]

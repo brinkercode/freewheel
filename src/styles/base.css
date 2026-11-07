@@ -538,6 +538,35 @@ td.row-chevron .icon { vertical-align: middle; }
 .input-icon-box { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: var(--h-btn-md); padding: 0 10px; border-radius: var(--r-btn); border: 1px solid var(--line2); background: var(--bg); }
 .input-icon-box .icon { color: var(--ink3); }
 .input-icon-box input { flex: 1; min-width: 0; border: none; background: transparent; padding: 0; height: 100%; }
+/* the app picker: search, the installed apps, Choose file… (the prototype's mApp) */
+.app-search { flex: none; height: 38px; border-radius: 8px; }
+.app-list { display: flex; flex-direction: column; flex: none; max-height: 230px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+.app-row { display: flex; align-items: center; gap: 10px; flex: none; min-height: 44px; height: auto; padding: 0 12px; border: none; border-top: 1px solid var(--line); border-radius: 0; background: var(--panel); text-align: left; justify-content: flex-start; font-size: 13px; font-weight: var(--fw-regular); }
+.app-row:first-child { border-top-color: transparent; }
+.app-row.is-current,
+.app-row.is-current:hover:not(:disabled) { background: var(--accent-soft); }
+.app-initial { display: flex; align-items: center; justify-content: center; flex: none; width: 28px; height: 28px; border-radius: 7px; color: #fff; font-weight: 700; font-size: 13px; }
+.app-initial[data-hue="0"] { background: oklch(0.62 0.13 0); }
+.app-initial[data-hue="1"] { background: oklch(0.62 0.13 30); }
+.app-initial[data-hue="2"] { background: oklch(0.62 0.13 60); }
+.app-initial[data-hue="3"] { background: oklch(0.62 0.13 90); }
+.app-initial[data-hue="4"] { background: oklch(0.62 0.13 120); }
+.app-initial[data-hue="5"] { background: oklch(0.62 0.13 150); }
+.app-initial[data-hue="6"] { background: oklch(0.62 0.13 180); }
+.app-initial[data-hue="7"] { background: oklch(0.62 0.13 210); }
+.app-initial[data-hue="8"] { background: oklch(0.62 0.13 240); }
+.app-initial[data-hue="9"] { background: oklch(0.62 0.13 270); }
+.app-initial[data-hue="10"] { background: oklch(0.62 0.13 300); }
+.app-initial[data-hue="11"] { background: oklch(0.62 0.13 330); }
+.app-check { width: 18px; height: 18px; color: var(--accent); }
+.app-none { padding: 14px; color: var(--ink3); font-size: 12.5px; }
+.choose-file { flex: none; height: 38px; border-radius: 8px; border: 1px solid var(--line2); background: var(--panel); gap: 6px; }
+.choose-file .icon { width: 18px; height: 18px; }
+.success-line .show-file { flex: none; }
+/* the Wheel tab: a key turned the wheel into a knob (the prototype's hasOverride) */
+.override-notice { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 10px; background: var(--accent-soft); line-height: 1.4; }
+.override-notice > .icon { width: 20px; height: 20px; color: var(--accent); flex: none; }
+.override-notice button { flex: none; height: 30px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--line2); background: var(--panel); font-size: 12.5px; }
 
 /* first run and permissions: in place of the window's content */
 .setup,

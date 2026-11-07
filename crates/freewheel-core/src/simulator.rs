@@ -103,6 +103,8 @@ pub enum Control {
     StepUpdate,
     /// Puts the app back in its first-run state.
     ResetFirstRun,
+    /// The Wheel tab's 'Back to normal': leaves the dial override.
+    ExitOverride,
 }
 
 /// The macOS permissions (Accessibility, Input Monitoring) as the app sees them.
@@ -152,6 +154,16 @@ pub fn sample_mappings() -> Vec<(String, String, Action)> {
         ("base", "In", combo(&[], "I")),
         ("base", "Out", combo(&[], "O")),
         ("base", "Esc", combo(&[Ctrl], "Z")),
+        // The prototype's media keys, sent as the OS media keys.
+        ("base", "StopPlay", combo(&[], crate::inject::PLAY_PAUSE)),
+        ("base", "AudioOnly", combo(&[], crate::inject::MUTE)),
+        (
+            "base",
+            "FullView",
+            Action::OverrideToggle {
+                mode: OverrideMode::SystemVolume,
+            },
+        ),
         (
             "base",
             SAMPLE_PUSH_KEY,
@@ -191,6 +203,8 @@ pub struct SimStatus {
     pub first_run: bool,
     /// How many keys are set, over every page (0 = the empty setup).
     pub mapped_keys: usize,
+    /// The dial override a key turned the wheel into, if any.
+    pub wheel_override: Option<OverrideMode>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -458,6 +472,12 @@ impl Simulator {
             Control::Permissions { state } => self.permissions = state,
             Control::StepUpdate => self.update = update_step(),
             Control::ResetFirstRun => self.first_run.reset(),
+            Control::ExitOverride => {
+                if self.engine.exit_override() {
+                    info!("simulator: wheel back to normal");
+                    self.toasts.push("the wheel is back to normal".into());
+                }
+            }
         }
         self.status()
     }
@@ -503,6 +523,7 @@ impl Simulator {
             update: self.update.clone(),
             first_run: self.first_run.is_first_run(),
             mapped_keys: self.config.layers.iter().map(|l| l.bindings.len()).sum(),
+            wheel_override: self.engine.active_override(),
         }
     }
 
@@ -736,6 +757,34 @@ mod tests {
             key: name.into(),
             down,
         })
+    }
+
+    #[test]
+    fn the_sample_media_keys_press_play_pause_and_mute_and_full_view_is_a_knob() {
+        let (_dir, mut sim, mock) = connected(Bus::Usb);
+        sim.apply(Control::LoadSampleMappings);
+        sim.apply(Control::SendForReal { on: true });
+        key(&mut sim, "StopPlay", true);
+        key(&mut sim, "StopPlay", false);
+        key(&mut sim, "AudioOnly", true);
+        key(&mut sim, "AudioOnly", false);
+        let pressed: Vec<_> = mock
+            .calls()
+            .into_iter()
+            .filter_map(|c| match c {
+                InjectCall::Down(Keystroke::Key(k)) => Some(k),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(pressed, [crate::inject::PLAY_PAUSE, crate::inject::MUTE]);
+        key(&mut sim, "FullView", true);
+        let s = key(&mut sim, "FullView", false);
+        assert_eq!(s.wheel_override, Some(OverrideMode::SystemVolume));
+        let s = sim.apply(Control::ExitOverride);
+        assert_eq!(s.wheel_override, None);
+        assert_eq!(s.toasts, ["the wheel is back to normal"]);
+        // Nothing to leave: nothing said.
+        assert!(sim.apply(Control::ExitOverride).toasts.is_empty());
     }
 
     #[test]

@@ -132,6 +132,7 @@ html:has(.fw-sim) body { background: #151618; color-scheme: dark; }
 .fw-sim-log li.is-you { color: #9fb6ff; }
 .fw-sim-log li.is-info { color: #8d8d93; }
 .fw-sim-log li.is-error { color: #ff8a80; }
+.fw-sim-log li.is-app { color: #b5e3c0; }
 .fw-sim-meta { color: #6c6c72; font-size: var(--fs-micro); }
 
 /* the prototype's simRows: a sunk strip with one light option */
@@ -148,6 +149,8 @@ html:has(.fw-sim) body { background: #151618; color-scheme: dark; }
 .fw-sim .fw-sim-seg button[aria-pressed="true"] { background: #e8e8e6; color: #151618; font-weight: var(--fw-bold); }
 
 .fw-sim-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
+/* the tray menu: a check item shows its check */
+.fw-sim-tray-menu button[aria-pressed="true"]::before { content: "✓"; font-weight: var(--fw-bold); }
 
 /* tray icon states: the light swatch of the prototype; the current one ringed */
 .fw-sim-tray {

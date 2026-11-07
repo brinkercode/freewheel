@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { RecordBox } from "./ActionEditor.jsx";
 import Icon from "./Icon.jsx";
-import { comboError } from "./keys.js";
-import { getConfig, saveConfig, saveErrorText } from "./settingsApi.js";
+import { LABELS, comboError } from "./keys.js";
+import { exitWheelOverride, getConfig, saveConfig, saveErrorText } from "./settingsApi.js";
 
 // The Wheel tab (screens-and-components 3c). The three buttons above the wheel
 // (SHTL, JOG, SCRL) each switch the wheel to a JogMode with a SetJogMode
@@ -116,8 +116,25 @@ export async function saveWith(config, errors, save = saveConfig, what = "settin
 
 const comboOf = (action) => action?.Hotkey?.combo ?? null;
 
+const KNOB = { SystemVolume: "a volume knob", AppVolume: "an app volume knob", Brightness: "a brightness knob" };
+
+/**
+ * The override notice (the prototype's hasOverride): which key turned the
+ * wheel into which knob, from the status' wheel_override and the page the
+ * Speed Editor is on; null while the wheel is normal.
+ */
+export function overrideNotice(config, status) {
+  const mode = status?.wheel_override;
+  if (!mode || !config) return null;
+  const page = config.layers.find((l) => l.id === status.layer) ?? config.layers.find((l) => l.id === config.base_layer);
+  const key = Object.entries(page?.bindings ?? {}).find(([, a]) => a?.OverrideToggle?.mode === mode)?.[0];
+  const printed = key ? (LABELS[key] ?? key) : "a key";
+  const again = key ? `Press ${printed} again to go back.` : "Press that key again to go back.";
+  return `Right now ${printed} has turned the wheel into ${KNOB[mode] ?? "a knob"}. ${again}`;
+}
+
 /** The Wheel tab: which button, what turning does with it lit, and the sensitivity. */
-export default function WheelTab({ initial = null, save = saveConfig }) {
+export default function WheelTab({ initial = null, save = saveConfig, status = null, exitOverride = exitWheelOverride }) {
   const [config, setConfig] = useState(initial);
   const [button, setButton] = useState(null);
   const [errors, setErrors] = useState({});
@@ -154,10 +171,18 @@ export default function WheelTab({ initial = null, save = saveConfig }) {
     return apply(withJog(config, mode, { [side]: { Hotkey: { combo } } }));
   };
   const sensitivity = sensitivityOf(bindingOf(config, config.jog.default_mode).threshold);
+  const notice = overrideNotice(config, status);
   return (
     <div className="tab-page" data-screen-label="Wheel">
       <div className="tab-column">
         <h2 className="tab-title">When I turn the wheel…</h2>
+        {notice && (
+          <div className="override-notice" role="status">
+            <Icon name="info" />
+            <span className="grow">{notice}</span>
+            <button onClick={() => exitOverride().catch((e) => setErrors({ save: `The wheel could not go back to normal: ${String(e)}` }))}>Back to normal</button>
+          </div>
+        )}
         <section className="card card-stack wheel-card">
           <div className="card-text">
             The three buttons above the wheel can each make it do something different. Press one on your Speed Editor to switch.

@@ -105,6 +105,7 @@ mod tests {
             Command::SetEnabled(on) => on,
             Command::Quit(_) => panic!("unexpected Quit"),
             Command::Reload(_) => panic!("unexpected Reload"),
+            Command::ExitOverride => panic!("unexpected ExitOverride"),
         }
     }
 

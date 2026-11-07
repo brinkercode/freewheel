@@ -42,7 +42,12 @@ bus: Bus | null,
  * freewheel stepped aside (switched Off) because DaVinci Resolve is open.
  * Never set while `settings.step_aside_for_resolve` is off.
  */
-paused: boolean, };
+paused: boolean, 
+/**
+ * The dial override a key turned the wheel into, until that key is
+ * pressed again or the Wheel tab's 'Back to normal'.
+ */
+wheel_override: OverrideMode | null, };
 
 export type ConnectionStatus = "Absent" | "Connected" | "Off" | "AuthFailed";
 

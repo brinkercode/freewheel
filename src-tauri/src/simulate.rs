@@ -34,6 +34,8 @@ pub enum Msg {
 pub struct SimHandle {
     tx: Sender<Msg>,
     rx: Mutex<Option<Receiver<Msg>>>,
+    /// The simulated OS login item (Start at login never touches the OS here).
+    login: std::sync::atomic::AtomicBool,
 }
 
 impl SimHandle {
@@ -42,7 +44,17 @@ impl SimHandle {
         SimHandle {
             tx,
             rx: Mutex::new(Some(rx)),
+            login: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    /// The simulated login item.
+    pub fn start_at_login(&self) -> bool {
+        self.login.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    pub fn set_start_at_login(&self, on: bool) {
+        self.login.store(on, std::sync::atomic::Ordering::SeqCst);
     }
 
     #[cfg(test)]
@@ -97,6 +109,9 @@ pub enum Mirror {
     Permissions(Permissions),
     /// A config the Simulator window changed (sample / empty setup).
     Config(Box<Config>),
+    /// What a device command (from the settings window or the tray) did,
+    /// for the Simulator window's log right away ([`SIM_LOG_EVENT`]).
+    Log(Vec<String>),
 }
 
 /// The device loop updates between two statuses, in the order the real
@@ -120,6 +135,11 @@ pub fn updates(before: Option<&SimStatus>, now: &SimStatus) -> Vec<Update> {
     }
     if before.map(|b| b.page.as_str()) != Some(now.page.as_str()) {
         out.push(Update::Layer(now.page.clone()));
+    }
+    if before.map(|b| b.wheel_override) != Some(now.wheel_override)
+        && (before.is_some() || now.wheel_override.is_some())
+    {
+        out.push(Update::Override(now.wheel_override));
     }
     for held in &now.held_keys {
         if before.is_some_and(|b| b.held_keys.contains(held)) {
@@ -166,16 +186,16 @@ pub fn mirror(before: Option<&SimStatus>, now: &SimStatus) -> Vec<Mirror> {
 }
 
 /// Runs the session until every sender is gone or [`Command::Quit`].
-/// `sink` hears every change; toasts from device commands wait for the
-/// window's next control.
+/// `sink` hears every change; what device commands did goes to it as
+/// [`Mirror::Log`] at once.
 pub fn session(mut sim: Simulator, rx: Receiver<Msg>, mut sink: impl FnMut(Mirror)) {
     let mut last: Option<SimStatus> = None;
-    let mut pending: Vec<String> = Vec::new();
     for msg in rx {
         let config_before = sim.config().clone();
         let (mut status, reply) = match msg {
             Msg::Ui(control, reply) => (sim.apply(control), Some(reply)),
             Msg::Device(Command::SetEnabled(on)) => (sim.apply(Control::SetEnabled { on }), None),
+            Msg::Device(Command::ExitOverride) => (sim.apply(Control::ExitOverride), None),
             Msg::Device(Command::Reload(config)) => {
                 sim.sync_config(*config);
                 (sim.apply(Control::Status), None)
@@ -197,11 +217,11 @@ pub fn session(mut sim: Simulator, rx: Receiver<Msg>, mut sink: impl FnMut(Mirro
                     sink(Mirror::Config(Box::new(sim.config().clone())));
                 }
                 let mut answer = status.clone();
-                answer.toasts = std::mem::take(&mut pending);
-                answer.toasts.extend(toasts);
+                answer.toasts = toasts;
                 let _ = reply.send(answer);
             }
-            None => pending.extend(toasts),
+            None if !toasts.is_empty() => sink(Mirror::Log(toasts)),
+            None => {}
         }
         last = Some(status);
     }
@@ -300,6 +320,10 @@ pub fn attach(
                     }
                     None
                 }
+                Mirror::Log(lines) => {
+                    let _ = app.emit_to(SIMULATOR_WINDOW, SIM_LOG_EVENT, lines);
+                    None
+                }
             };
             if let Some(status) = status {
                 let _ = app.emit(STATUS_EVENT, status);
@@ -361,7 +385,7 @@ pub fn open_window(app: &tauri::App) -> tauri::Result<()> {
         settings.set_title(&simulator::title("freewheel settings", true))?;
     }
     let url = tauri::WebviewUrl::App("index.html#simulator".into());
-    let mut builder = tauri::WebviewWindowBuilder::new(app, "simulator", url)
+    let mut builder = tauri::WebviewWindowBuilder::new(app, SIMULATOR_WINDOW, url)
         .title(simulator::title(freewheel_core::APP_NAME, true))
         .inner_size(WIDTH, 860.0)
         .min_inner_size(280.0, 480.0);
@@ -471,6 +495,31 @@ pub const SIM_RECORD_KEY_EVENT: &str = "sim-record-key";
 /// Simulate-only event to the settings window: the update banner's state
 /// (`null` hides it), as the Simulator's "New version" steps it.
 pub const SIM_UPDATE_EVENT: &str = "sim-update";
+/// Simulate-only event to the Simulator window: lines for its log, from
+/// what the settings window, the tray or a device command did
+/// (src/Simulator.jsx).
+pub const SIM_LOG_EVENT: &str = "sim-log";
+/// The Simulator window's label.
+pub const SIMULATOR_WINDOW: &str = "simulator";
+
+/// In `--simulate` only: puts `line` in the Simulator window's log, so
+/// what the app did (or would do to the real OS) is visible. Outside
+/// --simulate it does nothing.
+pub fn note<R: tauri::Runtime>(app: &tauri::AppHandle<R>, line: impl Into<String>) {
+    use tauri::Emitter;
+    if simulating(app) {
+        let line = line.into();
+        tracing::info!(%line, "simulator log");
+        let _ = app.emit_to(SIMULATOR_WINDOW, SIM_LOG_EVENT, vec![line]);
+    }
+}
+
+/// Whether this run is `--simulate` (the [`SimHandle`] is managed only then).
+pub fn simulating<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    use tauri::Manager;
+    app.try_state::<SimHandle>().is_some()
+}
+
 /// The key "Record a key" opens.
 pub const RECORD_KEY: &str = "Cut";
 /// What the settings window runs on each page load in --simulate: the flag
@@ -687,13 +736,39 @@ mod tests {
     }
 
     #[test]
-    fn device_command_toasts_reach_the_window_on_its_next_control() {
-        let (_dir, sim, commands, _) = running();
-        sim.apply(Control::Status).unwrap();
-        commands.send(Command::SetEnabled(true)).unwrap();
+    fn device_command_toasts_reach_the_window_log_at_once() {
+        let (_dir, sim, commands, seen) = running();
+        sim.apply(Control::Connect { bus: Bus::Usb }).unwrap();
+        let mut config = Config::default();
+        let base = config.base_layer.clone();
+        let layer = config.layers.iter_mut().find(|l| l.id == base).unwrap();
+        layer.bindings.insert(
+            "Cam1".into(),
+            Action::OverrideToggle {
+                mode: freewheel_core::config::OverrideMode::SystemVolume,
+            },
+        );
+        commands.send(Command::Reload(Box::new(config))).unwrap();
         std::thread::sleep(Duration::from_millis(50));
-        // No device: nothing to say, but the reply still comes.
-        assert!(sim.apply(Control::Status).is_ok());
+        key(&sim, "Cam1", true);
+        key(&sim, "Cam1", false);
+        let s = sim.apply(Control::Status).unwrap();
+        assert_eq!(
+            s.wheel_override,
+            Some(freewheel_core::config::OverrideMode::SystemVolume)
+        );
+        take(&seen);
+        // The Wheel tab's 'Back to normal' is a device command: its line
+        // goes to the log right away, and the override update follows.
+        commands.send(Command::ExitOverride).unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        let now = take(&seen);
+        assert!(
+            now.contains(&Mirror::Log(vec!["the wheel is back to normal".into()])),
+            "{now:?}"
+        );
+        assert!(all_updates(&now).contains(&Update::Override(None)));
+        assert_eq!(sim.apply(Control::Status).unwrap().wheel_override, None);
     }
 
     #[test]
@@ -806,6 +881,7 @@ mod tests {
         for name in [
             SIM_RECORD_KEY_EVENT,
             SIM_UPDATE_EVENT,
+            SIM_LOG_EVENT,
             "__FREEWHEEL_SIMULATE__",
         ] {
             assert!(js.contains(name), "{name}");

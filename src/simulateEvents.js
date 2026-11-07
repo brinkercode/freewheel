@@ -5,6 +5,8 @@
 
 export const SIM_RECORD_KEY_EVENT = "sim-record-key";
 export const SIM_UPDATE_EVENT = "sim-update";
+/** To the Simulator window: lines for its log, from what the app did. */
+export const SIM_LOG_EVENT = "sim-log";
 
 /** True only in the settings window of `freewheel --simulate`. */
 export const simulating = (win = globalThis.window) => Boolean(win?.__FREEWHEEL_SIMULATE__);

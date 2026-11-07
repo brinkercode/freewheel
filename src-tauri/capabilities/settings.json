@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "settings",
-  "description": "The settings window reads and saves the config, exports and imports the mappings, switches freewheel On and Off and start at login, reads the app version, hears the status and key-pressed events, shows the macOS permissions, draws its own title bar (minimise, maximise, close, drag), opens the Bluetooth settings, saves the support log bundle, switches detailed logs and opens a release's GitHub page (What's new).",
+  "description": "The settings window reads and saves the config, exports and imports the mappings, switches freewheel On and Off and start at login, reads the app version, hears the status and key-pressed events, shows the macOS permissions, draws its own title bar (minimise, maximise, close, drag), opens the Bluetooth settings, saves the support log bundle, switches detailed logs, opens a release's GitHub page (What's new), shows the saved log file in its folder, puts the wheel back to normal, lists the installed apps and picks a program file for a key.",
   "windows": ["main"],
   "permissions": [
     "core:event:default",
@@ -28,6 +28,10 @@
     "allow-open-bluetooth-settings",
     "allow-export-logs",
     "allow-set-detailed-logs",
-    "allow-open-release-page"
+    "allow-open-release-page",
+    "allow-show-logs-file",
+    "allow-exit-wheel-override",
+    "allow-list-apps",
+    "allow-choose-app"
   ]
 }

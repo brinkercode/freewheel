@@ -19,7 +19,10 @@ export function createSimFake() {
     connection: "Absent", bus: null, battery: null, charging: false, low_battery: false, page: "base",
     jog_mode: "Scroll", lit_leds: [], held_keys: [], enabled: true, send_for_real: false, toasts: [],
     keys: KEYS, resolve_open: false, permissions: "Granted", update: null, first_run: false, mapped_keys: 0,
+    wheel_override: null,
   };
+  const trayMenu = { on: true, start_at_login: false, status_line: null };
+  const trayClicks = [];
   let map = {};
   const jumps = [];
   const leds = () => (s.connection === "Connected" ? [{ Scroll: "Scrl", Jog: "Jog", Shuttle: "Shtl" }[s.jog_mode]] : []);
@@ -83,6 +86,10 @@ export function createSimFake() {
         s.update = { status: "available", version: "99.0.0" };
         break;
       }
+      case "ExitOverride":
+        if (s.wheel_override) toast("the wheel is back to normal");
+        s.wheel_override = null;
+        break;
       default:
         toast(`unknown control ${c.type}`);
     }
@@ -96,7 +103,15 @@ export function createSimFake() {
   const invoke = async (cmd, args) => {
     if (cmd === "simulate") return apply(args.control);
     if (cmd === "sim_jump") return void jumps.push(args.to);
+    if (cmd === "sim_tray") {
+      trayMenu.on = s.enabled;
+      trayMenu.status_line = s.permissions === "Missing" ? "Needs permission (click to fix)" : null;
+      if (args.item === "toggle") (trayMenu.on = !trayMenu.on), apply({ type: "SetEnabled", on: trayMenu.on });
+      if (args.item === "start-at-login") trayMenu.start_at_login = !trayMenu.start_at_login;
+      if (args.item !== "State") trayClicks.push(args.item);
+      return structuredClone(trayMenu);
+    }
     throw new Error(`no command ${cmd}`);
   };
-  return { invoke, jumps, state: s };
+  return { invoke, jumps, trayClicks, state: s };
 }

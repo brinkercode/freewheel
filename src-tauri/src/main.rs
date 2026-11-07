@@ -2,6 +2,7 @@
 
 #[cfg(windows)]
 mod app_volume;
+mod apps;
 #[cfg(windows)]
 mod brightness;
 #[cfg(any(target_os = "macos", all(unix, test)))]
@@ -10,6 +11,7 @@ mod controls;
 #[cfg(target_os = "macos")]
 mod ddc_macos;
 mod device;
+mod e2e;
 mod hidapi_transport;
 mod inject;
 mod launch;
@@ -226,6 +228,11 @@ fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::
         .invoke_handler(tauri::generate_handler![
             simulate::simulate,
             simulate::sim_jump,
+            tray::sim_tray,
+            settings::show_logs_file,
+            settings::exit_wheel_override,
+            apps::list_apps,
+            apps::choose_app,
             settings::get_config,
             settings::save_config,
             settings::get_status,
@@ -312,6 +319,10 @@ fn main() {
             permissions::open_bluetooth_settings,
             settings::export_logs,
             settings::set_detailed_logs,
+            settings::show_logs_file,
+            settings::exit_wheel_override,
+            apps::list_apps,
+            apps::choose_app,
             updates::open_release_page
         ])
     };

@@ -262,7 +262,7 @@ test("the record box shows Record, then Listening…, then keycaps, saving at on
   expect([...document.querySelectorAll(".keycap-lg")].map((k) => k.textContent)).toEqual(["Ctrl", "K"]);
   expect(screen.getByText("Click to record again")).toBeTruthy();
   expect(screen.getByText("Or pick a common one")).toBeTruthy();
-  expect([...document.querySelectorAll(".preset strong")].map((p) => p.textContent)).toEqual(["Copy", "Paste", "Undo", "Redo", "Save"]);
+  expect([...document.querySelectorAll(".preset strong")].map((p) => p.textContent)).toEqual(["Copy", "Paste", "Undo", "Redo", "Save", "Play/Pause", "Mute"]);
   fireEvent.click(screen.getByText("Paste").closest("button"));
   expect(screen.getByText("Paste").closest("button").className).toContain("is-current");
   expect(onSave).toHaveBeenLastCalledWith("Hotkey", { modifiers: ["Ctrl"], key: "V" });

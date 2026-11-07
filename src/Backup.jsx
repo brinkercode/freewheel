@@ -1,7 +1,7 @@
 import { useState } from "react";
 import Icon from "./Icon.jsx";
 import { Switch } from "./ResolveTab.jsx";
-import { exportLogs, exportMappings, importErrorText, importMappings } from "./settingsApi.js";
+import { exportLogs, exportMappings, importErrorText, importMappings, showLogsFile } from "./settingsApi.js";
 
 // The Help & backup tab (screens-and-components 3f): Download logs, Back up /
 // Restore and, under More, the detailed logs switch.
@@ -26,21 +26,41 @@ export async function downloadLogs(exportFn = exportLogs) {
   return `Downloaded “${file}” to your Downloads folder.`;
 }
 
-function Done({ text }) {
+function Done({ text, onShow }) {
   return (
     <div className="success-line" role="status">
       <Icon name="check_circle" className="icon success-icon" />
       <span className="grow">{text}</span>
+      {onShow && (
+        <a
+          href="#"
+          className="show-file"
+          onClick={(e) => {
+            e.preventDefault();
+            onShow();
+          }}
+        >
+          Show file
+        </a>
+      )}
     </div>
   );
 }
 
 /** The Help & backup tab. */
-export default function Backup({ initialAllowApps = false, initialMessage = null, initialMore = false, detailedLogs, onDetailedLogs }) {
+export default function Backup({
+  initialAllowApps = false,
+  initialMessage = null,
+  initialMore = false,
+  initialLogs = null,
+  detailedLogs,
+  onDetailedLogs,
+  showFile = showLogsFile,
+}) {
   const [allowApps, setAllowApps] = useState(initialAllowApps);
   const [error, setError] = useState(null);
   const [message, setMessage] = useState(initialMessage);
-  const [logs, setLogs] = useState(null);
+  const [logs, setLogs] = useState(initialLogs);
   const [logsError, setLogsError] = useState(null);
   const [more, setMore] = useState(initialMore);
   const run = (action) => {
@@ -76,7 +96,20 @@ export default function Backup({ initialAllowApps = false, initialMessage = null
             <Icon name="lock" />
             Logs never include what you type, your shortcuts, or the apps you open.
           </div>
-          {logs && <Done text={logs} />}
+          {logs && (
+            <Done
+              text={logs}
+              onShow={() =>
+                showFile().then(
+                  () => setLogsError(null),
+                  (e) => {
+                    console.error("freewheel: showing the log file failed:", String(e));
+                    setLogsError(String(e));
+                  },
+                )
+              }
+            />
+          )}
           {logsError && <p role="alert">{logsError}</p>}
         </section>
         <section id="backup" className="card card-stack">

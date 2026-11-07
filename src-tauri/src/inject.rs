@@ -2,7 +2,7 @@
 //! it; they use `MockInjector`.
 
 use enigo::{Axis, Direction, Enigo, Key, Keyboard, Mouse, Settings};
-use freewheel_core::inject::{InjectError, KeyInjector, Keystroke, Modifier};
+use freewheel_core::inject::{self as media, InjectError, KeyInjector, Keystroke, Modifier};
 
 pub struct EnigoInjector {
     enigo: Enigo,
@@ -24,7 +24,7 @@ fn err(e: impl std::fmt::Display) -> InjectError {
     InjectError(e.to_string())
 }
 
-fn to_enigo(key: &Keystroke) -> Result<Key, InjectError> {
+pub(crate) fn to_enigo(key: &Keystroke) -> Result<Key, InjectError> {
     let name = match key {
         Keystroke::Modifier(Modifier::Ctrl) => return Ok(Key::Control),
         Keystroke::Modifier(Modifier::Shift) => return Ok(Key::Shift),
@@ -63,6 +63,15 @@ fn to_enigo(key: &Keystroke) -> Result<Key, InjectError> {
         "F10" => Key::F10,
         "F11" => Key::F11,
         "F12" => Key::F12,
+        // The OS media keys (freewheel_core::inject::MEDIA_KEYS): enigo
+        // sends VK_MEDIA_PLAY_PAUSE / VK_VOLUME_MUTE... on Windows and the
+        // NX system-defined key events on macOS.
+        media::PLAY_PAUSE => Key::MediaPlayPause,
+        media::MUTE => Key::VolumeMute,
+        media::VOLUME_UP => Key::VolumeUp,
+        media::VOLUME_DOWN => Key::VolumeDown,
+        media::NEXT_TRACK => Key::MediaNextTrack,
+        media::PREV_TRACK => Key::MediaPrevTrack,
         _ => return Err(InjectError(format!("unknown key: {name}"))),
     })
 }
@@ -78,5 +87,34 @@ impl KeyInjector for EnigoInjector {
 
     fn scroll(&mut self, amount: i32) -> Result<(), InjectError> {
         self.enigo.scroll(amount, Axis::Vertical).map_err(err)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_media_key_name_is_sendable() {
+        for name in media::MEDIA_KEYS {
+            assert!(to_enigo(&Keystroke::Key(name.into())).is_ok(), "{name}");
+        }
+        assert_eq!(
+            to_enigo(&Keystroke::Key("PlayPause".into())).unwrap(),
+            Key::MediaPlayPause
+        );
+        assert_eq!(
+            to_enigo(&Keystroke::Key("Mute".into())).unwrap(),
+            Key::VolumeMute
+        );
+        assert!(to_enigo(&Keystroke::Key("Hyper".into())).is_err());
+    }
+
+    #[test]
+    fn the_media_key_names_match_the_frontend() {
+        let js = include_str!("../../src/keys.js");
+        for name in media::MEDIA_KEYS {
+            assert!(js.contains(&format!("\"{name}\"")), "{name}");
+        }
     }
 }
