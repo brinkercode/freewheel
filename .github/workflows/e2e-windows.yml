@@ -1,0 +1,121 @@
+# End to end on a hosted Windows runner: builds the real freewheel.exe (the
+# UI embedded, as `tauri build` serves it), starts it with --simulate under
+# Tauri's WebDriver (tauri-driver + the msedgedriver matching the runner's
+# WebView2) and clicks through the first run, every settings tab, the key
+# panel and the Simulator window's controls, requiring both windows to answer
+# within 5 s after every action (scripts/e2e-windows.mjs). Screenshots of
+# every step go to the 'e2e-screenshots' artifact; the exe plus a
+# double-click freewheel-simulate.cmd go to 'freewheel-windows-simulate'.
+name: e2e-windows
+
+on:
+  pull_request:
+    paths-ignore: ["docs/**", "**.md"]
+  push:
+    branches: [main]
+    paths-ignore: ["docs/**", "**.md"]
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: e2e (windows-2025)
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      # Installs exactly the toolchain pinned in rust-toolchain.toml.
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install
+          rustc --version
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: ". -> target"
+          cache-bin: "true"
+
+      - run: npm ci
+      - run: npm run build
+
+      # The release exe with the built UI embedded (custom-protocol), as
+      # `tauri build` makes it: no dev server.
+      - name: Build freewheel.exe
+        run: cargo build --release --locked -p freewheel --features tauri/custom-protocol
+
+      - name: Install tauri-driver
+        shell: bash
+        run: command -v tauri-driver || cargo install tauri-driver --locked
+
+      # msedgedriver must match the WebView2 runtime the app runs in.
+      - name: Install the msedgedriver matching WebView2
+        shell: pwsh
+        run: |
+          $key = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          $version = (Get-ItemProperty $key).pv
+          Write-Host "WebView2 runtime $version"
+          $zip = "$env:RUNNER_TEMP\edgedriver.zip"
+          Invoke-WebRequest "https://msedgedriver.microsoft.com/$version/edgedriver_win64.zip" -OutFile $zip
+          Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP\edgedriver" -Force
+          & "$env:RUNNER_TEMP\edgedriver\msedgedriver.exe" --version
+
+      - name: Click through freewheel --simulate
+        shell: pwsh
+        run: |
+          $driver = Start-Process -FilePath tauri-driver -ArgumentList '--port','4444','--native-driver',"$env:RUNNER_TEMP\edgedriver\msedgedriver.exe" -PassThru -NoNewWindow
+          $deadline = (Get-Date).AddSeconds(30)
+          do { Start-Sleep -Milliseconds 300; $up = Test-NetConnection 127.0.0.1 -Port 4444 -InformationLevel Quiet -WarningAction SilentlyContinue } until ($up -or (Get-Date) -gt $deadline)
+          if (-not $up) { throw "tauri-driver did not start" }
+          node scripts/e2e-windows.mjs --app target/release/freewheel.exe --out e2e-shots
+          $code = $LASTEXITCODE
+          Stop-Process -Id $driver.Id -Force -ErrorAction SilentlyContinue
+          exit $code
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-screenshots
+          path: e2e-shots
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Keep the app's logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-logs
+          path: ~/AppData/Local/freewheel/data/logs
+          retention-days: 14
+          if-no-files-found: ignore
+
+      # What the owner downloads: unzip, double-click freewheel-simulate.cmd.
+      - name: Stage the clickable simulate build
+        if: success()
+        shell: bash
+        run: |
+          mkdir -p simulate-build
+          cp target/release/freewheel.exe src-tauri/windows/freewheel-simulate.cmd simulate-build/
+      - name: Upload the clickable simulate build
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: freewheel-windows-simulate
+          path: simulate-build
+          retention-days: 14
+          if-no-files-found: error
