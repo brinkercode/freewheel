@@ -572,9 +572,37 @@ enum Source {
         pubkey: Option<String>,
         loopback: bool,
     },
-    /// `--simulate`: the Simulator's "New version" publishes one.
-    Simulated { published: Mutex<Option<String>> },
+    /// `--simulate`: the Simulator's "New version" publishes one, with the
+    /// notes its "New version's notes" picked.
+    Simulated {
+        published: Mutex<Option<String>>,
+        notes: Mutex<(NotesChoice, String)>,
+    },
 }
+
+/// The notes a simulated update carries (the Simulator's "New version's notes").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum NotesChoice {
+    /// The next release's real notes, embedded at build ([`SIM_NEXT_NOTES`]).
+    Next,
+    /// [`SIM_NOTES`].
+    Sample,
+    /// Whatever the user pasted.
+    Paste,
+}
+
+/// What the Simulator shows about the simulated update's notes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SimNotes {
+    pub choice: NotesChoice,
+    /// The markdown the next simulated update carries, verbatim.
+    pub notes: String,
+    /// Whether this build has the next release's notes.
+    pub next_available: bool,
+}
+
+/// The longest pasted notes kept.
+pub const SIM_PASTE_MAX: usize = 64 * 1024;
 
 /// The simulated check takes as long as the prototype's.
 pub const SIM_CHECK: Duration = Duration::from_millis(1500);
@@ -602,11 +630,32 @@ pub const SIM_NOTES: &str = "## [{v}](https://github.com/brinkercode/freewheel/c
 * the Speed Editor reconnects by itself after your computer wakes up
 ";
 
+/// The next release's user-facing notes for this build's commit
+/// (`scripts/release-notes.mjs preview`: release-please's grouping of the
+/// commits since the last tag, then the release's own filter), embedded by
+/// build.rs from FREEWHEEL_NEXT_NOTES_FILE (the e2e and test builds); empty
+/// in builds made without it.
+pub const SIM_NEXT_NOTES: &str = include_str!(concat!(env!("OUT_DIR"), "/next-notes.md"));
+
+/// Whether this build carries the next release's notes.
+pub fn next_notes_available() -> bool {
+    !SIM_NEXT_NOTES.trim().is_empty()
+}
+
 /// The next minor version: \"0.1.0\" -> \"0.2.0\".
 pub fn next_minor(version: &str) -> String {
     match semver::Version::parse(version.trim_start_matches('v')) {
         Ok(v) => format!("{}.{}.0", v.major, v.minor + 1),
         Err(_) => "0.1.0".into(),
+    }
+}
+
+/// The markdown a simulated update of `version` carries for `choice`.
+fn sim_notes_text(choice: NotesChoice, pasted: &str, version: &str) -> String {
+    match choice {
+        NotesChoice::Next => SIM_NEXT_NOTES.to_string(),
+        NotesChoice::Sample => SIM_NOTES.replace("{v}", version),
+        NotesChoice::Paste => pasted.to_string(),
     }
 }
 
@@ -649,6 +698,14 @@ impl Updater {
             current,
             Source::Simulated {
                 published: Mutex::new(None),
+                notes: Mutex::new((
+                    if next_notes_available() {
+                        NotesChoice::Next
+                    } else {
+                        NotesChoice::Sample
+                    },
+                    String::new(),
+                )),
             },
             temp_dir(),
             None,
@@ -699,7 +756,7 @@ impl Updater {
     /// `--simulate`: publishes a version newer than the running one (and
     /// than the last one published); returns it. `None` for real updates.
     pub fn sim_publish(&self) -> Option<String> {
-        let Source::Simulated { published } = &self.source else {
+        let Source::Simulated { published, .. } = &self.source else {
             return None;
         };
         let current = self.current();
@@ -711,6 +768,39 @@ impl Updater {
         let next = next_minor(&base);
         *published = Some(next.clone());
         Some(next)
+    }
+
+    /// `--simulate`: picks the notes the next simulated update carries
+    /// (`None` keeps the choice; `text` is kept for [`NotesChoice::Paste`])
+    /// and says what they are. `Err` for real updates, or for
+    /// [`NotesChoice::Next`] in a build without them.
+    pub fn sim_notes(
+        &self,
+        choice: Option<NotesChoice>,
+        text: Option<String>,
+    ) -> Result<SimNotes, String> {
+        let Source::Simulated { notes, .. } = &self.source else {
+            return Err("not simulating".into());
+        };
+        let mut notes = lock(notes);
+        if choice == Some(NotesChoice::Next) && !next_notes_available() {
+            return Err("this build has no next-release notes (FREEWHEEL_NEXT_NOTES_FILE)".into());
+        }
+        if let Some(text) = text {
+            if text.len() > SIM_PASTE_MAX {
+                return Err(format!("pasted notes are over {SIM_PASTE_MAX} bytes"));
+            }
+            notes.1 = text;
+        }
+        if let Some(c) = choice {
+            notes.0 = c;
+        }
+        let version = next_minor(&self.current());
+        Ok(SimNotes {
+            choice: notes.0,
+            notes: sim_notes_text(notes.0, &notes.1, &version),
+            next_available: next_notes_available(),
+        })
     }
 
     /// Checks for a newer version; remembers it for [`Self::download`].
@@ -744,13 +834,14 @@ impl Updater {
                     _ => None,
                 }
             }
-            Source::Simulated { published } => {
+            Source::Simulated { published, notes } => {
                 sleep(SIM_CHECK).await;
                 let published = lock(published).clone();
+                let (choice, pasted) = lock(notes).clone();
                 published
                     .filter(|p| is_newer(&current, p).unwrap_or(false))
                     .map(|version| Offer {
-                        notes: SIM_NOTES.replace("{v}", &version),
+                        notes: sim_notes_text(choice, &pasted, &version),
                         version,
                         platform: Platform {
                             url: "simulated".into(),
@@ -1418,6 +1509,60 @@ mod tests {
         assert_eq!(e, UpdateError::NotConfigured);
         assert!(e.to_string().starts_with("not-configured:"));
         assert_eq!(u.install().unwrap_err(), UpdateError::Nothing);
+    }
+
+    #[test]
+    fn the_simulated_update_carries_the_notes_the_simulator_picked() {
+        let u = Updater::simulated("0.1.0");
+        let start = u.sim_notes(None, None).unwrap();
+        assert_eq!(start.next_available, next_notes_available());
+        assert_eq!(
+            start.choice,
+            if next_notes_available() {
+                NotesChoice::Next
+            } else {
+                NotesChoice::Sample
+            }
+        );
+        let check = |u: &Updater| {
+            u.sim_publish().unwrap();
+            tauri::async_runtime::block_on(u.check())
+                .unwrap()
+                .unwrap()
+                .body
+        };
+        let sample = u.sim_notes(Some(NotesChoice::Sample), None).unwrap();
+        assert_eq!(sample.notes, SIM_NOTES.replace("{v}", "0.2.0"));
+        assert_eq!(check(&u), sample.notes);
+        let pasted = "### Features\n\n* **keys:** pasted\n";
+        let p = u
+            .sim_notes(Some(NotesChoice::Paste), Some(pasted.into()))
+            .unwrap();
+        assert_eq!((p.choice, p.notes.as_str()), (NotesChoice::Paste, pasted));
+        assert_eq!(check(&u), pasted);
+        // The choice stays until changed; the paste is kept.
+        assert_eq!(u.sim_notes(None, None).unwrap().notes, pasted);
+        assert!(
+            u.sim_notes(
+                Some(NotesChoice::Paste),
+                Some("x".repeat(SIM_PASTE_MAX + 1))
+            )
+            .is_err()
+        );
+        match u.sim_notes(Some(NotesChoice::Next), None) {
+            Ok(n) => assert_eq!(n.notes, SIM_NEXT_NOTES),
+            Err(e) => assert!(!next_notes_available(), "{e}"),
+        }
+        // Real updates have no simulated notes.
+        let dir = tempfile::tempdir().unwrap();
+        let real = Updater::for_test(
+            "0.1.0",
+            "http://127.0.0.1:1/latest.json",
+            None,
+            dir.path().into(),
+            dir.path().join("x"),
+        );
+        assert!(real.sim_notes(None, None).is_err());
     }
 
     #[test]

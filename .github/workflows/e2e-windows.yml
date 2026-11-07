@@ -2,7 +2,9 @@
 # UI embedded, as `tauri build` serves it), starts it with --simulate under
 # WebDriver (the msedgedriver matching the runner's WebView2, attached to
 # the app's DevTools port) and clicks through the first run, every settings tab, the key
-# panel and the Simulator window's controls, requiring both windows to answer
+# panel and the Simulator window's controls (the simulated update once with
+# each of its notes: the next release's real notes embedded at build, the
+# sample and pasted ones, each shown verbatim in What's new), requiring both windows to answer
 # within 5 s after every action (scripts/e2e-windows.mjs). Screenshots of
 # every step go to the 'e2e-screenshots' artifact; the exe plus a
 # double-click freewheel-simulate.cmd go to 'freewheel-windows-simulate'.
@@ -15,7 +17,9 @@
 # (scripts/portable-release.mjs), signs B's zip, unzips A into a folder with
 # a populated config, serves B from 127.0.0.1 (plus a tampered copy) and
 # drives A: Check -> available -> a tampered B rejected with A intact ->
-# Download (progress) -> Restart -> the same path runs B with What's new, the
+# Download (progress) -> Restart -> the same path runs B with What's new
+# showing B's notes verbatim (the next release's real notes from the repo's
+# history, scripts/release-notes.mjs preview, in B's latest.json), the
 # config unchanged, freewheel.exe.old and the temp download gone
 # (scripts/e2e-update-windows.mjs). Screenshots of every state go to the
 # 'e2e-update-screenshots' artifact.
@@ -42,9 +46,11 @@ jobs:
     runs-on: windows-2025
     timeout-minutes: 45
     steps:
+      # The whole history: the next release's notes come from it.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -65,6 +71,16 @@ jobs:
 
       - run: npm ci
       - run: npm run build
+
+      # The notes the next release will have (release-please's grouping of the
+      # commits since the last tag, then the release's own filter), embedded
+      # for the Simulator's "Next release (real notes)" (src-tauri build.rs).
+      - name: The next release's notes
+        shell: bash
+        run: |
+          node scripts/release-notes.mjs preview --out "$RUNNER_TEMP/next-notes.md"
+          cat "$RUNNER_TEMP/next-notes.md"
+          echo "FREEWHEEL_NEXT_NOTES_FILE=$RUNNER_TEMP/next-notes.md" >> "$GITHUB_ENV"
 
       # The release exe with the built UI embedded (custom-protocol), as
       # `tauri build` makes it: no dev server. `e2e` adds the stand-ins for
@@ -97,7 +113,7 @@ jobs:
           $deadline = (Get-Date).AddSeconds(30)
           do { Start-Sleep -Milliseconds 300; $up = Test-NetConnection 127.0.0.1 -Port 4444 -InformationLevel Quiet -WarningAction SilentlyContinue } until ($up -or (Get-Date) -gt $deadline)
           if (-not $up) { throw "msedgedriver did not start" }
-          node scripts/e2e-windows.mjs --port 9222 --app target/release/freewheel.exe --out e2e-shots
+          node scripts/e2e-windows.mjs --port 9222 --app target/release/freewheel.exe --out e2e-shots --next-notes "$env:FREEWHEEL_NEXT_NOTES_FILE"
           $code = $LASTEXITCODE
           Stop-Process -Id $driver.Id -Force -ErrorAction SilentlyContinue
           Get-Process freewheel -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -202,9 +218,11 @@ jobs:
       SERVER_PORT: "8719"
       TAURI_CLI: node_modules/@tauri-apps/cli/tauri.js
     steps:
+      # The whole history: the next release's notes come from it.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -250,7 +268,10 @@ jobs:
           done
           zip="$RUNNER_TEMP/release-$TO_VERSION/freewheel-$TO_VERSION-windows-x64.zip"
           node "$TAURI_CLI" signer sign -f "$E2E_UPDATER_KEY" -p "" --app-version "$TO_VERSION" "$zip" > /dev/null
-          node scripts/portable-release.mjs manifest --version "$TO_VERSION" --dir "$RUNNER_TEMP/release-$TO_VERSION" --only windows \
+          # B's notes: what the next release's notes are now, from the repo's real history.
+          node scripts/release-notes.mjs preview --version "$TO_VERSION" --out "$RUNNER_TEMP/notes-$TO_VERSION.md"
+          cat "$RUNNER_TEMP/notes-$TO_VERSION.md"
+          node scripts/portable-release.mjs manifest --version "$TO_VERSION" --notes-file "$RUNNER_TEMP/notes-$TO_VERSION.md" --dir "$RUNNER_TEMP/release-$TO_VERSION" --only windows \
             --base-url "https://github.com/brinkercode/freewheel/releases/download/v$TO_VERSION" > "$RUNNER_TEMP/release-$TO_VERSION/latest.json"
           ls -la "$RUNNER_TEMP"/release-*
 

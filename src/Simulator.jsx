@@ -11,6 +11,7 @@ const tauri = () => globalThis.window?.__TAURI__;
 const simulate = (control) => tauri().core.invoke("simulate", { control });
 const jump = (to) => tauri().core.invoke("sim_jump", { to });
 const trayClick = (item) => tauri().core.invoke("sim_tray", { item });
+const simNotes = (choice, text) => tauri().core.invoke("sim_notes", { choice, text: text ?? null });
 // `to`: Settings, FirstRun, RecordKey, Light, Dark, Reload or Quit.
 
 /** The prototype's quick keys, by binding name. */
@@ -75,18 +76,41 @@ const UPDATE_TEXT = {
   available: () => "New version published: freewheel finds it by itself, or with Check for updates.",
 };
 
+/**
+ * The notes the next "New version" carries (src-tauri selfupdate.rs
+ * NotesChoice): the next release's real notes (embedded at build from
+ * scripts/release-notes.mjs preview), the sample ones, or pasted ones.
+ */
+export const NOTES_CHOICES = [
+  ["Next", "Next release (real notes)"],
+  ["Sample", "Sample notes"],
+  ["Paste", "Paste notes…"],
+];
+
+/** A one-line preview of notes markdown: how many bullets, and the first one. */
+export function notesPreview(markdown) {
+  const items = String(markdown ?? "")
+    .split(/\r?\n/)
+    .map((l) => l.match(/^\s*[*-]\s+(.*)$/)?.[1])
+    .filter(Boolean)
+    .map((t) => t.replace(/\*\*|`/g, "").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1"));
+  if (!items.length) return String(markdown ?? "").trim() ? "Notes without bullets." : "No notes: What’s new links to GitHub only.";
+  return `${items.length} ${items.length === 1 ? "change" : "changes"}: ${items[0]}`;
+}
+
 /** A titled row of options, one of them current (the prototype's simRows). */
-function Choice({ title, options, current, onPick }) {
+function Choice({ title, options, current, onPick, disabled = [], children }) {
   return (
     <section className="fw-sim-group">
       <h2 className="fw-sim-label">{title}</h2>
       <div className="fw-sim-seg" role="group" aria-label={title}>
         {options.map(([value, text]) => (
-          <button key={String(value)} aria-pressed={current === value} onClick={() => onPick(value)}>
+          <button key={String(value)} aria-pressed={current === value} disabled={disabled.includes(value)} onClick={() => onPick(value)}>
             {text}
           </button>
         ))}
       </div>
+      {children}
     </section>
   );
 }
@@ -99,6 +123,9 @@ export default function Simulator({ initial = null }) {
   // What is plugged in, as picked: the status only names the bus while freewheel is On.
   const [plug, setPlug] = useState(null);
   const [trayMenu, setTrayMenu] = useState(null);
+  // The next simulated update's notes (sim_notes): { choice, notes, next_available }.
+  const [notes, setNotes] = useState(null);
+  const [pasted, setPasted] = useState("");
   const turning = useRef(null);
   const down = useRef(new Set());
 
@@ -142,6 +169,7 @@ export default function Simulator({ initial = null }) {
     if (!tauri()) return () => clearInterval(turning.current);
     send({ type: "Status" });
     tray("State");
+    simNotes("State").then(setNotes, (e) => note([String(e)], "error"));
     // What the app did for the settings window, the tray and device
     // commands (src-tauri simulate.rs note): shown as it happens.
     const unlisten = [
@@ -154,6 +182,15 @@ export default function Simulator({ initial = null }) {
       unlisten.forEach((u) => Promise.resolve(u).then((stop) => stop?.(), () => {}));
     };
   }, []);
+
+  const pickNotes = (choice, text) =>
+    simNotes(choice, text).then(
+      (n) => {
+        setNotes(n);
+        note([`New version's notes: ${NOTES_CHOICES.find(([c]) => c === n.choice)?.[1] ?? n.choice}`], "info");
+      },
+      (e) => note([String(e)], "error"),
+    );
 
   const keyDown = (key) => {
     down.current.add(key);
@@ -306,6 +343,33 @@ export default function Simulator({ initial = null }) {
         </div>
         {update && <p className="fw-sim-meta">{UPDATE_TEXT[update.status]?.(update.version)}</p>}
       </section>
+
+      <Choice
+        title="New version’s notes"
+        options={NOTES_CHOICES}
+        current={notes?.choice ?? null}
+        disabled={notes && !notes.next_available ? ["Next"] : []}
+        onPick={(choice) => pickNotes(choice, choice === "Paste" ? pasted : undefined)}
+      >
+        {notes?.choice === "Paste" && (
+          <div className="fw-sim-paste">
+            <textarea
+              aria-label="Pasted notes"
+              placeholder={"### Features\n\n* **keys:** what changed"}
+              value={pasted}
+              onChange={(e) => setPasted(e.target.value)}
+              rows={5}
+            />
+            <button onClick={() => pickNotes("Paste", pasted)}>Use these notes</button>
+          </div>
+        )}
+        {notes && (
+          <p className="fw-sim-meta" data-notes-preview>
+            {notes.next_available ? "" : "This build has no next-release notes. "}
+            {notesPreview(notes.notes)}
+          </p>
+        )}
+      </Choice>
 
       <section className="fw-sim-group">
         <h2 className="fw-sim-label">Tray icon states</h2>

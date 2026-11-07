@@ -4,10 +4,9 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { checkWorkflow } from "./check-workflow.mjs";
 import { e2eConfig, nextVersion } from "./e2e-update-config.mjs";
-import { NOTES, UPDATE_URL_ENV, configFile, parseArgs, populate, updateTemp } from "./e2e-update-windows.mjs";
+import { UPDATE_URL_ENV, configFile, parseArgs, populate, updateTemp } from "./e2e-update-windows.mjs";
 import { chunks, localManifest, startUpdateServer, tamper } from "./update-server.mjs";
 import { sampleConfig } from "../src/dev/mockTauri.js";
-import { noteSections } from "../src/whatsNew.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const wf = read("../.github/workflows/e2e-windows.yml");
@@ -77,8 +76,6 @@ test("the update e2e script needs the app, both versions and B's manifest and pa
   const o = parseArgs(["--app", "a\\freewheel.exe", "--manifest", "latest.json", "--package", "b.zip", "--from", "0.1.0", "--to", "0.2.0"]);
   expect(o["server-port"]).toBe("8719");
   expect(o.port).toBe("9223");
-  // What's new for B shows the notes it was published with.
-  expect(noteSections(NOTES).map((s) => s.title)).toEqual(["Features", "Bug Fixes"]);
   const c = populate(sampleConfig());
   expect(c.layers.find((l) => l.id === "e2e-page").bindings.Out.Hotkey.combo.key).toBe("J");
   expect(c.layers.find((l) => l.id === c.base_layer).bindings.Cut).toEqual({ LayerPush: { target: "e2e-page" } });

@@ -13,8 +13,12 @@ const KEYS = [
 const SAMPLE = { base: { Cut: "Ctrl+C", In: "I", Out: "O", Esc: "Ctrl+Z", Snap: "page edit" }, edit: { Cut: "X", In: "Ctrl+V" } };
 const MODES = { Jog: "Jog", Shtl: "Shuttle", Scrl: "Scroll" };
 
+/** The fake's update notes (selfupdate.rs SIM_NEXT_NOTES and SIM_NOTES). */
+export const SIM_NEXT = "## [0.1.0](https://github.com/brinkercode/freewheel/compare/v0.1.0...v0.1.0) (2026-11-07)\n\n### Features\n\n* **keys:** the next release's change\n";
+export const SIM_SAMPLE = "### Features\n\n* **wheel:** smoother scrolling when you turn the wheel fast\n";
+
 /** A fresh fake session; `invoke(cmd, args)` answers like the Tauri bridge. */
-export function createSimFake() {
+export function createSimFake({ next = SIM_NEXT } = {}) {
   const s = {
     connection: "Absent", bus: null, battery: null, charging: false, low_battery: false, page: "base",
     jog_mode: "Scroll", lit_leds: [], held_keys: [], enabled: true, send_for_real: false, toasts: [],
@@ -105,9 +109,17 @@ export function createSimFake() {
     return out;
   };
 
+  const notes = { choice: next ? "Next" : "Sample", pasted: "" };
   const invoke = async (cmd, args) => {
     if (cmd === "simulate") return apply(args.control);
     if (cmd === "sim_jump") return void jumps.push(args.to);
+    if (cmd === "sim_notes") {
+      if (args.choice === "Next" && !next) throw new Error("this build has no next-release notes");
+      if (args.text != null) notes.pasted = args.text;
+      if (args.choice !== "State") notes.choice = args.choice;
+      const text = { Next: next, Sample: SIM_SAMPLE, Paste: notes.pasted }[notes.choice];
+      return { choice: notes.choice, notes: text, next_available: Boolean(next) };
+    }
     if (cmd === "sim_tray") {
       trayMenu.on = s.enabled;
       trayMenu.status_fix = s.permissions === "Missing";

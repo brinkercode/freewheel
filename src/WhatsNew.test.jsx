@@ -4,25 +4,29 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import App from "./App.jsx";
 import { sampleConfig, sampleStatus } from "./dev/mockTauri.js";
 import { restart } from "./updater.js";
+import { notesText, parseInline, parseNotes, safeHref } from "./notesMarkdown.js";
 import {
   LAST_SEEN_VERSION,
   UPDATE_NOTES,
   compareVersions,
   markSeen,
-  noteSections,
   releasePage,
   rememberNotes,
   whatsNew,
 } from "./whatsNew.js";
 
+// What latest.json carries: release-please's notes after scripts/release-notes.mjs filter.
 const NOTES = [
   "## [0.1.1](https://github.com/brinkercode/freewheel/compare/v0.1.0...v0.1.1) (2026-11-07)",
   "",
+  "### Features",
+  "",
+  "* **keys:** a key can open a folder, like `C:\\Music` ([#131](https://github.com/brinkercode/freewheel/issues/131))",
   "",
   "### Bug Fixes",
   "",
-  "* **keys:** a held Shift is released when freewheel turns Off ([#131](https://github.com/brinkercode/freewheel/issues/131)) ([1a2b3c4](https://github.com/brinkercode/freewheel/commit/1a2b3c4))",
-  "* the wheel scrolls again after sleep ([5d6e7f8](https://github.com/brinkercode/freewheel/commit/5d6e7f8))",
+  "* a held Shift is released when freewheel turns Off",
+  "* the wheel scrolls again after sleep",
 ].join("\n");
 
 /** The webview's localStorage, in memory. */
@@ -83,15 +87,31 @@ test("after an update into a newer version the window offers What's new in vX.Y.
   expect(button().className).toBe("btn-sm btn-primary");
 });
 
-test("clicking it opens the release-please notes as plain copy, linked to the tag's release page", async () => {
+test("clicking it opens the notes as markdown (headings, bullets, bold, code, links), linked to the tag's release page", async () => {
   const storage = updatedFrom("0.1.0", "0.1.1");
-  render(<App storage={storage} />);
+  const { container } = render(<App storage={storage} />);
   await waitFor(() => expect(button()).not.toBeNull());
   fireEvent.click(button());
   expect(screen.getByRole("heading", { name: "What’s new in v0.1.1" })).toBeTruthy();
-  expect(screen.getByText("Bug Fixes")).toBeTruthy();
-  expect(screen.getByText("a held Shift is released when freewheel turns Off")).toBeTruthy();
-  expect(screen.getByText("the wheel scrolls again after sleep")).toBeTruthy();
+  // The version heading is the page's title; the sections are headings.
+  expect(screen.getByRole("heading", { level: 4, name: "Features" })).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 4, name: "Bug Fixes" })).toBeTruthy();
+  expect(container.textContent).not.toContain("2026-11-07");
+  const notes = container.querySelector(".whats-new-notes");
+  expect([...notes.querySelectorAll("li")].map((li) => li.textContent)).toEqual([
+    "keys: a key can open a folder, like C:\\Music (#131)",
+    "a held Shift is released when freewheel turns Off",
+    "the wheel scrolls again after sleep",
+  ]);
+  expect(notes.querySelector("li strong").textContent).toBe("keys:");
+  expect(notes.querySelector("li code.whats-new-code").textContent).toBe("C:\\Music");
+  // A notes link opens in the browser through the opener, not in the window.
+  const pr = screen.getByRole("link", { name: "#131" });
+  expect(pr.getAttribute("href")).toBe("https://github.com/brinkercode/freewheel/issues/131");
+  fireEvent.click(pr);
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("plugin:opener|open_url", { url: "https://github.com/brinkercode/freewheel/issues/131" }),
+  );
   const link = screen.getByRole("link", { name: "See this release on GitHub" });
   expect(link.getAttribute("href")).toBe("https://github.com/brinkercode/freewheel/releases/tag/v0.1.1");
   fireEvent.click(link);
@@ -102,6 +122,38 @@ test("clicking it opens the release-please notes as plain copy, linked to the ta
   expect(screen.queryByRole("heading", { name: "What’s new in v0.1.1" })).toBeNull();
   expect(button()).toBeNull();
   expect(storage.getItem(LAST_SEEN_VERSION)).toBe("0.1.1");
+});
+
+test("notes are never HTML: tags stay text, scripts never run, only GitHub links are links", async () => {
+  const evil = [
+    "### <img src=x onerror=alert(1)>Fixes",
+    "",
+    "* <script>window.__pwned = 1</script> plain",
+    "* [click](javascript:alert(1)) and [elsewhere](https://evil.example/x) and [ok](https://github.com/brinkercode/freewheel/pull/1)",
+    "<!-- a comment -->",
+    "<b>not bold</b>",
+  ].join("\n");
+  const { container } = render(<App storage={updatedFrom("0.1.0", "0.1.1", evil)} />);
+  await waitFor(() => expect(button()).not.toBeNull());
+  fireEvent.click(button());
+  const notes = container.querySelector(".whats-new-notes");
+  expect(notes.querySelector("img, script, b")).toBeNull();
+  expect(window.__pwned).toBeUndefined();
+  expect(notes.querySelector("h4").textContent).toBe("<img src=x onerror=alert(1)>Fixes");
+  expect(notes.textContent).toContain("<script>window.__pwned = 1</script> plain");
+  expect(notes.textContent).toContain("<b>not bold</b>");
+  expect(notes.textContent).not.toContain("a comment");
+  expect([...notes.querySelectorAll("a")].map((a) => a.getAttribute("href"))).toEqual(["https://github.com/brinkercode/freewheel/pull/1"]);
+});
+
+test("long notes scroll inside the notes card", async () => {
+  const long = ["### Features", "", ...Array.from({ length: 80 }, (_, i) => `* change ${i + 1}`)].join("\n");
+  const { container } = render(<App storage={updatedFrom("0.1.0", "0.1.1", long)} />);
+  await waitFor(() => expect(button()).not.toBeNull());
+  fireEvent.click(button());
+  expect(container.querySelectorAll(".whats-new-notes li")).toHaveLength(80);
+  const css = (await import("node:fs")).readFileSync(`${process.cwd()}/src/styles/base.css`, "utf8");
+  expect(css).toMatch(/\.whats-new-notes \{[^}]*max-height:[^}]*overflow-y: auto;/);
 });
 
 test("a tab click leaves the notes for that tab", async () => {
@@ -168,15 +220,25 @@ test("Restart to update keeps the update's notes before installing it", async ()
   expect(order).toEqual([["install", JSON.stringify({ version: "0.1.1", notes: NOTES })], ["relaunch"]]);
 });
 
-test("release-please's markdown becomes sections of plain items", () => {
-  expect(noteSections(NOTES)).toEqual([
-    {
-      title: "Bug Fixes",
-      items: ["a held Shift is released when freewheel turns Off", "the wheel scrolls again after sleep"],
-    },
+test("the markdown subset: headings, wrapped bullets, paragraphs, inline bold, code and links", () => {
+  expect(parseNotes(NOTES).map((b) => b.type)).toEqual(["h3", "list", "h3", "list"]);
+  expect(notesText(NOTES)).toEqual([
+    "Features",
+    "keys: a key can open a folder, like C:\\Music (#131)",
+    "Bug Fixes",
+    "a held Shift is released when freewheel turns Off",
+    "the wheel scrolls again after sleep",
   ]);
-  expect(noteSections("")).toEqual([]);
-  expect(noteSections(null)).toEqual([]);
+  expect(notesText("## What's Changed\n\n* one\n  two\n- three\n\nA paragraph\nwrapped.")).toEqual(["What's Changed", "one two", "three", "A paragraph wrapped."]);
+  expect(parseNotes("## 0.1.0 (2026-11-07)\n\n### Bug Fixes")).toEqual([{ type: "h3", inline: [{ text: "Bug Fixes" }] }]);
+  expect(parseInline("**a `b` [c](https://github.com/x)** d")).toEqual([
+    { bold: [{ text: "a " }, { code: "b" }, { text: " " }, { link: "c", href: "https://github.com/x" }] },
+    { text: " d" },
+  ]);
+  expect(safeHref("https://github.com.evil.example/")).toBeNull();
+  expect(safeHref("http://github.com/x")).toBeNull();
+  expect(notesText("")).toEqual([]);
+  expect(notesText(null)).toEqual([]);
 });
 
 test("versions compare as semver and the release page is the v-tag's", () => {

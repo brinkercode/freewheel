@@ -481,6 +481,31 @@ pub async fn simulate(
     Ok(status)
 }
 
+/// The Simulator's "New version's notes": `choice` is `Next`, `Sample`,
+/// `Paste` (with `text`) or `State` (only says what they are now). The next
+/// "New version" carries them, verbatim, through check, download, restart
+/// and What's new.
+#[tauri::command]
+pub fn sim_notes(
+    choice: String,
+    text: Option<String>,
+    updater: tauri::State<'_, crate::selfupdate::Updater>,
+) -> Result<crate::selfupdate::SimNotes, String> {
+    use crate::selfupdate::NotesChoice;
+    let choice = match choice.as_str() {
+        "State" => None,
+        "Next" => Some(NotesChoice::Next),
+        "Sample" => Some(NotesChoice::Sample),
+        "Paste" => Some(NotesChoice::Paste),
+        other => return Err(format!("no notes choice {other}")),
+    };
+    let notes = updater.sim_notes(choice, text)?;
+    if choice.is_some() {
+        tracing::info!(choice = ?notes.choice, bytes = notes.notes.len(), "simulator: update notes");
+    }
+    Ok(notes)
+}
+
 /// A screen of the app the Simulator window's "Jump to" opens, named as
 /// the window sends it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

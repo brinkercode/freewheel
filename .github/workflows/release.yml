@@ -9,7 +9,7 @@
 #   <package>.sig                        minisign signature by the updater key,
 #                                         bound to the version
 #   latest.json                          the manifest the in-app updater reads
-#                                         (version, release-please's notes,
+#                                         (version, the user-facing notes,
 #                                         each platform's url and signature)
 # The updater pubkey (a public variable) is baked into the binaries at
 # build; the build jobs hold no updater secret. The signing key lives only
@@ -32,7 +32,11 @@ jobs:
     uses: ./.github/workflows/ci.yml
 
   # The tag's release, published, and its notes: release-please made it; for
-  # a hand-pushed tag it is made here with GitHub's generated notes.
+  # a hand-pushed tag it is made here with GitHub's generated notes. The
+  # release keeps those notes in full (as CHANGELOG.md does); the app's
+  # What's new gets the user-facing ones: developer-only bullets dropped,
+  # commit hashes stripped (scripts/release-notes.mjs filter, the same
+  # script the Simulator's "Next release" notes and the update e2e use).
   notes:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
@@ -42,6 +46,14 @@ jobs:
     outputs:
       body: ${{ steps.notes.outputs.body }}
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+
       - name: Release notes
         id: notes
         env:
@@ -52,9 +64,13 @@ jobs:
               --title "freewheel $GITHUB_REF_NAME" --generate-notes
           fi
           test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = false
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$RUNNER_TEMP/release-notes.md"
+          node scripts/release-notes.mjs filter --in "$RUNNER_TEMP/release-notes.md" --out "$RUNNER_TEMP/user-notes.md"
+          echo "What's new will show:"
+          cat "$RUNNER_TEMP/user-notes.md"
           {
             echo "body<<FREEWHEEL_NOTES_EOF"
-            gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json body --jq .body
+            cat "$RUNNER_TEMP/user-notes.md"
             echo "FREEWHEEL_NOTES_EOF"
           } >> "$GITHUB_OUTPUT"
 

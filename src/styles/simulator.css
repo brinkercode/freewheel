@@ -138,6 +138,24 @@ html:has(.fw-sim) body { overflow-y: auto; }
 .fw-sim-log li.is-error { color: #ff8a80; }
 .fw-sim-log li.is-app { color: #b5e3c0; }
 .fw-sim-meta { color: #6c6c72; font-size: var(--fs-micro); }
+.fw-sim-seg button:disabled { color: #5c5c62; cursor: default; }
+/* "Paste notes…": the markdown to publish with the next New version */
+.fw-sim-paste { display: flex; flex-direction: column; gap: var(--sp-2); }
+.fw-sim-paste textarea {
+  min-height: 84px;
+  max-height: 200px;
+  padding: var(--sp-3) var(--sp-4);
+  border: none;
+  border-radius: var(--r-key);
+  background: #0d0e10;
+  color: #eee;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace;
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+  resize: vertical;
+}
+.fw-sim-paste textarea:focus-visible { outline: 2px solid #9fb6ff; outline-offset: 1px; }
+.fw-sim-paste > button { align-self: flex-start; }
 
 /* the prototype's simRows: a sunk strip with one light option */
 .fw-sim-seg { display: flex; flex-wrap: wrap; gap: 3px; padding: 3px; border-radius: var(--r-btn-sm); background: #222327; }
