@@ -3,6 +3,7 @@
 // keys, the Simulator's tray menu and its log of what the app did.
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
+import { KeyPanel } from "./ActionEditor.jsx";
 import Backup from "./Backup.jsx";
 import Simulator, { TRAY_ITEMS } from "./Simulator.jsx";
 import WheelTab, { overrideNotice } from "./WheelTab.jsx";
@@ -91,4 +92,14 @@ test("the Simulator's tray menu clicks each tray item and shows the checks", asy
   // What the app did shows in the log as it happens.
   await act(async () => listeners[SIM_LOG_EVENT]({ payload: ["Saved the logs to C:/Downloads/freewheel-logs.zip"] }));
   expect(screen.getByRole("list", { name: "What the Speed Editor did" }).textContent).toContain("Saved the logs to");
+});
+
+test("a Quick pick saves while the record box listens (it keeps focus, so nothing moves under the click)", async () => {
+  const onSave = vi.fn(() => Promise.resolve({ config: config() }));
+  render(<KeyPanel keyName="In" config={config()} layerId="base" initialMode="Held" initialListen onSave={onSave} />);
+  const shift = screen.getByText("Shift").closest("button");
+  // mousedown is cancelled: the record box is not blurred before the click.
+  expect(fireEvent.mouseDown(shift)).toBe(false);
+  fireEvent.click(shift);
+  expect(onSave).toHaveBeenCalledWith("Held", { modifiers: ["Shift"], key: "" });
 });

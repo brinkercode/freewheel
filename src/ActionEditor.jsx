@@ -499,8 +499,15 @@ export function KeyPanel({
             <RecordBox key={mode} single={mode !== "Hotkey"} combo={combo} error={error} onRecord={saveCombo} autoListen={listen} />
             <div className="field-label">{mode === "Hotkey" ? "Or pick a common one" : "Quick picks"}</div>
             <div className="presets">
+              {/* The listening record box keeps focus until the click lands: blurring it on mousedown hid
+                  its Cancel button, the presets moved up and the click missed them. */}
               {(mode === "Hotkey" ? PRESETS : QUICK_PICKS).map(([name, c]) => (
-                <button key={name} className={`preset${sameCombo(c, combo) ? " is-current" : ""}`} onClick={() => saveCombo(c)}>
+                <button
+                  key={name}
+                  className={`preset${sameCombo(c, combo) ? " is-current" : ""}`}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => (globalThis.document?.activeElement?.blur?.(), saveCombo(c))}
+                >
                   <strong>{name}</strong>
                   {mode === "Hotkey" && <span className="preset-combo">{comboKeys(c).join(MAC ? "" : "+")}</span>}
                 </button>

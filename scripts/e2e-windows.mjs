@@ -312,8 +312,9 @@ async function main() {
     const end = Date.now() + ms;
     let last;
     while (Date.now() < end) {
-      last = await readConfig();
       try {
+        // The settings window may be reloading (a Simulator setup reloads it).
+        last = await readConfig();
         if (check(last)) {
           say(`  config: ${what}`);
           return last;
@@ -728,7 +729,7 @@ async function main() {
       await configShows("IN opens the chosen exe", (c) => basePage(c).bindings.In.LaunchApp.path.endsWith("E2E Example App.exe"));
       await logged("Chose the app E2E Example App");
       await press("IN");
-      await logged("E2E Example App.exe");
+      await waitFor("simulator", "would launch the chosen exe", `return [...document.querySelectorAll(".fw-sim-log li")].slice(0, 14).some((li) => li.textContent.includes("would launch") && li.textContent.includes("E2E Example App.exe"))`);
     }, ["settings", "simulator"]);
     await step("Keys: IN goes to a new page Music", async () => {
       await allChoices();
