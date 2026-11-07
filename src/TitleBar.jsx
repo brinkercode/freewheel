@@ -28,7 +28,8 @@ function useMaximized(win) {
 
 /**
  * Minimise, maximise / restore and close, top-right, in the app's colours.
- * Close asks the window to close, which hides it to the tray (main.rs).
+ * Close asks the window to close: freewheel stays in the tray and the webview
+ * is freed (src-tauri app_windows.rs); Open settings builds it again.
  */
 export function WindowControls({ win: given, mac = isMac() }) {
   const [win] = useState(() => given ?? currentWindow());
