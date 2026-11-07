@@ -389,8 +389,7 @@ pub fn browser_args_for(simulate: bool, port: Option<&str>) -> Option<String> {
 }
 
 /// Opens the Simulator window to the right of the settings window.
-pub fn open_window(app: &tauri::App) -> tauri::Result<()> {
-    use tauri::Manager;
+pub fn open_window<R: tauri::Runtime, M: tauri::Manager<R>>(app: &M) -> tauri::Result<()> {
     const WIDTH: f64 = 320.0;
     let main = app.get_webview_window("main");
     if let Some(settings) = &main {
@@ -565,21 +564,26 @@ pub fn sim_jump(to: String, app: tauri::AppHandle) -> Result<(), String> {
         app.exit(0);
         return Ok(());
     }
+    let script = jump_script(to);
+    if matches!(to, Jump::Settings | Jump::FirstRun | Jump::RecordKey) {
+        // Built again first when it was closed (app_windows.rs).
+        let existed = crate::app_windows::show_settings(&app, move |window| {
+            if let Some(script) = script
+                && let Err(e) = window.eval(&script)
+            {
+                tracing::warn!(error = %e, "simulator jump script failed");
+            }
+        });
+        if to == Jump::RecordKey {
+            crate::app_windows::emit_to_settings(&app, SIM_RECORD_KEY_EVENT, RECORD_KEY, existed);
+        }
+        return Ok(());
+    }
     let window = app
         .get_webview_window("main")
-        .ok_or("the settings window is gone")?;
-    if matches!(to, Jump::Settings | Jump::FirstRun | Jump::RecordKey) {
-        let _ = window.unminimize();
-        window.show().map_err(|e| e.to_string())?;
-        window.set_focus().map_err(|e| e.to_string())?;
-    }
-    if let Some(script) = jump_script(to) {
+        .ok_or("the settings window is closed")?;
+    if let Some(script) = script {
         window.eval(&script).map_err(|e| e.to_string())?;
-    }
-    if to == Jump::RecordKey {
-        use tauri::Emitter;
-        app.emit_to("main", SIM_RECORD_KEY_EVENT, RECORD_KEY)
-            .map_err(|e| e.to_string())?;
     }
     Ok(())
 }

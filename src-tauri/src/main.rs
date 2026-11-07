@@ -3,6 +3,7 @@
 mod app_icons;
 #[cfg(windows)]
 mod app_volume;
+mod app_windows;
 mod apps;
 #[cfg(windows)]
 mod brightness;
@@ -296,7 +297,7 @@ fn main() {
     let mut builder = tauri::Builder::default();
     if !simulate {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            tray::show_settings(app)
+            tray::show_settings(app);
         }));
     }
     let mut builder = builder
@@ -357,6 +358,7 @@ fn main() {
                 tracing::warn!(error = %e, "config not loaded, running with defaults");
             }
             let (manual, manual_rx) = mpsc::channel();
+            app.manage(app_windows::Lifecycle::default());
             app.manage(
                 settings::Settings::new(store, config.clone(), commands.clone(), manual.clone())
                     .with_logger(logger.clone()),
@@ -381,7 +383,7 @@ fn main() {
                     tray,
                     receiver,
                 );
-                simulate::open_window(app)?;
+                simulate::open_window(app.handle())?;
             } else {
                 spawn_device(app.handle().clone(), config, tray, receiver);
                 spawn_permission_watch(app.handle().clone());
@@ -405,16 +407,23 @@ fn main() {
                 webview.app_handle().exit(smoke::exit_code(true));
             }
         })
-        // Closing the settings window hides it; only Quit exits.
+        // Closing a window destroys its webview (app_windows.rs); freewheel
+        // stays in the tray, only Quit exits.
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+                app_windows::close_requested(window, api);
             }
         })
         .build(context)
         .expect("error while building freewheel");
     app.run(move |_app, event| {
+        // The last window closing is not an exit (no code): the tray stays.
+        if let tauri::RunEvent::ExitRequested {
+            code: None, api, ..
+        } = &event
+        {
+            api.prevent_exit();
+        }
         // Every exit, Quit included, releases held keys before the process ends.
         if let tauri::RunEvent::Exit = event
             && !device::shutdown(&quit_commands, SHUTDOWN_TIMEOUT)

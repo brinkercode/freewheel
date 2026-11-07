@@ -19,6 +19,9 @@ use std::time::UNIX_EPOCH;
 pub const ICON_PX: u32 = 64;
 /// The most icons one call extracts (the picker lists at most a few hundred).
 const MAX_ICONS: usize = 600;
+/// The most icons kept on disk: apps update (a new key each time) and go,
+/// so the oldest are removed past this. 64 px PNGs are a few KB: about 5 MB.
+pub const MAX_CACHED_ICONS: usize = 1000;
 
 const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -169,6 +172,37 @@ impl IconCache {
             .insert(path.to_path_buf(), url.clone());
         url
     }
+
+    /// Removes the oldest icons on disk past [`MAX_CACHED_ICONS`].
+    pub fn prune(&self) {
+        if let Some(dir) = &self.dir {
+            prune(dir, MAX_CACHED_ICONS);
+        }
+    }
+}
+
+/// Keeps the `keep` newest files in `dir` (by modified time), removing the rest.
+pub fn prune(dir: &Path, keep: usize) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut files: Vec<(std::time::SystemTime, PathBuf)> = entries
+        .filter_map(Result::ok)
+        .filter_map(|e| {
+            let meta = e.metadata().ok()?;
+            meta.is_file()
+                .then(|| (meta.modified().unwrap_or(UNIX_EPOCH), e.path()))
+        })
+        .collect();
+    if files.len() <= keep {
+        return;
+    }
+    files.sort_by_key(|f| std::cmp::Reverse(f.0));
+    let removed = files.len() - keep;
+    for (_, path) in files.into_iter().skip(keep) {
+        let _ = std::fs::remove_file(path);
+    }
+    tracing::info!(removed, "old app icons removed from the cache");
 }
 
 /// The OS icon of an app (.lnk, .exe, .app) as PNG bytes.
@@ -205,14 +239,16 @@ fn on_icon_thread<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> 
 /// without an icon are left out.
 pub fn icons(cache: &'static IconCache, paths: Vec<String>) -> HashMap<String, String> {
     on_icon_thread(move || {
-        paths
+        let found = paths
             .into_iter()
             .take(MAX_ICONS)
             .filter_map(|p| {
                 let url = cache.get(Path::new(&p), &extract)?;
                 Some((p, url))
             })
-            .collect()
+            .collect();
+        cache.prune();
+        found
     })
     .unwrap_or_default()
 }
@@ -523,6 +559,33 @@ mod tests {
 
     fn tiny_png() -> Vec<u8> {
         encode_png(1, 1, &[1, 2, 3, 255]).unwrap()
+    }
+
+    #[test]
+    fn the_disk_cache_keeps_only_the_newest_icons() {
+        let dir = tempfile::tempdir().unwrap();
+        let t0 = std::time::SystemTime::now() - std::time::Duration::from_secs(1000);
+        for i in 0..5u64 {
+            let f = dir.path().join(format!("{i}.png"));
+            std::fs::write(&f, b"x").unwrap();
+            std::fs::File::options()
+                .write(true)
+                .open(&f)
+                .unwrap()
+                .set_modified(t0 + std::time::Duration::from_secs(i))
+                .unwrap();
+        }
+        prune(dir.path(), 3);
+        let mut left: Vec<String> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        left.sort();
+        assert_eq!(left, ["2.png", "3.png", "4.png"]);
+        prune(dir.path(), 3);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 3);
+        prune(&dir.path().join("missing"), 3);
+        const { assert!(MAX_CACHED_ICONS >= MAX_ICONS) };
     }
 
     #[test]
