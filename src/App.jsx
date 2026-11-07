@@ -2,6 +2,8 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
 import { useEffect, useRef, useState } from "react";
 import UpdateBanner from "./UpdateBanner.jsx";
+import { WhatsNewNotice, WhatsNewPage } from "./WhatsNew.jsx";
+import { markSeen, openReleasePage, rememberNotes, whatsNew } from "./whatsNew.js";
 import { checkNow, download, restart, startupCheck } from "./updater.js";
 import General, { applyAppearance, changeSetting, switchLogin } from "./General.jsx";
 import Simulator from "./Simulator.jsx";
@@ -49,6 +51,8 @@ function Settings({ autoUpdate, storage }) {
   const [fixing, setFixing] = useState(false);
   const [toast, setToast] = useState(null);
   const [record, setRecord] = useState(null);
+  const [news, setNews] = useState(null);
+  const [newsOpen, setNewsOpen] = useState(false);
   const pending = useRef(null);
   const toastTimer = useRef(null);
   const say = (text) => {
@@ -87,6 +91,15 @@ function Settings({ autoUpdate, storage }) {
       }),
     [],
   );
+  // What's new: once per update, after the restart into the newer version.
+  useEffect(() => {
+    if (version) setNews(whatsNew(storage, version));
+  }, [version, storage]);
+  const seeNews = (open) => {
+    markSeen(storage, news.version);
+    if (open) setNewsOpen(true);
+    else setNews(null);
+  };
   const state = fromStatusEvent(status ?? { connection: "Absent" });
   // A failed switch is an error that needs action: it is logged, never toasted.
   const turn = (on) =>
@@ -127,7 +140,13 @@ function Settings({ autoUpdate, storage }) {
       <>
         <Toolbar
           tab={tab}
-          onTab={setTab}
+          onTab={(t) => {
+            if (newsOpen) {
+              setNewsOpen(false);
+              setNews(null);
+            }
+            setTab(t);
+          }}
           state={state}
           onToggle={status ? () => turn(!state.enabled) : undefined}
           onFix={() => setFixing(true)}
@@ -136,14 +155,25 @@ function Settings({ autoUpdate, storage }) {
           update={update}
           onInstall={() => pending.current && download(pending.current, setUpdate)}
           onLater={() => setUpdate(null)}
-          onRestart={() => pending.current && restart(pending.current, relaunch, setUpdate)}
+          onRestart={() => pending.current && restart(pending.current, relaunch, setUpdate, (u) => rememberNotes(storage, u))}
         />
+        {!newsOpen && <WhatsNewNotice news={news} onOpen={() => seeNews(true)} onDismiss={() => seeNews(false)} />}
         {status && <NoticeBar state={state} onFix={() => setFixing(true)} onTurnOn={() => turn(true)} />}
         <div className="app-body">
-          {tab === "Keys" && <KeysTab status={status} record={record} onWheel={() => setTab("Wheel")} onToast={say} />}
-          {tab === "Wheel" && <WheelTab status={status} />}
-          {tab === "DaVinci Resolve" && <ResolveTab settings={config?.settings} onSetting={onSetting} />}
-          {tab === "General" && (
+          {newsOpen && (
+            <WhatsNewPage
+              news={news}
+              openRelease={globalThis.window?.__TAURI__ ? openReleasePage : undefined}
+              onDone={() => {
+                setNewsOpen(false);
+                setNews(null);
+              }}
+            />
+          )}
+          {!newsOpen && tab === "Keys" && <KeysTab status={status} record={record} onWheel={() => setTab("Wheel")} onToast={say} />}
+          {!newsOpen && tab === "Wheel" && <WheelTab status={status} />}
+          {!newsOpen && tab === "DaVinci Resolve" && <ResolveTab settings={config?.settings} onSetting={onSetting} />}
+          {!newsOpen && tab === "General" && (
             <General
               settings={config?.settings}
               onSetting={onSetting}
@@ -158,7 +188,7 @@ function Settings({ autoUpdate, storage }) {
               }
             />
           )}
-          {tab === "Help & backup" && <Backup detailedLogs={config?.settings?.detailed_logs} onDetailedLogs={onDetailedLogs} />}
+          {!newsOpen && tab === "Help & backup" && <Backup detailedLogs={config?.settings?.detailed_logs} onDetailedLogs={onDetailedLogs} />}
         </div>
       </>
     );

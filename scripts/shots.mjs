@@ -71,6 +71,8 @@ const STATES = [
   }],
   ["21-looking", "?conn=none", null],
   ["22-permission", "?perm=missing", async (p) => p.getByRole("button", { name: "Fix this" }).click()],
+  ["23-whats-new", "?updated=0.1.1", null],
+  ["24-whats-new-notes", "?updated=0.1.1", async (p) => p.getByRole("button", { name: /^What’s new in v/ }).click()],
 ];
 
 const only = process.env.ONLY ? new RegExp(process.env.ONLY) : null;

@@ -25,6 +25,7 @@ mod simulate;
 mod smoke;
 mod sysinfo_lister;
 mod tray;
+mod updates;
 #[cfg(any(windows, test))]
 #[allow(dead_code)] // wired up with the override worker
 mod volume;
@@ -238,7 +239,8 @@ fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::
             permissions::open_permission_pane,
             permissions::open_bluetooth_settings,
             settings::export_logs,
-            settings::set_detailed_logs
+            settings::set_detailed_logs,
+            updates::open_release_page
         ])
 }
 
@@ -255,6 +257,10 @@ fn main() {
         context.config().product_name.as_deref(),
         Some(freewheel_core::APP_NAME)
     );
+    if updates::requested(std::env::args()) {
+        let configured = updater_pubkey_set(&context.config().plugins);
+        std::process::exit(updates::run(context, configured));
+    }
     let (commands, receiver) = mpsc::channel();
     let quit_commands = commands.clone();
     let simulate = simulator::requested(std::env::args());
@@ -291,7 +297,8 @@ fn main() {
             permissions::open_permission_pane,
             permissions::open_bluetooth_settings,
             settings::export_logs,
-            settings::set_detailed_logs
+            settings::set_detailed_logs,
+            updates::open_release_page
         ])
     };
     let app = builder

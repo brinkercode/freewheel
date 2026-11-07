@@ -15,6 +15,7 @@ const COMMANDS: &[&str] = &[
     "open_bluetooth_settings",
     "export_logs",
     "set_detailed_logs",
+    "open_release_page",
     "simulate",
     "sim_jump",
 ];

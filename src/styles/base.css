@@ -211,6 +211,8 @@ input[type="range"] { accent-color: var(--accent); border: none; background: tra
 .update-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .update-title { font-weight: var(--fw-semibold); }
 .update-banner progress { width: 100%; max-width: 320px; height: 4px; accent-color: var(--accent); }
+.whats-new-notes ul { margin: 6px 0 0; padding-left: 20px; }
+.whats-new-notes li + li { margin-top: 4px; }
 .toast {
   position: absolute;
   bottom: 24px;

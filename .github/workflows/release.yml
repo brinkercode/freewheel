@@ -1,23 +1,58 @@
-# Release for freewheel: on a version tag, runs the full ci.yml test matrix,
-# then builds draft GitHub Releases with tauri-action: an unsigned per-user
-# NSIS installer on Windows, a signed and notarized universal dmg on macOS,
-# and the updater's latest.json. Signing secrets live only in the protected
-# 'release' environment and only in the tauri-action step env.
+# Release for freewheel: on a version tag (started by release-please.yml
+# with workflow_dispatch on the tag it made, or by a pushed v* tag), runs
+# the full ci.yml test matrix, then builds with tauri-action and uploads to
+# the tag's PUBLISHED GitHub Release: an unsigned per-user NSIS installer on
+# Windows, a universal dmg on macOS (signed and notarized once the APPLE_*
+# secrets exist; ad-hoc signed until then, see scripts/tauri-release.mjs),
+# the updater bundles signed with the updater key, and latest.json whose
+# notes are the release's notes (release-please's). Signing secrets live
+# only in the protected 'release' environment and only in the tauri-action
+# step env. Then latest.json and every signature are verified, and
+# update-e2e updates the previous release to this one on Windows.
 name: release
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   test:
+    if: startsWith(github.ref, 'refs/tags/v')
     uses: ./.github/workflows/ci.yml
 
+  # The tag's release, published, and its notes: release-please made it; for
+  # a hand-pushed tag it is made here with GitHub's generated notes.
+  notes:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      body: ${{ steps.notes.outputs.body }}
+    steps:
+      - name: Release notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --title "freewheel $GITHUB_REF_NAME" --generate-notes
+          fi
+          test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = false
+          {
+            echo "body<<FREEWHEEL_NOTES_EOF"
+            gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json body --jq .body
+            echo "FREEWHEEL_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
   release:
-    needs: test
+    needs: [test, notes]
     environment: release
     permissions:
       contents: write
@@ -50,9 +85,18 @@ jobs:
 
       - run: npm ci
 
+      # release-please bumps the version files in its PR; a tag that does not
+      # match them would make the updater offer the wrong version.
+      - name: The tag matches the app version
+        shell: bash
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME is not v$version"; exit 1; }
+
       - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -65,7 +109,8 @@ jobs:
           tauriScript: npm run tauri
           tagName: ${{ github.ref_name }}
           releaseName: freewheel ${{ github.ref_name }}
-          releaseDraft: true
+          releaseBody: ${{ needs.notes.outputs.body }}
+          releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true
           args: ${{ matrix.args }}
@@ -84,23 +129,33 @@ jobs:
           if ($install.ExitCode -ne 0) { throw "installer exit $($install.ExitCode)" }
           node scripts/check-windows-exe.mjs "$env:LOCALAPPDATA\freewheel\freewheel.exe"
 
-  # Checks the draft's latest.json lists every platform the updater serves.
-  # Draft releases are hidden from read-only tokens, hence contents: write.
+  # Checks the published latest.json lists every platform the updater serves,
+  # carries this version and the notes, and that every download verifies
+  # against the updater pubkey (what the installed app checks).
   latest-json:
     needs: release
-    permissions:
-      contents: write
-    runs-on: macos-15
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
 
-      - name: Check the draft's latest.json
-        shell: bash
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+
+      - name: Check and verify the release's latest.json
         env:
           GH_TOKEN: ${{ github.token }}
+          TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
         run: |
           gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern latest.json
-          test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
+          test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = false
           node scripts/check-latest-json.mjs latest.json
+          node scripts/verify-update-sig.mjs latest.json --version "$GITHUB_REF_NAME"
+
+  # The previous published release, installed, updates itself to this one.
+  update-e2e:
+    needs: latest-json
+    uses: ./.github/workflows/update-e2e.yml
