@@ -337,6 +337,19 @@ async function main() {
     await d.type(Object.values(el)[0], text);
   };
   const SELECT_ALL = "\uE009a\uE000";
+  /** Presses `mods` (WebDriver key codes) + `key` together, as a person does, into the focused element. */
+  const chord = async (mods, key) => {
+    const down = [...mods, key].map((value) => ({ type: "keyDown", value }));
+    const up = [key, ...[...mods].reverse()].map((value) => ({ type: "keyUp", value }));
+    await d.call("POST", "/actions", { actions: [{ type: "key", id: "keyboard", actions: [...down, ...up] }] });
+    await d.call("DELETE", "/actions");
+  };
+  /** Clicks the record box `css` (its capture input is invisible) and records the shortcut. */
+  const record = async (css, mods, key) => {
+    await click("settings", css);
+    await waitFor("settings", "the record box listening", `return document.activeElement?.classList.contains("combo-capture")`);
+    await chord(mods, key);
+  };
   const switchState = (name, label) =>
     waitFor(name, `the "${label}" switch`, `return document.querySelector('[role=switch][aria-label="' + arguments[0] + '"]')?.getAttribute("aria-checked")`, [label]);
   /** Clicks switch `label` and waits until it reads `on`. */
@@ -619,9 +632,9 @@ async function main() {
     });
     await step("Wheel: SHTL presses recorded shortcuts", async () => {
       await wheelKind("Press shortcuts");
-      await typeInto("settings", ".wheel-record:nth-child(1) input.combo-capture", "\uE009k\uE000");
+      await record(".wheel-record:nth-child(1) .record-box", ["\uE009"], "k");
       await configShows("Shuttle left Ctrl+K", (c) => JSON.stringify(c.jog.per_mode.Shuttle.left) === JSON.stringify({ Hotkey: { combo: { modifiers: ["Ctrl"], key: "K" } } }));
-      await typeInto("settings", ".wheel-record:nth-child(2) input.combo-capture", "\uE009j\uE000");
+      await record(".wheel-record:nth-child(2) .record-box", ["\uE009"], "j");
       await configShows("Shuttle right Ctrl+J", (c) => c.jog.per_mode.Shuttle.right.Hotkey.combo.key === "J");
       await press("SHTL");
       await turn("left");
@@ -648,7 +661,7 @@ async function main() {
     await step("Keys: IN records Ctrl+Shift+K", async () => {
       await keyIn("In");
       await choice("Press a shortcut");
-      await typeInto("settings", ".side-panel input.combo-capture", "\uE009\uE008k\uE000");
+      await record(".side-panel .record-box", ["\uE009", "\uE008"], "k");
       await configShows("IN Ctrl+Shift+K", (c) => JSON.stringify(basePage(c).bindings.In) === JSON.stringify({ Hotkey: { combo: { modifiers: ["Ctrl", "Shift"], key: "K" } } }));
       await waitFor("settings", "Saved", `return document.querySelector(".panel-try.is-saved")`);
     });
