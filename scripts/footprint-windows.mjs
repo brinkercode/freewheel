@@ -35,18 +35,26 @@ export function parseArgs(argv) {
   return opts;
 }
 
-/** `root` and every process it started, directly or not (WebView2's renderers are children of its browser process). */
+/**
+ * `root` and every process it started, directly or not (WebView2's renderers
+ * are children of its browser process). Windows reuses pids and keeps a
+ * process's parent pid after the parent exits, so a process started before
+ * `pid`'s current owner is not its child, whatever its parent pid says.
+ */
 export function tree(procs, root) {
   const out = [];
   const seen = new Set();
   const visit = (pid) => {
+    let created = 0;
     for (const p of procs) {
       if (p.pid === pid && !seen.has(pid)) {
         seen.add(pid);
         out.push(p);
+        created = p.created ?? 0;
       }
     }
-    for (const p of procs) if (p.parent === pid && !seen.has(p.pid) && p.pid !== root) visit(p.pid);
+    for (const p of procs)
+      if (p.parent === pid && !seen.has(p.pid) && p.pid !== root && (p.created ?? 0) >= created) visit(p.pid);
   };
   visit(root);
   return out;
@@ -63,6 +71,8 @@ export function memory(procs) {
     privateBytes: sum(procs, "privateBytes"),
     webviewWorkingSet: sum(webview, "workingSet"),
     webviewPrivateBytes: sum(webview, "privateBytes"),
+    // Which processes were counted (a surprise in the tree shows here).
+    names: procs.map((p) => p.name).sort(),
   };
 }
 

@@ -26,8 +26,22 @@ test("the app's tree is freewheel.exe and every WebView2 process under it, nothi
     privateBytes: 70 * MB,
     webviewWorkingSet: 120 * MB,
     webviewPrivateBytes: 60 * MB,
+    names: ["freewheel.exe", "msedgewebview2.exe", "msedgewebview2.exe", "msedgewebview2.exe"],
   });
   expect(tree(procs, 99)).toEqual([]);
+});
+
+test("a process whose parent pid was reused by the app is not the app's child", () => {
+  const at = (p, created) => ({ ...p, created });
+  const procs = [
+    at(proc(10, 1, "freewheel-0.1.0-windows-x64.exe", 20), 5000),
+    // Started (by an earlier owner of pid 10) before the app: not its child.
+    at(proc(30, 10, "conhost.exe", 36), 1000),
+    at(proc(11, 10, "msedgewebview2.exe", 30), 6000),
+    at(proc(12, 11, "msedgewebview2.exe", 40), 7000),
+  ];
+  expect(tree(procs, 10).map((p) => p.pid)).toEqual([10, 11, 12]);
+  expect(read("./footprint-windows.ps1")).toContain("ToUnixTimeMilliseconds()");
 });
 
 test("idle CPU is the tree's CPU time over the wall time, per core and per machine", () => {
