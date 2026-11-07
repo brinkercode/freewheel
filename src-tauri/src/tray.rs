@@ -400,12 +400,10 @@ fn menu<R: Runtime>(
 }
 
 /// Shows and focuses the settings window (Open settings, second launch).
-pub fn show_settings<R: Runtime>(app: &AppHandle<R>) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
+/// When it was closed it is built again (app_windows.rs); returns whether it
+/// was there.
+pub fn show_settings<R: Runtime>(app: &AppHandle<R>) -> bool {
+    crate::app_windows::show_settings(app, |_| {})
 }
 
 /// What changes in the menu, kept to answer clicks and the Simulator.
@@ -515,13 +513,15 @@ impl<R: Runtime> TrayMenu<R> {
                 let _ = self.manual.send(Message::Manual(on));
             }
             STATUS => {
-                show_settings(app);
+                let existed = show_settings(app);
                 let fix = lock(&self.live).status.fix;
-                if fix && let Err(e) = app.emit(FIX_PERMISSIONS_EVENT, ()) {
-                    tracing::warn!(error = %e, "asking the settings window for the permission fix failed");
+                if fix {
+                    crate::app_windows::emit_to_settings(app, FIX_PERMISSIONS_EVENT, (), existed);
                 }
             }
-            OPEN_SETTINGS => show_settings(app),
+            OPEN_SETTINGS => {
+                show_settings(app);
+            }
             START_AT_LOGIN => {
                 let login = &self.login;
                 let on = login.is_checked().unwrap_or(false);
@@ -550,6 +550,12 @@ impl<R: Runtime> TrayMenu<R> {
             UPDATE => {
                 let action = lock(&self.live).update_action;
                 match action.event() {
+                    // A closed settings window opens instead: it checks
+                    // as it opens (src/App.jsx).
+                    Some(what) if app.get_webview_window("main").is_none() => {
+                        tracing::info!(what, "tray: update, opening the settings window");
+                        show_settings(app);
+                    }
                     Some(what) => {
                         tracing::info!(what, "tray: update");
                         if let Err(e) = app.emit_to("main", TRAY_UPDATE_EVENT, what) {
@@ -687,9 +693,11 @@ pub async fn sim_tray(app: AppHandle, item: String) -> Result<TrayMenuState, Str
 /// null when idle): the tray's update item follows it.
 #[tauri::command]
 pub fn tray_update_state(app: AppHandle, state: Option<UpdateReport>) {
+    let state = state.unwrap_or_default();
     if let Some(menu) = app.try_state::<TrayMenu<tauri::Wry>>() {
-        menu.show_update(&app, &state.unwrap_or_default());
+        menu.show_update(&app, &state);
     }
+    crate::app_windows::update_state(&app, state.status.as_deref());
 }
 
 /// What LOGS_SAVED_EVENT carries.
@@ -713,10 +721,8 @@ fn download_logs<R: Runtime>(app: &AppHandle<R>) {
             LogsSaved::Error(e)
         }
     };
-    show_settings(app);
-    if let Err(e) = app.emit_to("main", LOGS_SAVED_EVENT, &saved) {
-        tracing::warn!(error = %e, "telling the settings window about the logs failed");
-    }
+    let existed = show_settings(app);
+    crate::app_windows::emit_to_settings(app, LOGS_SAVED_EVENT, &saved, existed);
 }
 
 /// What the tray shows from the device loop: the battery tooltip and the

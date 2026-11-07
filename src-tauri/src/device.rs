@@ -21,6 +21,11 @@ use tracing::{info, warn};
 
 /// How long one loop turn waits for an input report or a command.
 const POLL: Duration = Duration::from_millis(20);
+/// Without a connected device there is nothing to read: the loop waits this
+/// long for a command (which still ends the wait at once) between turns, so
+/// a PC without a Speed Editor wakes freewheel 4 times a second, not 50.
+/// The open retries come every 3 s (`RETRY_INTERVAL`) either way.
+const IDLE_POLL: Duration = Duration::from_millis(250);
 /// The Device test view hears at most this often while reports stream in…
 const DIAGNOSTICS_MIN: Duration = Duration::from_millis(100);
 /// …and at least this often (its re-auth countdown), whatever happens.
@@ -115,7 +120,7 @@ pub fn run<T, O, C, F>(
         let wait = if manager.status() == Some(ConnectionStatus::Connected) {
             Duration::ZERO
         } else {
-            POLL
+            idle_wait(manager.next_attempt_in())
         };
         let mut events = match commands.recv_timeout(wait) {
             Ok(Command::SetEnabled(on)) => {
@@ -224,6 +229,12 @@ pub fn run<T, O, C, F>(
     }
 }
 
+/// The command wait of a loop turn without a connected device: until the
+/// next open attempt, at most [`IDLE_POLL`], at least [`POLL`].
+fn idle_wait(next_attempt: Option<Duration>) -> Duration {
+    next_attempt.unwrap_or(IDLE_POLL).clamp(POLL, IDLE_POLL)
+}
+
 /// The key and wheel LEDs (bmd.py output reports 0x02 and 0x04, see
 /// [`LedWriter`]): written only while the device is connected and
 /// authenticated, all again after every connect and re-auth (a device that
@@ -315,6 +326,20 @@ fn release(engine: &mut Engine, injector: &mut dyn KeyInjector, overrides: &Over
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn without_a_device_the_loop_wakes_4_times_a_second() {
+        assert_eq!(idle_wait(None), Duration::from_millis(250));
+        assert_eq!(
+            idle_wait(Some(Duration::from_secs(3))),
+            Duration::from_millis(250)
+        );
+        assert_eq!(
+            idle_wait(Some(Duration::from_millis(100))),
+            Duration::from_millis(100)
+        );
+        assert_eq!(idle_wait(Some(Duration::ZERO)), POLL);
+    }
     use freewheel_core::clock::SystemClock;
     use freewheel_core::config::{Action, Config, KeyCombo};
     use freewheel_core::hid::FakeTransport;

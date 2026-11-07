@@ -155,6 +155,13 @@ where
         events
     }
 
+    /// How long until the next attempt to open the device (zero when it is
+    /// due); `None` while a device is open or the manager is Off.
+    pub fn next_attempt_in(&self) -> Option<Duration> {
+        (self.enabled && self.handle.is_none())
+            .then(|| self.retry_at.saturating_duration_since(self.clock.now()))
+    }
+
     /// Opens the device when a retry is due, or re-authenticates when due
     /// and reads one input report, waiting at most `read_timeout`.
     pub fn tick(&mut self, read_timeout: Duration) -> Vec<ConnectionEvent> {
@@ -457,12 +464,21 @@ mod tests {
         assert_eq!(m.tick(T), [Status(AuthFailed)]);
         assert_eq!(m.session(), 0);
         assert_eq!(m.write(&[0x02, 0, 0, 0, 0]), Err(HidError::Disconnected));
+        // The next open attempt is a retry interval away, counting down.
+        assert_eq!(m.next_attempt_in(), Some(RETRY_INTERVAL));
+        clock.advance(Duration::from_secs(1));
+        assert_eq!(
+            m.next_attempt_in(),
+            Some(RETRY_INTERVAL - Duration::from_secs(1))
+        );
+        clock.advance(RETRY_INTERVAL - Duration::from_secs(1));
 
         let dev = Shared::default();
         dev.handshake(300);
         f.plug(&dev);
-        clock.advance(RETRY_INTERVAL);
+        assert_eq!(m.next_attempt_in(), Some(Duration::ZERO));
         assert_eq!(m.tick(T), CONNECTED);
+        assert_eq!(m.next_attempt_in(), None);
         assert_eq!(m.session(), 1);
         assert_eq!(m.write(&[0x02, 1, 0, 0, 0]), Ok(()));
         assert_eq!(dev.writes(), 4);

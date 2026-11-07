@@ -10,7 +10,7 @@ const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 
 const ok = { enabled: true, permissionMissing: false, connected: true, bus: "Usb", battery: null, paused: false };
 
-test("the settings window opens at 1000x640, min 820x520, without the OS title bar (macOS: traffic lights over the app's header), and closing hides it to the tray", () => {
+test("the settings window opens at 1000x640, min 820x520, without the OS title bar (macOS: traffic lights over the app's header), and closing it leaves freewheel in the tray", () => {
   const [win] = JSON.parse(read("../src-tauri/tauri.conf.json")).app.windows;
   expect(win).toMatchObject({ width: 1000, height: 640, minWidth: 820, minHeight: 520, resizable: true, decorations: false, shadow: true });
   const [mac] = JSON.parse(read("../src-tauri/tauri.macos.conf.json")).app.windows;
@@ -20,7 +20,9 @@ test("the settings window opens at 1000x640, min 820x520, without the OS title b
   expect(sim).toContain(".title_bar_style(tauri::TitleBarStyle::Overlay)");
   expect(sim).toContain("builder = builder.decorations(false).shadow(true);");
   const main = read("../src-tauri/src/main.rs");
-  expect(main).toMatch(/CloseRequested \{ api, \.\. \} = event \{\s*api\.prevent_close\(\);\s*let _ = window\.hide\(\);/);
+  // Closing destroys the webview (no WebView2 idles in the tray); the app stays in the tray.
+  expect(main).toMatch(/CloseRequested \{ api, \.\. \} = event \{\s*app_windows::close_requested\(window, api\);/);
+  expect(main).toMatch(/RunEvent::ExitRequested \{\s*code: None, api, \.\.\s*\} = &event\s*\{\s*api\.prevent_exit\(\);/);
 });
 
 const toolbar = (state) => renderToString(<Toolbar tab="Keys" onTab={() => {}} state={state} onToggle={() => {}} />);

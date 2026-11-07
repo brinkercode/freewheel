@@ -124,7 +124,8 @@ test("a row is idle, waiting once asked, and allowed once granted", () => {
 test("the tray status line asks for the permission fix by the event the settings window hears", () => {
   const tray = readFileSync("src-tauri/src/tray.rs", "utf8");
   expect(tray).toContain('const FIX_PERMISSIONS_EVENT: &str = "fix-permissions";');
-  expect(tray).toMatch(/STATUS => \{\s*show_settings\(app\);\s*let fix = lock\(&self\.live\)\.status\.fix;\s*if fix && let Err\(e\) = app\.emit\(FIX_PERMISSIONS_EVENT/);
+  // A settings window built again hears it once it has loaded (app_windows.rs).
+  expect(tray).toMatch(/STATUS => \{\s*let existed = show_settings\(app\);\s*let fix = lock\(&self\.live\)\.status\.fix;\s*if fix \{\s*crate::app_windows::emit_to_settings\(app, FIX_PERMISSIONS_EVENT, \(\), existed\);/);
   const api = readFileSync("src/settingsApi.js", "utf8");
   expect(api).toContain('FIX_PERMISSIONS_EVENT = "fix-permissions"');
 });
