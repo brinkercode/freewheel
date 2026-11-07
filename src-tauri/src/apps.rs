@@ -62,7 +62,7 @@ fn is_clutter(name: &str) -> bool {
 
 /// Every file under `dir` (at most `depth` folders down) whose extension
 /// is `ext`; a folder with that extension (a macOS .app) counts as one.
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg(all(windows, test))]
 pub fn find_files(dir: &Path, ext: &str, depth: usize, out: &mut Vec<PathBuf>) {
     find(dir, ext, depth, out);
 }

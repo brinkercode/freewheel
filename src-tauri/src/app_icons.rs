@@ -54,6 +54,7 @@ pub fn is_png(bytes: &[u8]) -> bool {
 }
 
 /// Encodes `rgba` (width × height × 4 bytes, straight alpha) as a PNG.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn encode_png(width: u32, height: u32, rgba: &[u8]) -> Option<Vec<u8>> {
     if width == 0 || height == 0 || rgba.len() != (width * height * 4) as usize {
         return None;
@@ -73,6 +74,7 @@ pub fn encode_png(width: u32, height: u32, rgba: &[u8]) -> Option<Vec<u8>> {
 /// The shell's 32-bit BGRA pixels as straight-alpha RGBA. Bitmaps with no
 /// alpha at all are opaque; premultiplied ones (no colour above its alpha)
 /// are un-premultiplied.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn bgra_to_rgba(bgra: &[u8]) -> Vec<u8> {
     let (px, _) = bgra.as_chunks::<4>();
     let no_alpha = px.iter().all(|p| p[3] == 0);

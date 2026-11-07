@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { LABELS } from "./keys.js";
-import { SIM_LOG_EVENT } from "./simulateEvents.js";
+import { SIM_LOG_EVENT, SIM_TRAY_EVENT } from "./simulateEvents.js";
 import { WindowControls, isMac } from "./TitleBar.jsx";
 import "./styles/simulator.css";
 
@@ -144,10 +144,14 @@ export default function Simulator({ initial = null }) {
     tray("State");
     // What the app did for the settings window, the tray and device
     // commands (src-tauri simulate.rs note): shown as it happens.
-    const unlisten = tauri().event?.listen(SIM_LOG_EVENT, (e) => note(e.payload ?? [], "app"));
+    const unlisten = [
+      tauri().event?.listen(SIM_LOG_EVENT, (e) => note(e.payload ?? [], "app")),
+      // The tray menu changed by itself (the device, the settings window's update flow).
+      tauri().event?.listen(SIM_TRAY_EVENT, (e) => e.payload && setTrayMenu(e.payload)),
+    ];
     return () => {
       clearInterval(turning.current);
-      Promise.resolve(unlisten).then((stop) => stop?.(), () => {});
+      unlisten.forEach((u) => Promise.resolve(u).then((stop) => stop?.(), () => {}));
     };
   }, []);
 

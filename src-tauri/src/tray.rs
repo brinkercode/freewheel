@@ -477,6 +477,7 @@ impl<R: Runtime> TrayMenu<R> {
             let _ = tray.set_icon_as_template(cfg!(target_os = "macos"));
         }
         lock(&self.live).status = view;
+        self.changed(app);
         let stepped_aside = lock(&self.notifier).paused(status.paused);
         if let Some(notice) = stepped_aside {
             notify::show(app, &notice);
@@ -490,6 +491,7 @@ impl<R: Runtime> TrayMenu<R> {
         let _ = self.update.set_text(&text);
         let _ = self.update.set_enabled(action != UpdateAction::Nothing);
         lock(&self.live).update_action = action;
+        self.changed(app);
         let in_front = app
             .get_webview_window("main")
             .is_some_and(|w| w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false));
@@ -598,6 +600,22 @@ impl<R: Runtime> TrayMenu<R> {
         crate::simulate::note(app, format!("Tray: {text}"));
         self.clicked(app, id);
         Ok(self.state())
+    }
+}
+
+/// `--simulate`: tells the Simulator window the tray menu changed (its
+/// Tray menu section redraws; SIM_TRAY_EVENT in src/simulateEvents.js).
+pub const SIM_TRAY_EVENT: &str = "sim-tray";
+
+impl<R: Runtime> TrayMenu<R> {
+    fn changed(&self, app: &AppHandle<R>) {
+        if crate::simulate::simulating(app) {
+            let _ = app.emit_to(
+                crate::simulate::SIMULATOR_WINDOW,
+                SIM_TRAY_EVENT,
+                self.state(),
+            );
+        }
     }
 }
 
@@ -773,6 +791,13 @@ mod tests {
         for id in SIM_ITEMS {
             assert!(js.contains(&format!("\"{id}\"")), "{id}");
         }
+    }
+
+    #[test]
+    fn the_simulator_window_hears_the_tray_changes() {
+        let js = include_str!("../../src/simulateEvents.js");
+        assert!(js.contains(&format!("SIM_TRAY_EVENT = \"{SIM_TRAY_EVENT}\"")));
+        assert!(include_str!("../../src/Simulator.jsx").contains("SIM_TRAY_EVENT"));
     }
 
     #[test]

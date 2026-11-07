@@ -1016,6 +1016,7 @@ async function main() {
     const trayItem = async (id) => (await use("simulator"), d.exec(`const b = document.querySelector('[data-tray="' + arguments[0] + '"]'); return b && { text: b.textContent, disabled: b.getAttribute("aria-disabled") === "true" };`, [id]));
     const trayShows = (id, what, check) =>
       waitFor("simulator", `the tray's ${id} item ${what}`, `const b = document.querySelector('[data-tray="' + arguments[0] + '"]');
+        b?.closest("section")?.scrollIntoView({ block: "center" });
         return b && (${check})(b.textContent, b.getAttribute("aria-disabled") === "true") ? b.textContent : null;`, [id], 20000);
     const trayIconIs = (text) =>
       waitFor("simulator", `the tray icon ${text}`, `return document.querySelector('.fw-sim-tray-item[aria-current="true"]')?.textContent.includes(arguments[0])`, [text]);
