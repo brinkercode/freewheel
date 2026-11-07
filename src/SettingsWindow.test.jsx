@@ -106,7 +106,11 @@ test("a toast shows bottom-centre and clears after 2.8 s", () => {
   expect(renderToString(<Toast text={null} />)).toBe("");
   const html = renderToString(<Toast text="Saved" />);
   expect(html).toContain(">Saved</div>");
-  expect(html).toMatch(/position:fixed;bottom:24px;left:50%;transform:translateX\(-50%\)/);
+  // Acceptance item 2 moved the inline style into the base stylesheet's .toast class.
+  expect(html).toContain('class="toast"');
+  expect(readFileSync(new URL("./styles/base.css", import.meta.url), "utf8")).toMatch(
+    /\.toast \{\s*position: fixed;\s*bottom: var\(--sp-12\);\s*left: 50%;\s*transform: translateX\(-50%\);/,
+  );
   vi.useFakeTimers();
   const setToast = vi.fn();
   showToast(setToast, "Saved");

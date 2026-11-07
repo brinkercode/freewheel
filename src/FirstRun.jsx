@@ -9,9 +9,9 @@ const openBluetooth = () =>
 /** Progress dots, the current step wider. */
 function Dots({ step, steps }) {
   return (
-    <div className="first-run-dots" style={{ display: "flex", gap: 6, marginBottom: 30 }}>
+    <div className="first-run-dots">
       {Array.from({ length: steps }, (_, i) => (
-        <span key={i} aria-current={i === step} style={{ width: i === step ? 22 : 6, height: 6, borderRadius: 3 }} />
+        <span key={i} className={`dot${i <= step ? " is-done" : ""}`} aria-current={i === step} />
       ))}
     </div>
   );
@@ -27,21 +27,21 @@ export default function FirstRun({ state, permissions, step: first = 0, initialP
   const asksPermissions = Object.keys(permissions ?? {}).length > 0;
   const next = () => (step === 1 && !asksPermissions ? onFinish() : setStep(step + 1));
   return (
-    <main className="first-run" style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: 32 }}>
+    <main className="first-run">
       <Dots step={step} steps={asksPermissions ? 3 : 2} />
       {step === 0 && (
-        <section style={{ maxWidth: 440, textAlign: "center" }}>
+        <section className="first-run-step">
           <h1>Welcome to freewheel</h1>
           <p>
             Use your Speed Editor for everyday things — copy and paste, volume, opening your favorite apps — whenever
             DaVinci Resolve is closed.
           </p>
-          <button onClick={next}>Get started</button>
-          <div>Takes about a minute</div>
+          <button className="btn-primary btn-lg" onClick={next}>Get started</button>
+          <div className="hint">Takes about a minute</div>
         </section>
       )}
       {step === 1 && (
-        <section style={{ maxWidth: 460, textAlign: "center" }}>
+        <section className="first-run-step">
           <h1>Plug in or pair your Speed Editor</h1>
           <p>Connect it with its USB cable. Or switch it on and pair it in your computer’s Bluetooth settings.</p>
           {state.connected ? (
@@ -54,8 +54,8 @@ export default function FirstRun({ state, permissions, step: first = 0, initialP
               <span>This usually takes a few seconds.</span>
             </div>
           )}
-          <button onClick={onBluetooth}>Open Bluetooth settings</button>{" "}
-          <button disabled={!state.connected} onClick={next}>
+          <button className="btn" onClick={onBluetooth}>Open Bluetooth settings</button>{" "}
+          <button className="btn-primary" disabled={!state.connected} onClick={next}>
             Continue
           </button>
         </section>

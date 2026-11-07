@@ -124,7 +124,7 @@ test("no rendered text says 'layer'; layers are pages", () => {
     { OverrideToggle: { mode: "Brightness" } },
   ];
   const pages = editor(actions[1]);
-  expect(text(pages)).toMatch(/Go to a page/);
+  expect(text(pages)).toMatch(/Switch to another set of keys.*Pages are extra sets of keys/);
   for (const action of actions) expect(text(editor(action))).not.toMatch(/layer/i);
   expect(text(renderToString(<App autoUpdate={false} />))).not.toMatch(/layer/i);
 });

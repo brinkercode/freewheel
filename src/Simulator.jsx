@@ -22,7 +22,7 @@ export default function Simulator({ initial = null }) {
   if (!status) return <h1>freewheel Simulator</h1>;
   const connected = status.connection === "Connected";
   return (
-    <main>
+    <main className="simulator">
       <h1>freewheel Simulator</h1>
       <p>
         {connected ? `Connected over ${status.bus}` : status.connection === "Off" ? "Off" : "Device not found"}
@@ -30,7 +30,7 @@ export default function Simulator({ initial = null }) {
         {status.low_battery && " · low battery"}
         {` · page ${status.page} · LEDs ${status.lit_leds.join(", ") || "none"}`}
       </p>
-      <section>
+      <section className="sim-row">
         <button onClick={() => send({ type: "Connect", bus: "Usb" })}>Connect USB</button>
         <button onClick={() => send({ type: "Connect", bus: "Bluetooth" })}>Connect Bluetooth</button>
         <button onClick={() => send({ type: "Disconnect" })}>Disconnect</button>
@@ -39,7 +39,7 @@ export default function Simulator({ initial = null }) {
         </button>
         <button onClick={() => send({ type: "LoadSampleMappings" })}>Load sample mappings</button>
       </section>
-      <section>
+      <section className="sim-row">
         <button onClick={() => send({ type: "Resolve", open: !status.resolve_open })}>
           {status.resolve_open ? "Close Resolve" : "Open Resolve"}
         </button>
@@ -53,7 +53,7 @@ export default function Simulator({ initial = null }) {
         {status.first_run && " · first run"}
       </section>
       <UpdateBanner update={status.update} />
-      <section>
+      <section className="sim-row">
         <label>
           Battery {battery}%
           <input type="range" min="0" max="100" value={battery} onChange={(e) => setBattery(Number(e.target.value))} />
@@ -61,7 +61,7 @@ export default function Simulator({ initial = null }) {
         <button onClick={() => send({ type: "Battery", level: battery, charging: false })}>Send battery</button>
         <button onClick={() => send({ type: "Battery", level: battery, charging: true })}>Send charging</button>
       </section>
-      <section>
+      <section className="sim-row">
         {["Scroll", "Jog", "Shuttle"].map((mode) => (
           <button key={mode} disabled={status.jog_mode === mode} onClick={() => send({ type: "WheelMode", mode })}>
             {mode}
@@ -70,7 +70,7 @@ export default function Simulator({ initial = null }) {
         <button onClick={() => send({ type: "Wheel", value: -1 })}>Wheel left</button>
         <button onClick={() => send({ type: "Wheel", value: 1 })}>Wheel right</button>
       </section>
-      <section>
+      <section className="sim-row">
         {status.keys.map((key) => (
           <button
             key={key}

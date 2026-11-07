@@ -27,7 +27,7 @@
     "active": true,
     "targets": ["nsis", "app", "dmg"],
     "createUpdaterArtifacts": true,
-    "icon": ["icons/icon.png", "icons/icon.ico"],
+    "icon": ["icons/app-icon-1024.png", "icons/icon.png", "icons/icon.ico"],
     "macOS": { "minimumSystemVersion": "15.0" },
     "windows": {
       "nsis": { "installMode": "currentUser" },

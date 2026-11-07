@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { renderToString } from "react-dom/server";
 import { expect, test, vi } from "vitest";
-import KeysTab, { ButtonList, KeyEditor, PageSelector, handlePress, saveKey } from "./KeysTab.jsx";
+import KeysTab, { ButtonList, KIND_TEXT, KeyEditor, PageSelector, handlePress, saveKey } from "./KeysTab.jsx";
 import Status from "./Status.jsx";
 import { DRAWING, KEYS, LABELS, addPage, comboError, comboFromEvent, deletePage, formatCombo, renamePage } from "./keys.js";
 import { saveErrorText } from "./settingsApi.js";
@@ -28,7 +28,7 @@ test("every Speed Editor key has its printed label and one place in the drawing"
 
 test("the page selector adds, renames and deletes pages", () => {
   const html = renderToString(<PageSelector config={config} page="edit" />);
-  for (const t of [">Main</option>", ">Editing</option>", 'value="Editing"', ">Add page</button>", ">Delete page</button>"]) expect(html).toContain(t);
+  for (const t of [">Main</button>", ">Editing</button>", 'value="Editing"', ">Add page</button>", ">Delete page</button>"]) expect(html).toContain(t);
   const added = addPage(config);
   expect(added.id).toBe("page-3");
   expect(added.config.layers.at(-1)).toEqual({ id: "page-3", name: "Page 3", bindings: {} });
@@ -72,7 +72,8 @@ test("clicking a row opens the action editor for that key", () => {
   expect(onSelect).toHaveBeenCalledWith("Cut");
   expect(renderToString(<KeysTab initial={config} />)).not.toContain("key-editor");
   const open = renderToString(<KeysTab initial={config} initialSelected="Cut" />);
-  expect(open).toContain("What should CUT do?");
+  expect(open).not.toContain("What should CUT do?");
+  expect(open).toContain("When I press Cut…");
   expect(open).toContain('value="Ctrl+C"');
 });
 
@@ -109,9 +110,9 @@ test("a physical press shows 'You pressed X' for 2 s and selects that key", () =
 });
 
 test("the editor offers Hotkey, Held and Latched", () => {
-  const html = renderToString(<KeyEditor keyName="Cut" action={config.layers[1].bindings.Cut} />);
-  for (const kind of ["Hotkey", "Held", "Latched"]) expect(html).toContain(`<strong>${kind}</strong>`);
-  expect(html).toMatch(/checked=""[^>]*\/><strong>Held/);
+  const html = renderToString(<KeyEditor keyName="Cut" action={config.layers[1].bindings.Cut} initialMode={null} />);
+  for (const kind of ["Hotkey", "Held", "Latched"]) expect(html).toContain(`<strong>${KIND_TEXT[kind][0]}</strong>`);
+  expect(html).toMatch(/checked=""[^>]*\/><span class="choice-icon" data-icon="pan_tool"/);
 });
 
 test("capture records modifiers plus one key and shows it", () => {
@@ -134,7 +135,7 @@ test("an invalid combo shows an inline error and is never saved", async () => {
   const r = await saveKey({ config, pageId: "base", key: "Out", kind: "Latched", combo: combo("", "Ctrl"), save });
   expect(r.error).toBe("Add a key to go with the modifier, like Ctrl+K.");
   expect(save).not.toHaveBeenCalled();
-  const html = renderToString(<KeyEditor keyName="Out" initialError={r.error} />);
+  const html = renderToString(<KeyEditor keyName="Out" initialError={r.error} initialMode="Latched" />);
   expect(html).toMatch(/aria-invalid="true"/);
   expect(html).toContain('role="alert">Add a key to go with the modifier, like Ctrl+K.</p>');
 });

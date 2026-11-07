@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,300..500,0..1,0&display=block">
+<style>
+html,body{margin:0;height:100%;overflow:hidden}
+*{box-sizing:border-box}
+button,input,select{font:inherit;color:inherit}
+a{color:oklch(0.57 0.17 355);text-decoration:none}
+a:hover{text-decoration:underline}
+@keyframes fwspin{to{transform:rotate(360deg)}}
+@keyframes fwpulse{0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes fwgrow{from{width:0}to{width:100%}}
+@keyframes fwwait{from{opacity:1}to{opacity:1}}
+@keyframes fwpop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+</style>
+</helmet>
+<div style="{{ rootStyle }}">
+<div style="flex:1;min-width:0;position:relative;overflow:hidden;background:var(--desk);display:flex;flex-direction:column">
+
+<sc-if value="{{ isMac }}" hint-placeholder-val="{{ false }}">
+<div style="height:28px;flex:none;display:flex;align-items:center;gap:18px;padding:0 14px;background:var(--menubar);font-size:13px;position:relative;z-index:5;border-bottom:1px solid var(--line)">
+<span style="font-weight:700">Finder</span><span>File</span><span>Edit</span><span>View</span><span>Window</span>
+<div style="margin-left:auto;display:flex;align-items:center;gap:14px">
+<sc-if value="{{ appRunning }}"><button onClick="{{ toggleTray }}" title="freewheel" style="height:24px;padding:0 6px;border:none;border-radius:5px;background:{{ trayBtnBg }};display:flex;align-items:center;cursor:pointer">
+<span style="position:relative;width:16px;height:16px;display:inline-block"><span style="{{ ti.disc }}"></span><span style="{{ ti.hole }}"></span><sc-if value="{{ ti.badge }}"><span style="position:absolute;right:-3px;top:-3px;width:7px;height:7px;border-radius:50%;background:var(--warn);box-shadow:0 0 0 1.5px var(--taskbar)"></span></sc-if></span>
+</button></sc-if>
+<span style="font-family:'Material Symbols Rounded';font-size:17px;line-height:1">wifi</span>
+<span>Wed 4 Nov 10:42</span>
+</div>
+</div>
+</sc-if>
+
+<div data-fw-desk="1" style="flex:1;min-height:0;position:relative;display:flex;align-items:safe center;justify-content:safe center;padding:16px;overflow:auto">
+<sc-if value="{{ winOpen }}" hint-placeholder-val="{{ true }}">
+<div style="zoom:{{ winZoom }};flex:none;width:1000px;height:640px;min-width:820px;min-height:520px;resize:both;overflow:hidden;display:flex;flex-direction:column;background:var(--bg);color:var(--ink);border-radius:var(--winRadius);box-shadow:var(--shadow);border:1px solid var(--line2);font-size:13px;position:relative" data-screen-label="Settings window">
+
+<sc-if value="{{ isWin }}" hint-placeholder-val="{{ true }}">
+<div style="height:36px;flex:none;display:flex;align-items:center;padding-left:14px;gap:9px;user-select:none">
+<span style="position:relative;width:15px;height:15px;border-radius:50%;background:var(--accent);display:inline-block;flex:none"><span style="position:absolute;width:5px;height:5px;left:3px;top:3px;border-radius:50%;background:#fff"></span></span>
+<span style="font-size:12px;font-weight:600;letter-spacing:-0.01em">freewheel</span>
+<div style="margin-left:auto;display:flex;height:100%">
+<span style="width:46px;display:flex;align-items:center;justify-content:center;font-family:'Material Symbols Rounded';font-size:16px;color:var(--ink2)">remove</span>
+<span style="width:46px;display:flex;align-items:center;justify-content:center;font-family:'Material Symbols Rounded';font-size:14px;color:var(--ink2)">crop_square</span>
+<button onClick="{{ closeWin }}" title="Close (freewheel keeps running)" style="width:46px;border:none;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;border-top-right-radius:8px" style-hover="background:#c42b1c;color:#fff"><span style="font-family:'Material Symbols Rounded';font-size:17px">close</span></button>
+</div>
+</div>
+</sc-if>
+<sc-if value="{{ isMac }}" hint-placeholder-val="{{ false }}">
+<div style="height:38px;flex:none;display:flex;align-items:center;justify-content:center;position:relative;user-select:none">
+<div style="position:absolute;left:14px;display:flex;gap:8px"><button onClick="{{ closeWin }}" title="Close (freewheel keeps running)" style="width:12px;height:12px;border-radius:50%;border:none;padding:0;background:#ff5f57;cursor:pointer"></button><span style="width:12px;height:12px;border-radius:50%;background:#febc2e"></span><span style="width:12px;height:12px;border-radius:50%;background:#28c840"></span></div>
+<span style="display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;letter-spacing:-0.01em"><span style="position:relative;width:14px;height:14px;border-radius:50%;background:var(--accent);display:inline-block;flex:none"><span style="position:absolute;width:5px;height:5px;left:3px;top:3px;border-radius:50%;background:#fff"></span></span>freewheel</span>
+</div>
+</sc-if>
+
+<sc-if value="{{ showSetup }}" hint-placeholder-val="{{ false }}">
+<div style="flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px" data-screen-label="First run">
+<sc-if value="{{ showDots }}"><div style="display:flex;gap:6px;margin-bottom:30px"><sc-for list="{{ frDots }}" as="d"><span style="width:{{ d.w }}px;height:6px;border-radius:3px;background:{{ d.bg }};transition:all .2s"></span></sc-for></div></sc-if>
+
+<sc-if value="{{ fr0 }}">
+<div style="max-width:440px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:14px;animation:fwpop .3s ease">
+<span style="position:relative;width:84px;height:84px;border-radius:50%;background:var(--accent);display:inline-block;box-shadow:0 10px 30px var(--accentSoft);animation:fwspin 6s cubic-bezier(.6,0,.4,1) infinite"><span style="position:absolute;width:26px;height:26px;left:17px;top:15px;border-radius:50%;background:#fff"></span></span>
+<h1 style="margin:10px 0 0;font-size:26px;font-weight:600;letter-spacing:-0.01em">Welcome to freewheel</h1>
+<p style="margin:0;font-size:15px;line-height:1.55;color:var(--ink2);text-wrap:pretty">Use your Speed Editor for everyday things — copy and paste, volume, opening your favorite apps — whenever DaVinci Resolve is closed.</p>
+<button onClick="{{ frNext }}" style="margin-top:12px;height:42px;padding:0 26px;border-radius:9px;border:none;background:var(--accent);color:var(--accentInk);font-weight:600;font-size:14px;cursor:pointer">Get started</button>
+<span style="font-size:12px;color:var(--ink3)">Takes about a minute</span>
+</div>
+</sc-if>
+
+<sc-if value="{{ fr1 }}">
+<div style="max-width:460px;width:100%;text-align:center;display:flex;flex-direction:column;align-items:center;gap:14px;animation:fwpop .3s ease">
+<h1 style="margin:0;font-size:24px;font-weight:600;letter-spacing:-0.01em">Plug in or pair your Speed Editor</h1>
+<p style="margin:0;font-size:14px;line-height:1.55;color:var(--ink2);text-wrap:pretty">Connect it with its USB cable. Or switch it on and pair it in your computer’s Bluetooth settings.</p>
+<sc-if value="{{ frLooking }}">
+<div style="width:100%;margin-top:10px;padding:22px;border-radius:14px;background:var(--panel);border:1px solid var(--line);display:flex;align-items:center;gap:16px;text-align:left">
+<span style="width:30px;height:30px;border-radius:50%;border:3px solid var(--line2);border-top-color:var(--accent);animation:fwspin 0.9s linear infinite;flex:none"></span>
+<div><div style="font-size:15px;font-weight:600">Looking for your Speed Editor…</div><div style="font-size:13px;color:var(--ink2);margin-top:3px">This usually takes a few seconds.</div></div>
+</div>
+</sc-if>
+<sc-if value="{{ frFound }}">
+<div style="width:100%;margin-top:10px;padding:22px;border-radius:14px;background:var(--panel);border:2px solid var(--good);display:flex;align-items:center;gap:16px;text-align:left;animation:fwpop .25s ease">
+<span style="width:36px;height:36px;border-radius:50%;background:var(--good);color:#fff;display:flex;align-items:center;justify-content:center;flex:none;font-family:'Material Symbols Rounded';font-size:24px">check</span>
+<div><div style="font-size:16px;font-weight:600">Found it!</div><div style="font-size:13px;color:var(--ink2);margin-top:3px">{{ connText }}</div></div>
+</div>
+</sc-if>
+<div style="display:flex;gap:10px;margin-top:10px">
+<button onClick="{{ openBt }}" style="height:42px;padding:0 18px;border-radius:9px;border:1px solid var(--line2);background:var(--panel);font-size:14px;cursor:pointer">Open Bluetooth settings</button>
+<button onClick="{{ frNext }}" disabled="{{ frNotFound }}" style="height:42px;padding:0 26px;border-radius:9px;border:none;background:var(--accent);color:var(--accentInk);font-weight:600;font-size:14px;cursor:pointer;opacity:{{ frBtnOp }}">Continue</button>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ permScreen }}">
+<div style="max-width:540px;width:100%;display:flex;flex-direction:column;gap:12px;animation:fwpop .3s ease">
+<h1 style="margin:0;font-size:24px;font-weight:600;text-align:center;letter-spacing:-0.01em">{{ permTitle }}</h1>
+<p style="margin:0 0 8px;font-size:14px;line-height:1.55;color:var(--ink2);text-align:center;text-wrap:pretty">macOS asks you to allow these once. Click a button, switch freewheel on in System Settings, then come back here.</p>
+<sc-for list="{{ permRows }}" as="p">
+<div style="display:flex;align-items:center;gap:14px;padding:16px;border-radius:12px;background:var(--panel);border:1px solid {{ p.border }}">
+<span style="width:40px;height:40px;border-radius:10px;background:var(--sunk);display:flex;align-items:center;justify-content:center;flex:none;font-family:'Material Symbols Rounded';font-size:22px;color:var(--ink2)">{{ p.icon }}</span>
+<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">{{ p.title }}</div><div style="font-size:12.5px;color:var(--ink2);margin-top:2px;line-height:1.4">{{ p.sub }}</div></div>
+<sc-if value="{{ p.granted }}"><span style="display:flex;align-items:center;gap:6px;color:var(--good);font-weight:600;font-size:13px"><span style="font-family:'Material Symbols Rounded';font-size:20px">check_circle</span>Allowed</span></sc-if>
+<sc-if value="{{ p.waiting }}"><span style="display:flex;align-items:center;gap:8px;color:var(--ink2);font-size:13px"><span style="width:16px;height:16px;border-radius:50%;border:2px solid var(--line2);border-top-color:var(--accent);animation:fwspin .9s linear infinite"></span>Waiting…</span></sc-if>
+<sc-if value="{{ p.idle }}"><button onClick="{{ p.onClick }}" style="height:36px;padding:0 14px;border-radius:8px;border:none;background:var(--accent);color:var(--accentInk);font-weight:600;font-size:13px;cursor:pointer;flex:none">Open System Settings</button></sc-if>
+</div>
+</sc-for>
+<button onClick="{{ permDone }}" disabled="{{ permNotDone }}" style="align-self:center;margin-top:12px;height:42px;padding:0 26px;border-radius:9px;border:none;background:var(--accent);color:var(--accentInk);font-weight:600;font-size:14px;cursor:pointer;opacity:{{ permBtnOp }}">{{ permBtn }}</button>
+</div>
+</sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ showMain }}" hint-placeholder-val="{{ true }}">
+<div style="height:52px;flex:none;display:flex;align-items:center;gap:4px;padding:0 14px;border-bottom:1px solid var(--line)">
+<sc-for list="{{ tabs }}" as="t" hint-placeholder-count="4">
+<button onClick="{{ t.onClick }}" style="height:34px;padding:0 12px;border-radius:8px;border:none;display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;font-weight:{{ t.fw }};background:{{ t.bg }};color:{{ t.fg }}"><span style="font-family:'Material Symbols Rounded';font-size:19px;line-height:1">{{ t.icon }}</span>{{ t.label }}</button>
+</sc-for>
+<div style="margin-left:auto;display:flex;align-items:center;gap:12px">
+<button onClick="{{ statusClickWin }}" style="display:flex;align-items:center;gap:8px;border:none;background:transparent;font-size:12.5px;color:var(--ink2);padding:6px 8px;border-radius:6px;cursor:{{ statusCursor }}"><span style="width:8px;height:8px;border-radius:50%;background:{{ statusDot }}"></span>{{ statusText }}</button>
+<span style="width:1px;height:20px;background:var(--line2)"></span>
+<span style="font-size:13px;font-weight:600">{{ onShort }}</span>
+<button onClick="{{ swOn.onClick }}" title="Turn freewheel on or off" style="width:40px;height:22px;border-radius:11px;border:none;padding:0;position:relative;cursor:pointer;flex:none;background:{{ swOn.track }}"><span style="position:absolute;top:3px;left:{{ swOn.knob }}px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:left .15s"></span></button>
+</div>
+</div>
+
+<sc-if value="{{ hasUpdate }}" hint-placeholder-val="{{ false }}">
+<div style="flex:none;display:flex;align-items:center;gap:12px;padding:9px 10px 9px 16px;background:var(--accentSoft);border-bottom:1px solid var(--line);animation:fwpop .25s ease">
+<span style="position:relative;width:22px;height:22px;border-radius:50%;background:var(--accent);flex:none;animation:{{ updSpin }}"><span style="position:absolute;width:7px;height:7px;left:4px;top:4px;border-radius:50%;background:#fff"></span></span>
+<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px"><span style="font-weight:600">{{ updTitle }}</span>
+<sc-if value="{{ updDownloading }}"><span style="display:block;height:4px;border-radius:2px;background:var(--line2);overflow:hidden;max-width:320px"><span onAnimationEnd="{{ onDownloadDone }}" style="display:block;height:100%;width:0;background:var(--accent);border-radius:2px;animation:fwgrow 3.2s ease-in-out forwards"></span></span></sc-if>
+</div>
+<sc-if value="{{ updRestarting }}"><span onAnimationEnd="{{ onRestartDone }}" style="width:1px;height:1px;animation:fwwait 1.6s forwards"></span></sc-if>
+<sc-if value="{{ updAvailable }}"><button onClick="{{ startDownload }}" style="height:30px;padding:0 14px;border-radius:7px;border:none;background:var(--accent);color:var(--accentInk);font-weight:600;font-size:12.5px;cursor:pointer">Download and install</button></sc-if>
+<sc-if value="{{ updReadyNow }}"><button onClick="{{ restartUpdate }}" style="height:30px;padding:0 14px;border-radius:7px;border:none;background:var(--accent);color:var(--accentInk);font-weight:600;font-size:12.5px;cursor:pointer">Restart to update</button></sc-if>
+<sc-if value="{{ updCanLater }}"><button onClick="{{ laterUpdate }}" style="height:30px;padding:0 10px;border-radius:7px;border:none;background:transparent;font-size:12.5px;cursor:pointer;color:var(--ink2)">Later</button></sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ hasNotice }}" hint-placeholder-val="{{ false }}">
+<div style="flex:none;display:flex;align-items:center;gap:12px;padding:10px 12px 10px 16px;background:{{ notice.bg }};border-bottom:1px solid var(--line)">
+<span style="font-family:'Material Symbols Rounded';font-size:20px;color:{{ notice.fg }}">{{ notice.icon }}</span>
+<div style="flex:1;line-height:1.4"><span style="font-weight:600">{{ notice.title }}</span> <span style="color:var(--ink2)">{{ notice.text }}</span></div>
+<sc-if value="{{ notice.hasAction }}"><button onClick="{{ notice.onAction }}" style="height:30px;padding:0 14px;border-radius:7px;border:1px solid var(--line2);background:var(--panel);font-weight:600;font-size:12.5px;cursor:pointer;flex:none">{{ notice.action }}</button></sc-if>
+</div>
+</sc-if>
+
+<div style="flex:1;display:flex;min-height:0">
+
+<sc-if value="{{ tabKeys }}" hint-placeholder-val="{{ true }}">
+<div style="flex:1;min-width:0;display:flex;flex-direction:column;padding:14px 20px;gap:10px" data-screen-label="What each key does">
+<div style="display:flex;align-items:center;gap:8px;min-height:34px;flex:none">
+<sc-if value="{{ noPages }}" hint-placeholder-val="{{ true }}"><span style="font-size:15px;font-weight:600">What each key does</span></sc-if>
+<sc-if value="{{ deletingPage }}">
+<div style="display:flex;align-items:center;gap:8px;padding:4px 4px 4px 12px;border-radius:10px;background:var(--sunk)"><span>Delete “{{ delName }}”? Its keys will be cleared.</span><button onClick="{{ confirmDelete }}" style="height:28px;padding:0 12px;border-radius:7px;border:none;background:#d13c3c;color:#fff;font-weight:600;font-size:12.5px;cursor:pointer">Delete</button><button onClick="{{ cancelDelete }}" style="height:28px;padding:0 12px;border-radius:7px;border:1px solid var(--line2);background:var(--panel);font-size:12.5px;cursor:pointer">Keep it</button></div>
+</sc-if>
+<sc-if value="{{ showPills }}">
+<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+<sc-for list="{{ pagePills }}" as="p">
+<sc-if value="{{ p.editing }}"><input autoFocus="{{ true }}" value="{{ renameVal }}" onChange="{{ onRename }}" onKeyDown="{{ onRenameKey }}" onBlur="{{ commitRename }}" style="height:32px;width:130px;border-radius:16px;border:2px solid var(--accent);padding:0 12px;background:var(--panel);outline:none;font-size:13px;font-weight:600"></sc-if>
+<sc-if value="{{ p.notEditing }}">
+<div style="display:flex;align-items:center;height:32px;border-radius:16px;background:{{ p.bg }};color:{{ p.fg }};border:1px solid {{ p.border }}">
+<button onClick="{{ p.onClick }}" onDoubleClick="{{ p.onRename }}" title="{{ p.tip }}" style="border:none;background:transparent;height:100%;padding:0 12px;display:flex;align-items:center;gap:7px;cursor:pointer;font-weight:600;font-size:13px;color:inherit">
+<sc-if value="{{ p.live }}"><span style="width:7px;height:7px;border-radius:50%;background:#34c06f;box-shadow:0 0 0 3px rgba(52,192,111,.25)"></span></sc-if>{{ p.name }}</button>
+<sc-if value="{{ p.active }}"><button onClick="{{ p.onRename }}" title="Rename" style="border:none;background:transparent;height:100%;padding:0 4px;cursor:pointer;color:inherit;font-family:'Material Symbols Rounded';font-size:15px">edit</button></sc-if>
+<sc-if value="{{ p.canDelete }}"><button onClick="{{ p.onDelete }}" title="Delete page" style="border:none;background:transparent;height:100%;padding:0 10px 0 2px;cursor:pointer;color:inherit;font-family:'Material Symbols Rounded';font-size:15px">close</button></sc-if>
+</div>
+</sc-if>
+</sc-for>
+<button onClick="{{ addPage }}" style="height:32px;padding:0 12px;border-radius:16px;border:1px dashed var(--line2);background:transparent;cursor:pointer;font-size:13px;color:var(--ink2);display:flex;align-items:center;gap:4px"><span style="font-family:'Material Symbols Rounded';font-size:17px">add</span>Add page</button>
+<span style="font-size:11.5px;color:var(--ink3);display:flex;align-items:center;gap:5px;margin-left:4px"><span style="width:6px;height:6px;border-radius:50%;background:#34c06f"></span>Your Speed Editor is here</span>
+</div>
+</sc-if>
+<div style="margin-left:auto;display:flex;padding:2px;border-radius:8px;background:var(--sunk);flex:none">
+<sc-for list="{{ viewOpts }}" as="v"><button onClick="{{ v.onClick }}" style="height:28px;padding:0 10px;border-radius:6px;border:none;cursor:pointer;font-size:12.5px;display:flex;align-items:center;gap:5px;background:{{ v.bg }};color:{{ v.fg }};box-shadow:{{ v.sh }}"><span style="font-family:'Material Symbols Rounded';font-size:16px">{{ v.icon }}</span>{{ v.label }}</button></sc-for>
+</div>
+</div>
+
+<sc-if value="{{ viewDrawing }}" hint-placeholder-val="{{ true }}">
+<div data-fw-board="1" style="flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px">
+<div style="height:30px;display:flex;align-items:center">
+<sc-if value="{{ hasYouPressed }}"><span style="display:flex;align-items:center;gap:6px;height:30px;padding:0 14px;border-radius:15px;background:var(--accent);color:var(--accentInk);font-weight:600;font-size:13px;animation:fwpop .2s ease"><span style="font-family:'Material Symbols Rounded';font-size:17px">touch_app</span>You pressed {{ youPressed }}</span></sc-if>
+<sc-if value="{{ noYouPressed }}"><span style="font-size:13px;color:var(--ink3)">Click a key to choose what it does — or just press it on your Speed Editor.</span></sc-if>
+</div>
+<div style="zoom:{{ zoom }}">
+<div style="position:relative;width:666px;height:419px;border-radius:26px;background:linear-gradient(180deg,#6b6c71,#55565a);box-shadow:inset 0 1px 0 rgba(255,255,255,.25),inset 0 -2px 0 rgba(0,0,0,.25),0 14px 34px rgba(0,0,0,.25);opacity:{{ boardOp }};transition:opacity .2s">
+<span style="position:absolute;left:34px;top:19px;font-size:12px;letter-spacing:0.14em;color:#e6e6e4;font-weight:500">SPEED EDITOR</span>
+<span style="position:absolute;left:29px;top:51px;width:166px;height:114px;border-radius:7px;background:#1c1c1e;box-shadow:inset 0 1px 3px rgba(0,0,0,.6),0 1px 0 rgba(255,255,255,.14)"></span><span style="position:absolute;left:29px;top:176px;width:166px;height:218px;border-radius:7px;background:#1c1c1e;box-shadow:inset 0 1px 3px rgba(0,0,0,.6),0 1px 0 rgba(255,255,255,.14)"></span><span style="position:absolute;left:224px;top:51px;width:218px;height:114px;border-radius:7px;background:#1c1c1e;box-shadow:inset 0 1px 3px rgba(0,0,0,.6),0 1px 0 rgba(255,255,255,.14)"></span><span style="position:absolute;left:224px;top:176px;width:218px;height:218px;border-radius:7px;background:#1c1c1e;box-shadow:inset 0 1px 3px rgba(0,0,0,.6),0 1px 0 rgba(255,255,255,.14)"></span><span style="position:absolute;left:471px;top:51px;width:166px;height:62px;border-radius:7px;background:#1c1c1e;box-shadow:inset 0 1px 3px rgba(0,0,0,.6),0 1px 0 rgba(255,255,255,.14)"></span><span style="position:absolute;left:471px;top:124px;width:166px;height:62px;border-radius:7px;background:#1c1c1e;box-shadow:inset 0 1px 3px rgba(0,0,0,.6),0 1px 0 rgba(255,255,255,.14)"></span>
+<sc-for list="{{ keys }}" as="k" hint-placeholder-count="0">
+<button onClick="{{ k.onClick }}" title="{{ k.title }}" style="{{ k.st }}">
+<span style="{{ k.ledSt }}"></span>
+<sc-if value="{{ showLabels }}"><span style="{{ k.labSt }}">{{ k.label }}</span></sc-if>
+<span style="{{ k.doesSt }}">{{ k.does }}</span>
+</button>
+</sc-for>
+<button onClick="{{ goWheel }}" title="The wheel — click to choose what it does" style="position:absolute;left:468px;top:207px;width:172px;height:172px;border-radius:50%;border:none;cursor:pointer;padding:0;background:radial-gradient(circle at 45% 35%,#2b2b2e,#0f0f10 70%);box-shadow:0 0 0 3px #3b3c40,0 8px 16px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.08)">
+<div style="position:absolute;inset:0;transform:rotate({{ wheelRot }}deg);transition:transform .35s ease"><span style="position:absolute;left:42px;top:32px;width:48px;height:48px;border-radius:50%;background:radial-gradient(circle at 60% 65%,#232326,#0b0b0c);box-shadow:inset 0 3px 7px rgba(0,0,0,.85),0 1px 0 rgba(255,255,255,.07)"></span></div>
+<div style="position:absolute;left:0;right:0;bottom:30px;display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:none"><span style="font-size:9px;letter-spacing:0.08em;color:#8e8e94;font-weight:700">{{ wheelBtnLabel }}</span><span style="font-size:13px;font-weight:600;color:#f1f1ef">{{ wheelDoes }}</span></div>
+</button>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ viewList }}">
+<div style="flex:1;min-height:0;overflow:auto;padding:4px 2px 12px">
+<div style="display:flex;flex-direction:column;gap:18px;max-width:600px;margin:0 auto">
+<sc-for list="{{ listGroups }}" as="g">
+<div>
+<div style="font-size:12px;font-weight:600;color:var(--ink3);margin:0 0 6px 4px">{{ g.title }}</div>
+<div style="border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden">
+<sc-for list="{{ g.rows }}" as="r">
+<button onClick="{{ r.onClick }}" style="width:100%;display:flex;align-items:center;gap:12px;min-height:44px;padding:0 14px;border:none;border-top:1px solid {{ r.topLine }};background:{{ r.bg }};cursor:pointer;text-align:left;font-size:13px">
+<span style="width:120px;flex:none;font-weight:600;font-size:12px">{{ r.label }}</span>
+<span style="flex:1;color:{{ r.fg }}">{{ r.does }}</span>
+<sc-if value="{{ r.lit }}"><span style="font-size:11.5px;color:var(--ink2);display:flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:#ffb547"></span>On</span></sc-if>
+<span style="font-family:'Material Symbols Rounded';font-size:18px;color:var(--ink3)">chevron_right</span>
+</button>
+</sc-for>
+</div>
+</div>
+</sc-for>
+</div>
+</div>
+</sc-if>
+</div>
+
+<div style="width:316px;flex:none;border-left:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0" data-screen-label="What should this key do">
+<sc-if value="{{ noSel }}" hint-placeholder-val="{{ true }}">
+<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:28px;gap:10px">
+<span style="width:56px;height:56px;border-radius:50%;background:var(--accentSoft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-family:'Material Symbols Rounded';font-size:28px">touch_app</span>
+<div style="font-size:16px;font-weight:600;margin-top:4px">Pick a key</div>
+<p style="margin:0;color:var(--ink2);line-height:1.5;font-size:13px;text-wrap:pretty">Click any key in the drawing — or simply press it on your Speed Editor. Then choose what it does.</p>
+<sc-if value="{{ isEmptySetup }}"><div style="margin-top:10px;padding:12px 14px;border-radius:10px;background:var(--sunk);font-size:12.5px;color:var(--ink2);line-height:1.45;display:flex;gap:8px;text-align:left"><span style="font-family:'Material Symbols Rounded';font-size:18px;color:var(--accent)">trip_origin</span><span>Your wheel already scrolls, like a mouse wheel. Give it a spin!</span></div></sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ hasSel }}">
+<div style="padding:16px 12px 12px 16px;display:flex;align-items:flex-start;gap:10px;border-bottom:1px solid var(--line);flex:none">
+<span style="background:#38383c;color:#f1f1ef;font-size:10px;padding:7px 8px;border-radius:6px;font-weight:700;letter-spacing:0.03em;white-space:nowrap;box-shadow:inset 0 -2px 0 rgba(0,0,0,.35)">{{ sel }}</span>
+<div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:600">When I press {{ sel }}…</div><div style="font-size:12.5px;color:var(--ink2);margin-top:2px">{{ selNow }}</div></div>
+<button onClick="{{ closePanel }}" title="Close" style="width:30px;height:30px;border:none;border-radius:7px;background:transparent;cursor:pointer;color:var(--ink2);font-family:'Material Symbols Rounded';font-size:18px" style-hover="background:var(--hover)">close</button>
+</div>
+<div style="flex:1;min-height:0;overflow:auto;padding:14px 16px;display:flex;flex-direction:column;gap:8px">
+
+<sc-if value="{{ pWheelBtn }}">
+<div style="padding:14px;border-radius:10px;background:var(--sunk);line-height:1.5;color:var(--ink2)">{{ sel }} is one of the three buttons above the wheel. Pressing it changes what the wheel does.</div>
+<button onClick="{{ goWheel }}" style="height:38px;border-radius:8px;border:none;background:var(--accent);color:var(--accentInk);font-weight:600;cursor:pointer">Set up the wheel</button>
+</sc-if>
+
+<sc-if value="{{ pBack }}">
+<div style="padding:16px;border-radius:10px;background:var(--sunk);display:flex;flex-direction:column;gap:6px">
+<span style="font-family:'Material Symbols Rounded';font-size:24px;color:var(--accent)">undo</span>
+<div style="font-weight:600;font-size:14px">This key takes you back to “{{ backTo }}”.</div>
+<div style="color:var(--ink2);line-height:1.45">It stays this way so you can never get stuck on this page.</div>
+</div>
+<button onClick="{{ viewBackPage }}" style="height:38px;border-radius:8px;border:1px solid var(--line2);background:var(--panel);cursor:pointer">Show the {{ backTo }} page</button>
+</sc-if>
+
+<sc-if value="{{ pChoices }}">
+<sc-for list="{{ choices }}" as="c">
+<button onClick="{{ c.onClick }}" style="display:flex;align-items:center;gap:12px;width:100%;min-height:54px;padding:8px 12px;border-radius:10px;border:1px solid {{ c.border }};background:{{ c.bg }};cursor:pointer;text-align:left;flex:none">
+<span style="width:34px;height:34px;border-radius:8px;background:{{ c.iconBg }};display:flex;align-items:center;justify-content:center;flex:none;font-family:'Material Symbols Rounded';font-size:20px;color:{{ c.iconFg }}">{{ c.icon }}</span>
+<span style="flex:1;min-width:0"><span style="display:block;font-size:13.5px;font-weight:600">{{ c.title }}</span><span style="display:block;font-size:12px;color:var(--ink2);margin-top:1px">{{ c.sub }}</span></span>
+<sc-if value="{{ c.current }}"><span style="font-family:'Material Symbols Rounded';font-size:20px;color:var(--accent)">check_circle</span></sc-if>
+</button>
+</sc-for>
+</sc-if>
+
+<sc-if value="{{ pDetail }}">
+<button onClick="{{ backToChoices }}" style="align-self:flex-start;border:none;background:transparent;display:flex;align-items:center;gap:2px;color:var(--accent);cursor:pointer;padding:2px 0;font-size:13px;font-weight:500;margin-left:-4px"><span style="font-family:'Material Symbols Rounded';font-size:20px">chevron_left</span>All choices</button>
+<div style="font-size:16px;font-weight:600">{{ modeTitle }}</div>
+<sc-if value="{{ hasModeSub }}"><div style="font-size:13px;color:var(--ink2);line-height:1.45;margin-bottom:4px">{{ modeSub }}</div></sc-if>
+</sc-if>
+
+<sc-if value="{{ showRecMain }}">
+<sc-for list="{{ recMain }}" as="r">
+<button onClick="{{ r.onClick }}" style="width:100%;min-height:108px;border-radius:12px;border:2px {{ r.borderStyle }} {{ r.borderColor }};background:{{ r.bg }};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;cursor:pointer;padding:14px;flex:none">
+<sc-if value="{{ r.idle }}"><span style="display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600"><span style="width:12px;height:12px;border-radius:50%;background:#e5484d"></span>Record</span><span style="font-size:12px;color:var(--ink2)">{{ r.idleHint }}</span></sc-if>
+<sc-if value="{{ r.listening }}"><span style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600"><span style="width:10px;height:10px;border-radius:50%;background:#e5484d;animation:fwpulse 1s infinite"></span>{{ r.listenText }}</span></sc-if>
+<sc-if value="{{ r.hasCaps }}"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center"><sc-for list="{{ r.caps }}" as="cap"><sc-if value="{{ cap.plus }}"><span style="color:var(--ink3);font-weight:600">+</span></sc-if><span style="display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:34px;padding:0 10px;border-radius:7px;background:var(--panel);border:1px solid var(--line2);border-bottom-width:3px;font-weight:600;font-size:14px">{{ cap.k }}</span></sc-for></div></sc-if>
+<sc-if value="{{ r.done }}"><span style="font-size:12px;color:var(--ink3)">Click to record again</span></sc-if>
+</button>
+<sc-if value="{{ r.listening }}"><button onClick="{{ cancelRec }}" style="align-self:center;border:none;background:transparent;color:var(--ink2);cursor:pointer;font-size:12.5px;padding:2px 8px">Cancel</button></sc-if>
+</sc-for>
+<div style="font-size:12px;font-weight:600;color:var(--ink3);margin-top:8px">{{ quickTitle }}</div>
+<div style="display:flex;flex-wrap:wrap;gap:6px">
+<sc-for list="{{ presets }}" as="p"><button onClick="{{ p.onClick }}" style="height:34px;padding:0 12px;border-radius:17px;border:1px solid {{ p.border }};background:{{ p.bg }};cursor:pointer;display:flex;gap:6px;align-items:center;font-size:13px"><span style="font-weight:600">{{ p.name }}</span><span style="color:var(--ink3);font-size:12px">{{ p.combo }}</span></button></sc-for>
+</div>
+<sc-if value="{{ isToggleMode }}">
+<div style="display:flex;gap:12px;align-items:center;padding:12px;border-radius:10px;background:var(--sunk);margin-top:8px">
+<div style="width:46px;height:46px;border-radius:6px;background:#38383c;position:relative;flex:none;box-shadow:inset 0 -2px 0 rgba(0,0,0,.35)"><span style="position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:#ffb547;box-shadow:0 0 6px 2px rgba(255,181,71,.7)"></span><span style="position:absolute;left:6px;bottom:6px;font-size:7px;font-weight:700;color:#a0a0a6;letter-spacing:.04em">{{ sel }}</span></div>
+<div style="font-size:12.5px;color:var(--ink2);line-height:1.45">While it’s on, the light on this key stays lit — so you can always see it’s held down.</div>
+</div>
+</sc-if>
+</sc-if>
+
+<sc-if value="{{ mApp }}">
+<div style="display:flex;align-items:center;gap:8px;height:38px;padding:0 10px;border-radius:8px;border:1px solid var(--line2);background:var(--bg)"><span style="font-family:'Material Symbols Rounded';font-size:18px;color:var(--ink3)">search</span><input value="{{ appQuery }}" onChange="{{ onAppQuery }}" placeholder="Search your apps" style="flex:1;border:none;background:transparent;outline:none;font-size:13px;min-width:0"></div>
+<div style="display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;overflow:auto;max-height:230px;flex:none">
+<sc-for list="{{ appRows }}" as="a"><button onClick="{{ a.onClick }}" style="display:flex;align-items:center;gap:10px;min-height:44px;padding:0 12px;border:none;border-top:1px solid {{ a.topLine }};background:{{ a.bg }};cursor:pointer;text-align:left;font-size:13px;flex:none"><span style="width:28px;height:28px;border-radius:7px;background:{{ a.color }};color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;flex:none">{{ a.initial }}</span><span style="flex:1">{{ a.name }}</span><sc-if value="{{ a.current }}"><span style="font-family:'Material Symbols Rounded';font-size:18px;color:var(--accent)">check</span></sc-if></button></sc-for>
+<sc-if value="{{ noApps }}"><div style="padding:14px;color:var(--ink3);font-size:12.5px">No apps match “{{ appQuery }}”.</div></sc-if>
+</div>
+<button onClick="{{ chooseFile }}" style="height:38px;border-radius:8px;border:1px solid var(--line2);background:var(--panel);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;flex:none"><span style="font-family:'Material Symbols Rounded';font-size:18px">folder_open</span>Choose file…</button>
+<div style="font-size:12px;font-weight:600;color:var(--ink3);margin-top:8px">Or a website</div>
+<div style="display:flex;gap:6px"><input value="{{ webUrl }}" onChange="{{ onWeb }}" onKeyDown="{{ onWebKey }}" placeholder="like youtube.com" style="flex:1;min-width:0;height:38px;border-radius:8px;border:1px solid var(--line2);background:var(--bg);padding:0 10px;outline:none;font-size:13px"><button onClick="{{ useWeb }}" style="height:38px;padding:0 14px;border-radius:8px;border:none;background:var(--accent);color:var(--accentInk);font-weight:600;cursor:pointer">Use</button></div>
+</sc-if>
+
+<sc-if value="{{ mWheel }}">
+<sc-for list="{{ wheelKeyOpts }}" as="o"><button onClick="{{ o.onClick }}" style="display:flex;align-items:center;gap:12px;width:100%;min-height:50px;padding:8px 12px;border-radius:10px;border:1px solid {{ o.border }};background:{{ o.bg }};cursor:pointer;text-align:left;flex:none"><span style="font-family:'Material Symbols Rounded';font-size:22px;color:var(--ink2)">{{ o.icon }}</span><span style="flex:1;font-weight:600;font-size:13.5px">{{ o.title }}</span><sc-if value="{{ o.current }}"><span style="font-family:'Material Symbols Rounded';font-size:20px;color:var(--accent)">check_circle</span></sc-if></button></sc-for>
+<div style="padding:12px;border-radius:10px;background:var(--sunk);font-size:12.5px;color:var(--ink2);line-height:1.45;margin-top:4px">Press {{ sel }} again to put the wheel back to normal.</div>
+</sc-if>
+
+<sc-if value="{{ mPage }}">
+<sc-if value="{{ hasOtherPages }}">
+<div style="font-size:12px;font-weight:600;color:var(--ink3)">Go to a page</div>
+<sc-for list="{{ otherPages }}" as="o"><button onClick="{{ o.onClick }}" style="display:flex;align-items:center;gap:10px;width:100%;min-height:44px;padding:0 12px;border-radius:10px;border:1px solid {{ o.border }};background:{{ o.bg }};cursor:pointer;text-align:left;flex:none"><span style="font-family:'Material Symbols Rounded';font-size:20px;color:var(--ink2)">tab</span><span style="flex:1;font-weight:600">{{ o.name }}</span><sc-if value="{{ o.current }}"><span style="font-family:'Material Symbols Rounded';font-size:20px;color:var(--accent)">check_circle</span></sc-if></button></sc-for>
+</sc-if>
+<div style="font-size:12px;font-weight:600;color:var(--ink3);margin-top:6px">Make a new page</div>
+<div style="display:flex;gap:6px"><input value="{{ newPage }}" onChange="{{ onNewPage }}" onKeyDown="{{ onNewPageKey }}" placeholder="Name it, like Music" style="flex:1;min-width:0;height:38px;border-radius:8px;border:1px solid var(--line2);background:var(--bg);padding:0 10px;outline:none;font-size:13px"><button onClick="{{ createPageBtn }}" style="height:38px;padding:0 14px;border-radius:8px;border:none;background:var(--accent);color:var(--accentInk);font-weight:600;cursor:pointer">Create</button></div>
+<div style="display:flex;flex-wrap:wrap;gap:6px"><sc-for list="{{ pageSuggest }}" as="p"><button onClick="{{ p.onClick }}" style="height:30px;padding:0 12px;border-radius:15px;border:1px solid var(--line2);background:var(--panel);cursor:pointer;font-size:12.5px">{{ p.name }}</button></sc-for></div>
+<div style="padding:12px;border-radius:10px;background:var(--sunk);font-size:12.5px;color:var(--ink2);line-height:1.45;display:flex;gap:8px;margin-top:4px"><span style="font-family:'Material Symbols Rounded';font-size:18px;color:var(--accent)">undo</span><span>On that page, {{ sel }} becomes “Back”, so you can always return to {{ curPageName }}.</span></div>
+</sc-if>
+</div>
+<sc-if value="{{ showTry }}"><div style="padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:center;font-size:12.5px;color:{{ tryFg }};flex:none"><span style="font-family:'Material Symbols Rounded';font-size:17px">{{ tryIcon }}</span>{{ tryText }}</div></sc-if>
+</sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ tabWheel }}">
+<div style="flex:1;overflow:auto;padding:24px 28px" data-screen-label="Wheel">
+<div style="max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:14px">
+<h2 style="margin:0;font-size:19px;font-weight:600">When I turn the wheel…</h2>
+<sc-if value="{{ hasOverride }}"><div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:10px;background:var(--accentSoft);line-height:1.4"><span style="font-family:'Material Symbols Rounded';font-size:20px;color:var(--accent)">info</span><span style="flex:1">Right now {{ overrideKey }} has turned the wheel into {{ overrideName }}. Press {{ overrideKey }} again to go back.</span><button onClick="{{ clearOverride }}" style="height:30px;padding:0 12px;border-radius:7px;border:1px solid var(--line2);background:var(--panel);cursor:pointer;font-size:12.5px;flex:none">Back to normal</button></div></sc-if>
+<div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:14px">
+<div style="font-size:13px;color:var(--ink2);line-height:1.5;text-wrap:pretty">The three buttons above the wheel can each make it do something different. Press one on your Speed Editor to switch.</div>
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+<sc-for list="{{ wheelBtns }}" as="b"><button onClick="{{ b.onClick }}" style="min-height:60px;border-radius:10px;border:2px solid {{ b.border }};background:{{ b.bg }};cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px;padding:8px 12px;text-align:left">
+<span style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:12px;letter-spacing:0.04em">{{ b.label }}<sc-if value="{{ b.live }}"><span title="Lit on your Speed Editor" style="width:7px;height:7px;border-radius:50%;background:#ffb547;box-shadow:0 0 5px 1px rgba(255,181,71,.7)"></span></sc-if></span>
+<span style="font-size:12.5px;color:var(--ink2)">{{ b.does }}</span></button></sc-for>
+</div>
+<div style="font-size:12px;font-weight:600;color:var(--ink3);margin-top:2px">With {{ wheelBtn }} lit, turning the wheel…</div>
+<div style="display:flex;flex-direction:column;gap:6px">
+<sc-for list="{{ wheelOpts }}" as="o"><button onClick="{{ o.onClick }}" style="display:flex;align-items:center;gap:12px;width:100%;min-height:48px;padding:6px 12px;border-radius:10px;border:1px solid {{ o.border }};background:{{ o.bg }};cursor:pointer;text-align:left">
+<span style="width:18px;height:18px;border-radius:50%;border:2px solid {{ o.ring }};display:flex;align-items:center;justify-content:center;flex:none"><sc-if value="{{ o.current }}"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent)"></span></sc-if></span>
+<span style="font-family:'Material Symbols Rounded';font-size:20px;color:var(--ink2)">{{ o.icon }}</span>
+<span style="flex:1"><span style="font-weight:600;font-size:13.5px">{{ o.title }}</span> <span style="color:var(--ink3);font-size:12.5px">{{ o.sub }}</span></span>
+</button></sc-for>
+</div>
+<sc-if value="{{ wheelKeysMode }}">
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">
+<sc-for list="{{ recWheel }}" as="r">
+<div style="display:flex;flex-direction:column;gap:6px">
+<div style="font-size:12px;font-weight:600;color:var(--ink2);display:flex;align-items:center;gap:4px"><span style="font-family:'Material Symbols Rounded';font-size:16px">{{ r.icon }}</span>{{ r.label }}</div>
+<button onClick="{{ r.onClick }}" style="width:100%;min-height:92px;border-radius:12px;border:2px {{ r.borderStyle }} {{ r.borderColor }};background:{{ r.bg }};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;cursor:pointer;padding:12px">
+<sc-if value="{{ r.idle }}"><span style="display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600"><span style="width:11px;height:11px;border-radius:50%;background:#e5484d"></span>Record</span></sc-if>
+<sc-if value="{{ r.listening }}"><span style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600"><span style="width:10px;height:10px;border-radius:50%;background:#e5484d;animation:fwpulse 1s infinite"></span>Listening…</span></sc-if>
+<sc-if value="{{ r.hasCaps }}"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center"><sc-for list="{{ r.caps }}" as="cap"><sc-if value="{{ cap.plus }}"><span style="color:var(--ink3);font-weight:600">+</span></sc-if><span style="display:inline-flex;align-items:center;justify-content:center;min-width:32px;height:32px;padding:0 9px;border-radius:7px;background:var(--panel);border:1px solid var(--line2);border-bottom-width:3px;font-weight:600;font-size:13px">{{ cap.k }}</span></sc-for></div></sc-if>
+<sc-if value="{{ r.done }}"><span style="font-size:11.5px;color:var(--ink3)">Click to record again</span></sc-if>
+</button>
+</div>
+</sc-for>
+</div>
+</sc-if>
+</div>
+<div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:12px">
+<div><div style="font-size:14px;font-weight:600">Sensitivity</div><div style="font-size:12.5px;color:var(--ink2);margin-top:2px">How much happens for each turn of the wheel.</div></div>
+<div style="display:flex;align-items:center;gap:14px"><span style="font-size:12.5px;color:var(--ink2)">Slow</span><input type="range" min="0" max="100" value="{{ sens }}" onChange="{{ onSens }}" style="flex:1;accent-color:var(--accent);height:24px"><span style="font-size:12.5px;color:var(--ink2)">Fast</span></div>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ tabResolve }}">
+<div style="flex:1;overflow:auto;padding:24px 28px" data-screen-label="DaVinci Resolve">
+<div style="max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:14px">
+<h2 style="margin:0;font-size:19px;font-weight:600">DaVinci Resolve</h2>
+<div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;display:flex;gap:18px;align-items:flex-start">
+<div style="flex:1"><div style="font-size:14px;font-weight:600">Step aside automatically when DaVinci Resolve opens</div><div style="font-size:13px;color:var(--ink2);margin-top:4px;line-height:1.5;text-wrap:pretty">When you open Resolve, freewheel lets go of your Speed Editor so Resolve can use it. Your shortcuts come back when you close Resolve.</div></div>
+<button onClick="{{ swResolve.onClick }}" style="width:40px;height:22px;border-radius:11px;border:none;padding:0;position:relative;cursor:pointer;flex:none;margin-top:2px;background:{{ swResolve.track }}"><span style="position:absolute;top:3px;left:{{ swResolve.knob }}px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:left .15s"></span></button>
+</div>
+<div style="padding:14px 16px;border-radius:12px;background:var(--sunk);display:flex;gap:10px;line-height:1.5"><span style="font-family:'Material Symbols Rounded';font-size:20px;color:var(--accent)">lightbulb</span><span>If Resolve doesn’t see the Speed Editor, unplug it and plug it back in.</span></div>
+<button onClick="{{ toggleResolveMore }}" style="align-self:flex-start;border:none;background:transparent;display:flex;align-items:center;gap:2px;color:var(--ink2);cursor:pointer;padding:4px 0;font-size:13px">More<span style="font-family:'Material Symbols Rounded';font-size:18px">{{ resolveMoreIcon }}</span></button>
+<sc-if value="{{ resolveMore }}">
+<div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:10px">
+<div><div style="font-size:14px;font-weight:600">Resolve’s program name</div><div style="font-size:12.5px;color:var(--ink2);margin-top:2px">Only change this if support asks you to.</div></div>
+<div style="display:flex;gap:8px"><input value="{{ proc }}" onChange="{{ onProc }}" style="flex:1;max-width:280px;height:36px;border-radius:8px;border:1px solid var(--line2);background:var(--bg);padding:0 10px;outline:none;font-size:13px"><button onClick="{{ resetProc }}" style="height:36px;padding:0 14px;border-radius:8px;border:1px solid var(--line2);background:var(--panel);cursor:pointer">Reset</button></div>
+</div>
+</sc-if>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ tabGeneral }}">
+<div style="flex:1;overflow:auto;padding:24px 28px" data-screen-label="General">
+<div style="max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:14px">
+<h2 style="margin:0;font-size:19px;font-weight:600">General</h2>
+<div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:12px">
+<div><div style="font-size:14px;font-weight:600">Appearance</div><div style="font-size:13px;color:var(--ink2);margin-top:3px">Choose light or dark, or let freewheel follow your computer.</div></div>
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+<sc-for list="{{ appearOpts }}" as="o"><button onClick="{{ o.onClick }}" style="display:flex;flex-direction:column;align-items:stretch;gap:8px;padding:8px;border-radius:10px;border:2px solid {{ o.border }};background:{{ o.bg }};cursor:pointer">
+<span style="height:54px;border-radius:6px;background:{{ o.swatch }};border:1px solid var(--line);display:flex;align-items:flex-end;padding:6px;gap:4px"><span style="width:40%;height:6px;border-radius:3px;background:var(--accent)"></span><span style="width:25%;height:6px;border-radius:3px;background:{{ o.bar }}"></span></span>
+<span style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600"><span style="font-family:'Material Symbols Rounded';font-size:17px;color:var(--ink2)">{{ o.icon }}</span>{{ o.label }}</span>
+</button></sc-for>
+</div>
+</div>
+<div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;display:flex;gap:16px;align-items:center">
+<div style="flex:1;font-size:14px;font-weight:600">Start freewheel when I log in</div>
+<button onClick="{{ swLogin.onClick }}" style="width:40px;height:22px;border-radius:11px;border:none;padding:0;position:relative;cursor:pointer;flex:none;background:{{ swLogin.track }}"><span style="position:absolute;top:3px;left:{{ swLogin.knob }}px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:left .15s"></span></button>
+</div>
+<div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;gap:16px;align-items:center">
+<div style="flex:1"><div style="font-size:14px;font-weight:600">freewheel 1.4.2</div><div style="font-size:13px;color:var(--ink2);margin-top:3px">{{ updateSub }}</div></div>
+<button onClick="{{ checkUpdates }}" style="height:36px;padding:0 16px;border-radius:8px;border:1px solid var(--line2);background:var(--panel);cursor:pointer;display:flex;align-items:center;gap:8px;flex:none"><sc-if value="{{ checking }}"><span style="width:14px;height:14px;border-radius:50%;border:2px solid var(--line2);border-top-color:var(--accent);animation:fwspin .9s linear infinite"></span></sc-if>Check for updates</button>
+</div>
+<div style="height:1px;background:var(--line)"></div>
+<div style="display:flex;gap:16px;align-items:center">
+<div style="flex:1"><div style="font-size:14px;font-weight:600">Update automatically</div><div style="font-size:13px;color:var(--ink2);margin-top:3px">New versions download by themselves. You choose when to restart.</div></div>
+<button onClick="{{ swAuto.onClick }}" style="width:40px;height:22px;border-radius:11px;border:none;padding:0;position:relative;cursor:pointer;flex:none;background:{{ swAuto.track }}"><span style="position:absolute;top:3px;left:{{ swAuto.knob }}px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:left .15s"></span></button>
+</div>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ tabHelp }}">
+<div style="flex:1;overflow:auto;padding:24px 28px" data-screen-label="Help and backup">
+<div style="max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:14px">
+<h2 style="margin:0;font-size:19px;font-weight:600">Help &amp; backup</h2>
+<div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:12px">
+<div style="display:flex;gap:16px;align-items:center"><div style="flex:1"><div style="font-size:14px;font-weight:600">Download logs for support</div><div style="font-size:13px;color:var(--ink2);margin-top:3px">Saves one file you can attach to an email.</div></div><button onClick="{{ saveLogs }}" style="height:36px;padding:0 16px;border-radius:8px;border:none;background:var(--accent);color:var(--accentInk);font-weight:600;cursor:pointer;flex:none;display:flex;align-items:center;gap:6px"><span style="font-family:'Material Symbols Rounded';font-size:18px">download</span>Download logs</button></div>
+<div style="display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--ink2)"><span style="font-family:'Material Symbols Rounded';font-size:17px">lock</span>Logs never include what you type, your shortcuts, or the apps you open.</div>
+<sc-if value="{{ logsSaved }}"><div style="display:flex;gap:8px;align-items:center;padding:10px 12px;border-radius:8px;background:var(--sunk);font-size:12.5px;animation:fwpop .2s ease"><span style="font-family:'Material Symbols Rounded';font-size:18px;color:var(--good)">check_circle</span><span style="flex:1">Downloaded “freewheel-logs.zip” to your Downloads folder.</span><a href="#" onClick="{{ noop }}">Show file</a></div></sc-if>
+</div>
+<div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:12px">
+<div><div style="font-size:14px;font-weight:600">Back up my keys</div><div style="font-size:13px;color:var(--ink2);margin-top:3px;line-height:1.45">Keep a copy of all your keys and pages in one file — handy for a new computer.</div></div>
+<div style="display:flex;gap:8px"><button onClick="{{ backup }}" style="height:36px;padding:0 16px;border-radius:8px;border:1px solid var(--line2);background:var(--panel);cursor:pointer">Back up…</button><button onClick="{{ askRestore }}" style="height:36px;padding:0 16px;border-radius:8px;border:1px solid var(--line2);background:var(--panel);cursor:pointer">Restore from a backup…</button></div>
+<sc-if value="{{ hasBackupMsg }}"><div style="display:flex;gap:8px;align-items:center;padding:10px 12px;border-radius:8px;background:var(--sunk);font-size:12.5px;animation:fwpop .2s ease"><span style="font-family:'Material Symbols Rounded';font-size:18px;color:var(--good)">check_circle</span>{{ backupMsg }}</div></sc-if>
+</div>
+<button onClick="{{ toggleHelpMore }}" style="align-self:flex-start;border:none;background:transparent;display:flex;align-items:center;gap:2px;color:var(--ink2);cursor:pointer;padding:4px 0;font-size:13px">More<span style="font-family:'Material Symbols Rounded';font-size:18px">{{ helpMoreIcon }}</span></button>
+<sc-if value="{{ helpMore }}">
+<div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;display:flex;gap:16px;align-items:center">
+<div style="flex:1"><div style="font-size:14px;font-weight:600">Turn on detailed logs for troubleshooting</div><div style="font-size:12.5px;color:var(--ink2);margin-top:3px">Only if support asks. Turns itself off after a day.</div></div>
+<button onClick="{{ swDetailed.onClick }}" style="width:40px;height:22px;border-radius:11px;border:none;padding:0;position:relative;cursor:pointer;flex:none;background:{{ swDetailed.track }}"><span style="position:absolute;top:3px;left:{{ swDetailed.knob }}px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:left .15s"></span></button>
+</div>
+</sc-if>
+</div>
+</div>
+</sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ confirmRestore }}">
+<div style="position:absolute;inset:0;background:rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;z-index:20">
+<div style="width:380px;background:var(--panel);border-radius:12px;padding:22px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:10px;animation:fwpop .18s ease">
+<div style="font-size:16px;font-weight:600">Replace your keys?</div>
+<p style="margin:0;color:var(--ink2);line-height:1.5">Restoring “My freewheel keys” will replace all your keys and pages. The ones you have now will be gone.</p>
+<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px"><button onClick="{{ cancelRestore }}" style="height:36px;padding:0 16px;border-radius:8px;border:1px solid var(--line2);background:var(--panel);cursor:pointer">Keep my keys</button><button onClick="{{ doRestore }}" style="height:36px;padding:0 16px;border-radius:8px;border:none;background:var(--accent);color:var(--accentInk);font-weight:600;cursor:pointer">Replace my keys</button></div>
+</div>
+</div>
+</sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ noWin }}">
+<div style="color:var(--ink2);font-size:13px;text-align:center;line-height:1.6;max-width:320px">{{ noWinText }}</div>
+</sc-if>
+</div>
+
+<sc-if value="{{ trayOpen }}">
+<div onClick="{{ closeTray }}" style="position:absolute;inset:0;z-index:30"></div>
+<div style="position:absolute;z-index:31;right:{{ trayRight }}px;top:{{ trayTop }};bottom:{{ trayBottom }};width:312px;background:var(--menu);border:1px solid var(--line2);border-radius:10px;box-shadow:var(--shadow);padding:6px;color:var(--ink);font-size:13px;animation:fwpop .16s ease" data-screen-label="Tray menu">
+<div style="display:flex;align-items:center;gap:12px;padding:12px 10px 10px 12px">
+<div style="flex:1"><div style="font-size:14px;font-weight:600">{{ onTitle }}</div><div style="font-size:12px;color:var(--ink2);margin-top:2px">{{ onSub }}</div></div>
+<button onClick="{{ swOn.onClick }}" style="width:40px;height:22px;border-radius:11px;border:none;padding:0;position:relative;cursor:pointer;flex:none;background:{{ swOn.track }}"><span style="position:absolute;top:3px;left:{{ swOn.knob }}px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:left .15s"></span></button>
+</div>
+<button onClick="{{ statusClick }}" style="margin:0 6px 6px;width:calc(100% - 12px);padding:9px 10px;border-radius:8px;border:none;background:var(--sunk);display:flex;gap:8px;align-items:center;font-size:12.5px;cursor:pointer;text-align:left"><span style="width:8px;height:8px;border-radius:50%;background:{{ statusDot }};flex:none"></span>{{ statusText }}</button>
+<sc-for list="{{ trayItems }}" as="i">
+<sc-if value="{{ i.divider }}"><div style="height:1px;background:var(--line);margin:5px 6px"></div></sc-if>
+<sc-if value="{{ i.item }}"><button onClick="{{ i.onClick }}" style="width:100%;height:34px;border:none;background:transparent;display:flex;align-items:center;gap:8px;padding:0 10px;border-radius:6px;cursor:pointer;text-align:left;font-size:13px" style-hover="background:var(--hover)"><span style="width:18px;font-family:'Material Symbols Rounded';font-size:17px;color:var(--accent)">{{ i.check }}</span>{{ i.label }}</button></sc-if>
+</sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{ isWin }}" hint-placeholder-val="{{ true }}">
+<div style="height:48px;flex:none;background:var(--taskbar);border-top:1px solid var(--line);display:flex;align-items:center;padding:0 10px;position:relative;z-index:5;color:var(--ink)">
+<div style="position:absolute;left:50%;transform:translateX(-50%);display:flex;gap:6px">
+<span style="width:36px;height:36px;border-radius:6px;display:flex;align-items:center;justify-content:center"><span style="width:20px;height:20px;border-radius:3px;background:var(--accent);opacity:.85"></span></span>
+<span style="width:36px;height:36px;border-radius:6px;display:flex;align-items:center;justify-content:center"><span style="width:20px;height:20px;border-radius:4px;background:var(--ink3);opacity:.45"></span></span>
+<span style="width:36px;height:36px;border-radius:6px;display:flex;align-items:center;justify-content:center"><span style="width:20px;height:20px;border-radius:4px;background:var(--ink3);opacity:.45"></span></span>
+<span style="width:36px;height:36px;border-radius:6px;display:flex;align-items:center;justify-content:center"><span style="width:20px;height:20px;border-radius:4px;background:var(--ink3);opacity:.45"></span></span>
+</div>
+<div style="margin-left:auto;display:flex;align-items:center;gap:2px">
+<span style="font-family:'Material Symbols Rounded';font-size:18px;padding:0 6px;color:var(--ink2)">expand_less</span>
+<sc-if value="{{ appRunning }}"><button onClick="{{ toggleTray }}" title="freewheel" style="width:34px;height:38px;border:none;border-radius:5px;background:{{ trayBtnBg }};display:flex;align-items:center;justify-content:center;cursor:pointer" style-hover="background:var(--hover)">
+<span style="position:relative;width:16px;height:16px;display:inline-block"><span style="{{ ti.disc }}"></span><span style="{{ ti.hole }}"></span><sc-if value="{{ ti.badge }}"><span style="position:absolute;right:-3px;top:-3px;width:7px;height:7px;border-radius:50%;background:var(--warn);box-shadow:0 0 0 1.5px var(--taskbar)"></span></sc-if></span>
+</button></sc-if>
+<span style="font-family:'Material Symbols Rounded';font-size:18px;padding:0 6px">wifi</span>
+<span style="font-family:'Material Symbols Rounded';font-size:18px;padding:0 6px">volume_up</span>
+<div style="display:flex;flex-direction:column;align-items:flex-end;font-size:12px;line-height:1.35;padding:0 8px"><span>10:42</span><span>11/4/2026</span></div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ hasToast }}"><div style="position:absolute;left:50%;bottom:{{ toastBottom }}px;transform:translateX(-50%);z-index:40;background:#1f1f22;color:#f3f3f1;padding:10px 16px;border-radius:10px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.25);animation:fwpop .2s ease;max-width:520px;text-align:center">{{ toast }}</div></sc-if>
+</div>
+
+<div style="width:288px;flex:none;background:#151618;color:#e6e6e4;font-family:system-ui,sans-serif;font-size:12.5px;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:14px;border-left:1px solid #000">
+<div><div style="font-size:13px;font-weight:700">Prototype controls</div><div style="color:#8d8d93;margin-top:3px;line-height:1.4">Pretend to be the computer and the Speed Editor.</div></div>
+<div style="display:flex;flex-direction:column;gap:6px">
+<div style="color:#8d8d93;font-weight:600">Press a key on the Speed Editor</div>
+<div style="display:flex;flex-wrap:wrap;gap:4px"><sc-for list="{{ simQuick }}" as="q"><button onClick="{{ q.onClick }}" style="height:28px;padding:0 9px;border-radius:5px;border:none;background:#2c2d31;color:#eee;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.03em">{{ q.label }}</button></sc-for></div>
+<div style="display:flex;gap:4px"><select value="{{ simKey }}" onChange="{{ onSimKey }}" style="flex:1;min-width:0;height:30px;border-radius:5px;border:none;background:#2c2d31;color:#eee;padding:0 6px"><sc-for list="{{ allKeyIds }}" as="o"><option value="{{ o }}">{{ o }}</option></sc-for></select><button onClick="{{ simPress }}" style="height:30px;padding:0 12px;border-radius:5px;border:none;background:#e8e8e6;color:#151618;font-weight:700;cursor:pointer">Press</button></div>
+<div style="display:flex;gap:4px"><button onClick="{{ turnLeft }}" style="flex:1;height:30px;border-radius:5px;border:none;background:#2c2d31;color:#eee;cursor:pointer">↺ Turn wheel left</button><button onClick="{{ turnRight }}" style="flex:1;height:30px;border-radius:5px;border:none;background:#2c2d31;color:#eee;cursor:pointer">Turn right ↻</button></div>
+<div style="background:#0d0e10;border-radius:6px;padding:8px 10px;min-height:76px;display:flex;flex-direction:column;gap:3px;font-size:11.5px;line-height:1.35"><sc-for list="{{ logRows }}" as="l"><span style="color:{{ l.c }}">{{ l.t }}</span></sc-for><sc-if value="{{ noLog }}"><span style="color:#6c6c72">What the Speed Editor did shows up here.</span></sc-if></div>
+</div>
+<sc-for list="{{ simRows }}" as="row">
+<div style="display:flex;flex-direction:column;gap:5px">
+<div style="color:#8d8d93;font-weight:600">{{ row.title }}</div>
+<div style="display:flex;flex-wrap:wrap;gap:3px;padding:3px;background:#222327;border-radius:7px"><sc-for list="{{ row.opts }}" as="o"><button onClick="{{ o.onClick }}" style="flex:1 1 auto;height:26px;padding:0 8px;border-radius:5px;border:none;cursor:pointer;font-size:11.5px;background:{{ o.bg }};color:{{ o.fg }};font-weight:{{ o.fw }}">{{ o.label }}</button></sc-for></div>
+</div>
+</sc-for>
+<div style="display:flex;flex-direction:column;gap:5px">
+<div style="color:#8d8d93;font-weight:600">Jump to</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px"><sc-for list="{{ simScreens }}" as="b"><button onClick="{{ b.onClick }}" style="height:30px;border-radius:5px;border:none;background:#2c2d31;color:#eee;cursor:pointer;font-size:11.5px">{{ b.label }}</button></sc-for></div>
+</div>
+<div style="display:flex;flex-direction:column;gap:6px">
+<div style="color:#8d8d93;font-weight:600">Tray icon states</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;background:#e9eaec;color:#1c1c1e;border-radius:7px;padding:10px">
+<span style="display:flex;align-items:center;gap:8px"><span style="position:relative;width:16px;height:16px"><span style="position:absolute;inset:0;border-radius:50%;background:#1c1c1e"></span><span style="position:absolute;left:3px;top:3px;width:5px;height:5px;border-radius:50%;background:#e9eaec"></span></span>On</span>
+<span style="display:flex;align-items:center;gap:8px"><span style="position:relative;width:16px;height:16px"><span style="position:absolute;inset:0;border-radius:50%;border:1.6px solid #1c1c1e;opacity:.5"></span><span style="position:absolute;left:3px;top:3px;width:5px;height:5px;border-radius:50%;background:#1c1c1e;opacity:.5"></span></span>Off / paused</span>
+<span style="display:flex;align-items:center;gap:8px"><span style="position:relative;width:16px;height:16px"><span style="position:absolute;inset:0;border-radius:50%;border:1.6px dashed #1c1c1e;opacity:.55"></span><span style="position:absolute;left:3px;top:3px;width:5px;height:5px;border-radius:50%;display:none"></span></span>Not connected</span>
+<span style="display:flex;align-items:center;gap:8px"><span style="position:relative;width:16px;height:16px"><span style="position:absolute;inset:0;border-radius:50%;background:#1c1c1e"></span><span style="position:absolute;left:3px;top:3px;width:5px;height:5px;border-radius:50%;background:#e9eaec"></span><span style="position:absolute;right:-3px;top:-3px;width:7px;height:7px;border-radius:50%;background:#e39a1f"></span></span>Needs attention</span>
+</div>
+</div>
+<a href="freewheel - screens and components.md" style="color:#9fb6ff;font-size:12px">Screens &amp; components list for developers →</a>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;accent&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Pink&quot;,&quot;Blue&quot;,&quot;Green&quot;,&quot;Orange&quot;],&quot;default&quot;:&quot;Pink&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;showDeviceLabels&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
+const KEYDEF=[['SMART INSRT',0,0],['APPND',1,0],['RIPL O/WR',2,0],['CLOSE UP',0,1],['PLACE ON TOP',1,1],['SRC O/WR',2,1],
+['IN',0,2.4,1.5,1,'w'],['OUT',1.5,2.4,1.5,1,'w'],['TRIM IN',0,3.4],['TRIM OUT',1,3.4],['ROLL',2,3.4],['SLIP SRC',0,4.4],['SLIP DEST',1,4.4],['TRANS DUR',2,4.4],['CUT',0,5.4],['DIS',1,5.4],['SMTH CUT',2,5.4],
+['ESC',3.75,0],['SYNC BIN',4.75,0],['AUDIO LEVEL',5.75,0],['FULL VIEW',6.75,0,1,1,'r'],['TRANS',3.75,1],['SPLIT',4.75,1],['SNAP',5.75,1],['RIPL DEL',6.75,1],
+['CAM7',3.75,2.4],['CAM8',4.75,2.4],['CAM9',5.75,2.4],['LIVE O/WR',6.75,2.4],['CAM4',3.75,3.4],['CAM5',4.75,3.4],['CAM6',5.75,3.4],['VIDEO ONLY',6.75,3.4],['CAM1',3.75,4.4],['CAM2',4.75,4.4],['CAM3',5.75,4.4],['AUDIO ONLY',6.75,4.4],['STOP/PLAY',3.75,5.4,4,1],
+['SOURCE',8.5,0,1.5],['TIMELINE',10,0,1.5],['SHTL',8.5,1.4,1,1,'w'],['JOG',9.5,1.4,1,1,'w'],['SCRL',10.5,1.4,1,1,'w']];
+const KC={d:{bg:'#3d3e42',sel:'#4f5056',lab:'#a8a8ad',on:'#f5f5f3',off:'#7c7c82',led:'rgba(0,0,0,.5)'},w:{bg:'#ebebe8',sel:'#ffffff',lab:'#76767c',on:'#1c1c1e',off:'#9b9ba0',led:'rgba(0,0,0,.2)'},r:{bg:'#d33c3f',sel:'#e24c4f',lab:'rgba(255,255,255,.8)',on:'#ffffff',off:'rgba(255,255,255,.75)',led:'rgba(0,0,0,.3)'}};
+const WB=['SHTL','JOG','SCRL'];
+const U=52,OX=34,OY=56,G=6;
+const HUES={Pink:355,Blue:255,Green:150,Orange:45};
+const APPS={win:[['Spotify',150],['Google Chrome',250],['Microsoft Edge',220],['Slack',330],['Zoom',240],['Discord',280],['OBS Studio',10],['Photoshop',235],['Figma',25],['Notepad',200],['Calculator',90],['File Explorer',80]],mac:[['Spotify',150],['Safari',230],['Google Chrome',250],['Slack',330],['Zoom',240],['Discord',280],['OBS Studio',10],['Photoshop',235],['Figma',25],['Notes',85],['Music',15],['Finder',220]]};
+const WMODE={scroll:'Scrolls',keys:'Shortcuts',volume:'Volume',brightness:'Brightness',none:'Nothing'};
+const WK={volume:'a volume knob',appvolume:'an app volume knob',brightness:'a brightness knob'};
+const WKS={volume:'Volume knob',appvolume:'App volume',brightness:'Brightness'};
+const defWheel=()=>({SHTL:{mode:'scroll',left:[],right:[]},JOG:{mode:'scroll',left:[],right:[]},SCRL:{mode:'scroll',left:[],right:[]}});
+const sc=(n,k)=>({type:'shortcut',name:n,keys:k});
+const sample=()=>({
+ main:{'SMART INSRT':sc('Undo',['mod','Z']),'APPND':sc('Redo',['mod','Y']),'IN':sc('Copy',['mod','C']),'OUT':sc('Paste',['mod','V']),'CUT':sc('Save',['mod','S']),'STOP/PLAY':sc('Play/Pause',['Play/Pause']),'AUDIO ONLY':sc('Mute',['Mute']),'CAM1':{type:'app',app:'Spotify'},'CAM2':{type:'app',app:'Google Chrome'},'CAM3':{type:'web',url:'youtube.com'},'FULL VIEW':{type:'wheel',what:'volume'},'ESC':{type:'page',page:'music'},'TRANS':{type:'toggle',keys:['shift']},'SNAP':{type:'hold',keys:['alt']}},
+ music:{'ESC':{type:'back',page:'main'},'CAM1':sc('Previous track',['Previous track']),'CAM2':sc('Play/Pause',['Play/Pause']),'CAM3':sc('Next track',['Next track']),'AUDIO LEVEL':{type:'wheel',what:'appvolume'},'CAM4':{type:'app',app:'Spotify'}}});
+const sampleWheel=()=>({SHTL:{mode:'keys',left:['←'],right:['→']},JOG:{mode:'scroll',left:[],right:[]},SCRL:{mode:'volume',left:[],right:[]}});
+const PAGES2=[{id:'main',name:'Main'},{id:'music',name:'Music'}];
+
+class Component extends DCLogic {
+  state={platform:'win',theme:'light',conn:'usb',resolveOpen:false,on:true,perm:true,perms:{keys:true,device:true},permWaiting:null,quit:false,
+    trayOpen:false,winOpen:true,firstRun:null,permFix:false,tab:'keys',view:'drawing',dataset:'sample',
+    pages:PAGES2,viewPage:'main',devPage:'main',bind:sample(),sel:null,mode:null,rec:null,recLive:[],justSaved:false,
+    lit:{},flash:null,youPressed:null,wheel:sampleWheel(),wheelBtn:'JOG',wheelLive:'JOG',sens:50,wheelOverride:null,wheelRot:0,
+    resolveAuto:true,resolveMore:false,proc:'Resolve',login:true,detailed:false,helpMore:false,updateReady:false,checking:false,upToDate:false,
+    logsSaved:false,backupMsg:null,confirmRestore:false,appQuery:'',webUrl:'',newPage:'',renaming:null,renameVal:'',deleting:null,
+    log:[],simKey:'CUT',toast:null,zoom:1,winZoom:1,appearance:'system',autoUpdate:true,update:null,updProg:0};
+  _t={};
+  componentDidMount(){this.watch();this.startPoll();this._kd=e=>this.onKey(e);window.addEventListener('keydown',this._kd,true);}
+  componentWillUnmount(){this._dEl=null;this._bEl=null;clearInterval(this._iv);window.removeEventListener('keydown',this._kd,true);Object.values(this._t).forEach(clearTimeout);if(this._ro)this._ro.disconnect();}
+  mainRef=(el)=>{if(this._ro){this._ro.disconnect();this._ro=null}if(el){this._ro=new ResizeObserver(([e])=>{const r=e.contentRect;const z=Math.max(0.4,Math.min(1.35,(r.width-8)/666,(r.height-46)/419));if(Math.abs(z-this.state.zoom)>0.01)this.setState({zoom:z})});this._ro.observe(el);}};
+  deskRef=(el)=>{if(this._ro2){this._ro2.disconnect();this._ro2=null}if(el){this._ro2=new ResizeObserver(([e])=>{const r=e.contentRect;const z=Math.max(0.4,Math.min(1,(r.width)/1000,(r.height)/640));if(Math.abs(z-this.state.winZoom)>0.01)this.setState({winZoom:z})});this._ro2.observe(el);}};
+  componentDidUpdate(){this.watch()}
+  watch(){const d=document.querySelector('[data-fw-desk]');if(d!==this._dEl){this._dEl=d;this.deskRef(d)}const b=document.querySelector('[data-fw-board]');if(b!==this._bEl){this._bEl=b;this.mainRef(b)}}
+  mac(){return this.state.platform==='mac'}
+  kn(k){const m=this.mac()?{mod:'⌘',ctrl:'⌃',shift:'⇧',alt:'⌥',meta:'⌘'}:{mod:'Ctrl',ctrl:'Ctrl',shift:'Shift',alt:'Alt',meta:'Win'};return m[k]||k}
+  combo(keys,sep){return (keys||[]).map(k=>this.kn(k)).join(sep??(this.mac()?'':'+'))}
+  later(name,ms,fn){clearTimeout(this._t[name]);this._t[name]=setTimeout(fn,ms)}
+  showToast(t){this.setState({toast:t});this.later('toast',2800,()=>this.setState({toast:null}))}
+  log(t,c){this.setState(s=>({log:[{t,c:c||'#d6d6d4'},...s.log].slice(0,5)}))}
+  pageName(id){return (this.state.pages.find(p=>p.id===id)||{}).name||'another page'}
+  permMissing(){return this.mac()&&!this.state.perm}
+  paused(){return this.state.resolveOpen&&this.state.resolveAuto}
+  active(){const s=this.state;return s.on&&!this.permMissing()&&s.conn!=='none'&&!this.paused()&&!s.quit}
+  inactiveReason(){const s=this.state;return !s.on?'freewheel is Off':this.permMissing()?'needs permission':this.paused()?'paused for Resolve':'not connected'}
+  shortL(b){if(!b)return 'Not set';switch(b.type){case 'shortcut':return b.name||this.combo(b.keys);case 'hold':return 'Hold '+this.combo(b.keys);case 'toggle':return this.combo(b.keys)+' on/off';case 'app':return 'Opens '+b.app.replace(/^(Google|Microsoft) /,'').replace(' Studio','');case 'web':return 'Opens '+b.url;case 'file':return 'Opens file';case 'wheel':return WKS[b.what];case 'page':return '→ '+this.pageName(b.page);case 'back':return '← Back to '+this.pageName(b.page);}return ''}
+  longL(b){if(!b)return 'Not set';switch(b.type){case 'shortcut':return b.name?`${b.name} (${this.combo(b.keys,' + ')})`:'Presses '+this.combo(b.keys,' + ');case 'hold':return 'Holds '+this.combo(b.keys,' + ')+' while held';case 'toggle':return 'Turns '+this.combo(b.keys,' + ')+' on and off';case 'app':return 'Opens '+b.app;case 'web':return 'Opens '+b.url;case 'file':return 'Opens '+b.file;case 'wheel':return 'Turns the wheel into '+WK[b.what];case 'page':return 'Goes to the '+this.pageName(b.page)+' page';case 'back':return 'Back to '+this.pageName(b.page);}return ''}
+  keyName(e){if(e.code&&e.code.startsWith('Key'))return e.code.slice(3);if(e.code&&e.code.startsWith('Digit'))return e.code.slice(5);const m={' ':'Space',ArrowLeft:'←',ArrowRight:'→',ArrowUp:'↑',ArrowDown:'↓',Escape:'Esc',Enter:'Enter',Backspace:'Backspace',Delete:'Delete',Tab:'Tab'};if(m[e.key])return m[e.key];return e.key.length===1?e.key.toUpperCase():e.key}
+  onKey(e){const s=this.state;if(!s.rec)return;e.preventDefault();e.stopPropagation();
+    const modK={Control:'ctrl',Shift:'shift',Alt:'alt',Meta:'meta'}[e.key];const mac=this.mac();
+    const mapMod=k=>k==='ctrl'?(mac?'ctrl':'mod'):k==='meta'?(mac?'mod':'meta'):k;
+    const single=s.rec==='main'&&(s.mode==='hold'||s.mode==='toggle');
+    if(single){this.finishRec([modK?mapMod(modK):this.keyName(e)]);return}
+    const mods=[];if(e.ctrlKey)mods.push(mac?'ctrl':'mod');if(e.metaKey)mods.push(mac?'mod':'meta');if(e.altKey)mods.push('alt');if(e.shiftKey)mods.push('shift');
+    if(modK){this.setState({recLive:mods});return}
+    this.finishRec([...mods,this.keyName(e)]);}
+  finishRec(keys){const s=this.state;const t=s.rec;
+    if(t==='main')this.applyBind({type:s.mode,keys});
+    else{const w={...s.wheel,[s.wheelBtn]:{...s.wheel[s.wheelBtn],[t]:keys}};this.setState({wheel:w});}
+    this.setState({rec:null,recLive:[]});}
+  applyBind(b){const s=this.state;const vp=s.viewPage;this.setState({bind:{...s.bind,[vp]:{...(s.bind[vp]||{}),[s.sel]:b}},justSaved:true,rec:null});this.later('saved',2600,()=>this.setState({justSaved:false}))}
+  clearKey(){const s=this.state;const m={...(s.bind[s.viewPage]||{})};delete m[s.sel];this.setState({bind:{...s.bind,[s.viewPage]:m},mode:null,rec:null,justSaved:false})}
+  linkPage(id){const s=this.state;const vp=s.viewPage;this.setState({bind:{...s.bind,[vp]:{...(s.bind[vp]||{}),[s.sel]:{type:'page',page:id}},[id]:{...(s.bind[id]||{}),[s.sel]:{type:'back',page:vp}}},justSaved:true});this.later('saved',2600,()=>this.setState({justSaved:false}))}
+  createPage(name){const s=this.state;name=(name||'').trim()||'New page';const id='p'+Date.now();this.setState({pages:[...s.pages,{id,name}],newPage:''},()=>{this.linkPage(id);this.showToast(`Made the “${name}” page. On it, ${s.sel} takes you back.`)})}
+  press(id){const s=this.state;
+    if(s.quit){this.log('freewheel isn’t running','#8d8d93');return}
+    if(s.conn==='none'){this.log('Speed Editor isn’t connected','#8d8d93');return}
+    this.later('flash',2200,()=>this.setState({flash:null,youPressed:null}));
+    const ui={flash:id,youPressed:id};const onKeys=s.winOpen&&s.firstRun===null&&!s.permFix&&s.tab==='keys';
+    if(onKeys){ui.sel=id;ui.mode=null;ui.rec=null;ui.viewPage=s.devPage;ui.deleting=null}
+    if(WB.includes(id)){ui.wheelLive=id;ui.wheelOverride=null;ui.wheelBtn=id;this.setState(ui);this.log(`${id}: the wheel now ${WMODE[s.wheel[id].mode].toLowerCase()==='scrolls'?'scrolls':'does '+WMODE[s.wheel[id].mode].toLowerCase()}`);return}
+    if(!this.active()){this.setState(ui);this.log(`${id}: nothing happened (${this.inactiveReason()})`,'#8d8d93');return}
+    const b=(s.bind[s.devPage]||{})[id];
+    if(!b){this.setState(ui);this.log(`${id}: not set yet`,'#8d8d93');return}
+    let msg='';
+    switch(b.type){
+      case 'shortcut':msg=`Pressed ${this.combo(b.keys,' + ')}`;break;
+      case 'hold':msg=`Held ${this.combo(b.keys,' + ')} down while ${id} was held`;break;
+      case 'toggle':{const k=s.devPage+'|'+id;const on=!s.lit[k];ui.lit={...s.lit,[k]:on};msg=on?`${this.combo(b.keys)} held down · key light on`:`${this.combo(b.keys)} let go · key light off`;break}
+      case 'app':msg=`Opened ${b.app}`;break;case 'web':msg=`Opened ${b.url}`;break;case 'file':msg=`Opened ${b.file}`;break;
+      case 'wheel':{const on=!(s.wheelOverride&&s.wheelOverride.key===id);ui.wheelOverride=on?{key:id,what:b.what,page:s.devPage}:null;msg=on?`The wheel is now ${WK[b.what]}`:'The wheel is back to normal';break}
+      case 'page':case 'back':ui.devPage=b.page;if(onKeys)ui.viewPage=b.page;msg=`Switched to the ${this.pageName(b.page)} page`;break;}
+    this.setState(ui);this.log(`${id}: ${msg}`,'#9ee6b8');}
+  turn(dir){const s=this.state;if(s.conn==='none'||s.quit){this.log('Speed Editor isn’t connected','#8d8d93');return}
+    this.setState({wheelRot:s.wheelRot+dir*40});
+    if(!this.active()){this.log(`Wheel: nothing happened (${this.inactiveReason()})`,'#8d8d93');return}
+    const o=s.wheelOverride,w=s.wheel[s.wheelLive],m=o?o.what:w.mode,up=dir>0;
+    const k=up?w.right:w.left;
+    const msg={scroll:up?'Scrolled down':'Scrolled up',volume:up?'Volume up':'Volume down',appvolume:up?'App volume up':'App volume down',brightness:up?'Brighter':'Dimmer',none:'Nothing (wheel is set to do nothing)',keys:k&&k.length?'Pressed '+this.combo(k,' + '):'No shortcut recorded for that side yet'}[m];
+    this.log('Wheel: '+msg,'#9ee6b8');}
+  setConn(v){this.setState({conn:v});}
+  startFirstRun(){const mac=this.mac();this.setState({firstRun:0,permFix:false,winOpen:true,quit:false,trayOpen:false,conn:'none',bind:{main:{}},pages:[{id:'main',name:'Main'}],viewPage:'main',devPage:'main',sel:null,mode:null,lit:{},wheel:defWheel(),wheelOverride:null,perm:!mac,perms:{keys:!mac,device:!mac},dataset:'empty',tab:'keys',update:null})}
+  frNext(){const s=this.state;
+    if(s.firstRun===0){this.setState({firstRun:1});if(s.conn==='none')this.later('found',3200,()=>{if(this.state.firstRun===1&&this.state.conn==='none')this.setState({conn:'usb'})});return}
+    if(s.firstRun===1){if(this.mac()&&!s.perm){this.setState({firstRun:2});return}this.finishFirstRun()}}
+  finishFirstRun(){this.setState({firstRun:null,tab:'keys',sel:null});this.showToast('You’re all set. Your wheel already scrolls — give it a spin.')}
+  grantPerm(k){this.setState({permWaiting:k});this.later('perm',1400,()=>{const perms={...this.state.perms,[k]:true};this.setState({perms,permWaiting:null,perm:perms.keys&&perms.device})})}
+  loadData(v){if(v==='empty')this.setState({dataset:'empty',bind:{main:{}},pages:[{id:'main',name:'Main'}],viewPage:'main',devPage:'main',sel:null,mode:null,lit:{},wheel:defWheel(),wheelOverride:null});
+    else this.setState({dataset:'sample',bind:sample(),pages:PAGES2,viewPage:'main',devPage:'main',sel:null,mode:null,lit:{},wheel:sampleWheel()})}
+  startDownload(){this.setState({update:'downloading',updProg:0,updStart:Date.now()})}
+  tickUpdate(){const s=this.state;if(!s.updStart)return;const el=Date.now()-s.updStart;
+    if(s.update==='downloading'){const p=Math.min(100,Math.round(el/3200*100));if(p>=100)this.setState({update:'ready',updProg:100,updStart:null});else if(p!==s.updProg)this.setState({updProg:p})}
+    else if(s.update==='restarting'&&el>1600){this.setState({update:null,updStart:null});this.showToast('Updated to freewheel 1.5.0')}}
+  restartUpdate(){this.setState({update:'restarting',trayOpen:false,updStart:Date.now()})}
+  checkUpdates(){this.setState({checking:true,upToDate:false,trayOpen:false});this.later('upd',1300,()=>{this.setState({checking:false,upToDate:true});this.showToast('You’re up to date.')})}
+
+  measure(){const d=document.querySelector('[data-fw-desk]');const b=document.querySelector('[data-fw-board]');const o={};
+    if(d){const w=d.clientWidth-32,hh=d.clientHeight-32;const z=Math.max(0.4,Math.min(1,w/1000,hh/640));if(Math.abs(z-this.state.winZoom)>0.01)o.winZoom=z}
+    if(b){const z=Math.max(0.4,Math.min(1.35,(b.clientWidth-8)/666,(b.clientHeight-46)/419));if(Math.abs(z-this.state.zoom)>0.01)o.zoom=z}
+    if(Object.keys(o).length)this.setState(o)}
+  startPoll(){window.__fwCur=this;if(!window.__fwPoll||Date.now()-(window.__fwBeat||0)>400){clearInterval(window.__fwPoll);window.__fwBeat=Date.now();window.__fwPoll=setInterval(()=>{window.__fwBeat=Date.now();const c=window.__fwCur;if(c){try{c.measure()}catch(e){}}},150)}
+    if(!window.__fwRs){window.__fwRs=1;window.addEventListener('resize',()=>{const c=window.__fwCur;if(c)try{c.startPoll();c.measure()}catch(e){}})}}
+  renderVals(){
+    this.startPoll();
+    const s=this.state,mac=s.platform==='mac',dark=(s.appearance==='system'?s.theme:s.appearance)==='dark';
+    const hue=HUES[this.props.accent]??355;
+    const A=`oklch(${dark?0.74:0.57} 0.17 ${hue})`,AS=`oklch(${dark?0.74:0.57} 0.17 ${hue} / ${dark?0.18:0.11})`,AK=`oklch(0.7 0.18 ${hue})`;
+    const T=dark?{desk:'#262a31',bg:'#1e1e20',panel:'#28282b',sunk:'#202022',ink:'#f1f1ef',ink2:'#b3b3b8',ink3:'#8a8a90',line:'rgba(255,255,255,0.08)',line2:'rgba(255,255,255,0.16)',hover:'rgba(255,255,255,0.06)',menu:'#2b2b2e',taskbar:'rgba(30,31,34,0.95)',menubar:'rgba(30,31,34,0.9)',shadow:'0 24px 70px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.3)'}:{desk:'#d7dce3',bg:'#f7f7f5',panel:'#ffffff',sunk:'#f0f0ed',ink:'#1c1c1e',ink2:'#56565c',ink3:'#86868c',line:'rgba(0,0,0,0.08)',line2:'rgba(0,0,0,0.15)',hover:'rgba(0,0,0,0.045)',menu:'#fbfbfa',taskbar:'rgba(240,241,243,0.95)',menubar:'rgba(244,245,247,0.9)',shadow:'0 24px 70px rgba(20,30,50,0.22), 0 2px 8px rgba(0,0,0,0.08)'};
+    const WARN='oklch(0.7 0.15 65)',GOOD='oklch(0.62 0.14 150)';
+    const rootStyle={position:'fixed',inset:0,display:'flex',fontFamily:mac?'-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif':'"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif',color:T.ink,WebkitFontSmoothing:'antialiased','--accent':A,'--accentSoft':AS,'--accentInk':dark?'#0d1016':'#ffffff','--winRadius':mac?'12px':'8px','--warn':WARN,'--good':GOOD};
+    Object.keys(T).forEach(k=>rootStyle['--'+k]=T[k]);
+    const set=o=>()=>this.setState(o);
+    const permMissing=this.permMissing(),paused=this.paused(),active=this.active();
+    const connText={usb:'Connected by USB',bt:'Connected by Bluetooth · 64%',btlow:'Connected by Bluetooth · 12%',none:'Not connected'}[s.conn];
+    let statusText,statusDot;
+    if(!s.on){statusText='Off: Resolve can use it';statusDot=T.ink3}
+    else if(permMissing){statusText='Needs permission (click to fix)';statusDot=WARN}
+    else if(s.conn==='none'){statusText='Looking for your Speed Editor…';statusDot=T.ink3}
+    else if(paused){statusText='Paused: DaVinci Resolve is open';statusDot=T.ink3}
+    else{statusText=connText;statusDot=s.conn==='btlow'?WARN:GOOD}
+    const ts=(permMissing||(s.conn==='btlow'&&s.on))?'attention':s.conn==='none'?'none':(!s.on||paused)?'off':'on';
+    const filled=ts==='on'||ts==='attention';const holeBg=mac?T.menubar:T.taskbar;
+    const ti={disc:{position:'absolute',inset:0,borderRadius:'50%',background:filled?T.ink:'transparent',border:filled?'none':`1.6px ${ts==='none'?'dashed':'solid'} ${T.ink}`,opacity:filled?1:(ts==='none'?0.55:0.5)},hole:{position:'absolute',left:3,top:3,width:5,height:5,borderRadius:'50%',background:filled?holeBg:T.ink,opacity:filled?1:0.5,display:ts==='none'?'none':'block'},badge:ts==='attention'};
+    const openPermFix=()=>this.setState({permFix:true,winOpen:true,trayOpen:false,quit:false});
+    const openSettings=()=>this.setState({winOpen:true,trayOpen:false,quit:false});
+    const statusClick=()=>permMissing?openPermFix():openSettings();
+    const sw=(v,fn)=>({track:v?A:T.line2,knob:v?21:3,onClick:fn});
+    const toggleOn=()=>{const on=!this.state.on;this.setState({on});this.showToast(on?'freewheel is On. Your Speed Editor runs your shortcuts.':'freewheel is Off. DaVinci Resolve can use your Speed Editor.')};
+    let notice=null;const nb={warn:'oklch(0.85 0.1 75 / 0.22)',muted:T.sunk};
+    if(permMissing)notice={icon:'lock',bg:nb.warn,fg:WARN,title:'freewheel needs your permission.',text:'Without it, your Speed Editor can’t press keys for you.',action:'Fix this',onAction:openPermFix};
+    else if(!s.on)notice={icon:'power_settings_new',bg:nb.muted,fg:T.ink2,title:'freewheel is Off.',text:'Your Speed Editor is free for DaVinci Resolve.',action:'Turn on',onAction:toggleOn};
+    else if(s.conn==='none')notice={icon:'usb',bg:nb.muted,fg:T.ink2,title:'Looking for your Speed Editor…',text:'Plug it in, or switch it on to connect by Bluetooth. You can still set up keys.'};
+    else if(paused)notice={icon:'pause_circle',bg:nb.muted,fg:T.ink2,title:'Paused while DaVinci Resolve is open.',text:'Your shortcuts come back when you close Resolve.'};
+    else if(s.conn==='btlow')notice={icon:'battery_alert',bg:nb.warn,fg:WARN,title:'Battery is low (12%).',text:'Plug in the USB cable to charge. It keeps working while it charges.'};
+    if(notice)notice.hasAction=!!notice.action;
+    const showSetup=s.firstRun!==null||s.permFix;
+    const tabs=[['keys','Keys','keyboard'],['wheel','Wheel','trip_origin'],['resolve','DaVinci Resolve','movie'],['general','General','tune'],['help','Help & backup','help']].map(([id,label,icon])=>({label,icon,onClick:set({tab:id,rec:null}),bg:s.tab===id?AS:'transparent',fg:s.tab===id?A:T.ink2,fw:s.tab===id?600:500}));
+    // keys
+    const vp=s.viewPage,binds=s.bind[vp]||{};
+    const keys=KEYDEF.map(([id,x,y,w=1,h=1,c='d'])=>{const P=KC[c];const b=binds[id];const isWB=WB.includes(id);const sel=s.sel===id;const fl=s.flash===id;
+      const lit=!!s.lit[vp+'|'+id]||(isWB&&s.wheelLive===id)||(s.wheelOverride&&s.wheelOverride.key===id&&s.wheelOverride.page===vp);
+      const does=isWB?WMODE[s.wheel[id].mode]:this.shortL(b);const isSet=isWB||!!b;
+      return {id,label:id,lit,does,title:`${id}: ${isWB?'Wheel button':this.longL(b)}`,onClick:()=>this.setState({sel:id,mode:null,rec:null,deleting:null}),
+        st:{position:'absolute',left:OX+x*U+G/2,top:OY+y*U+G/2,width:w*U-G,height:h*U-G,borderRadius:5,border:'none',padding:'9px 4px 4px',display:'flex',flexDirection:'column',justifyContent:'center',alignItems:'center',gap:2,textAlign:'center',cursor:'pointer',background:fl?AK:(sel?P.sel:P.bg),boxShadow:sel?`0 0 0 2px #1c1c1e, 0 0 0 4px ${AK}`:(c==='d'?'inset 0 -3px 0 rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.07)':'inset 0 -3px 0 rgba(0,0,0,.16), inset 0 1px 0 rgba(255,255,255,.5)'),transition:'background .2s, box-shadow .15s',fontFamily:'inherit',overflow:'hidden'},
+        ledSt:{position:'absolute',top:4,left:'50%',marginLeft:-5,width:10,height:2.5,borderRadius:2,background:lit?'#ffb547':P.led,boxShadow:lit?'0 0 6px 2px rgba(255,181,71,.75)':'none'},
+        labSt:{fontSize:7,letterSpacing:'0.03em',fontWeight:700,lineHeight:1.15,color:fl?'rgba(255,255,255,.85)':P.lab,maxHeight:17,overflow:'hidden'},
+        doesSt:{fontSize:w>2?11:9.5,fontWeight:600,lineHeight:1.15,color:fl?'#fff':(isSet?P.on:P.off),display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden',wordBreak:'break-word'}}});
+    const pagePills=s.pages.map((p,i)=>{const act=p.id===vp;return {name:p.name,active:act,live:p.id===s.devPage&&s.conn!=='none',editing:s.renaming===p.id,notEditing:s.renaming!==p.id,canDelete:act&&i>0,tip:act?'Double-click to rename':'Show this page',
+      bg:act?A:T.panel,fg:act?(dark?'#0d1016':'#fff'):T.ink2,border:act?A:T.line,
+      onClick:()=>this.setState({viewPage:p.id,sel:null,mode:null,rec:null}),onRename:()=>this.setState({renaming:p.id,renameVal:p.name}),onDelete:()=>this.setState({deleting:p.id})}});
+    const commitRename=()=>{const st=this.state;if(!st.renaming)return;const v=st.renameVal.trim();this.setState({pages:st.pages.map(p=>p.id===st.renaming&&v?{...p,name:v}:p),renaming:null})};
+    const confirmDelete=()=>{const st=this.state,id=st.deleting;const bind={};Object.keys(st.bind).forEach(pid=>{if(pid===id)return;const m={};Object.entries(st.bind[pid]).forEach(([k,b])=>{if(!(b.type==='page'&&b.page===id))m[k]=b});bind[pid]=m});
+      this.setState({pages:st.pages.filter(p=>p.id!==id),bind,deleting:null,viewPage:'main',devPage:st.devPage===id?'main':st.devPage,sel:null,mode:null})};
+    const addPage=()=>{const st=this.state;const id='p'+Date.now();const name='Page '+(st.pages.length+1);this.setState({pages:[...st.pages,{id,name}],bind:{...st.bind,[id]:{}},viewPage:id,renaming:id,renameVal:name,sel:null,mode:null});this.showToast('To reach this page, pick a key on another page and choose “Switch to another set of keys”.')};
+    const viewOpts=[['drawing','Drawing','grid_view'],['list','List','list']].map(([v,l,i])=>({label:l,icon:i,onClick:set({view:v}),bg:s.view===v?T.panel:'transparent',fg:s.view===v?T.ink:T.ink2,sh:s.view===v?'0 1px 2px rgba(0,0,0,.12)':'none'}));
+    const grp=(title,list)=>({title,rows:list.map(([id],i)=>{const b=binds[id];const isWB=WB.includes(id);return {label:id,does:isWB?'Wheel button · '+WMODE[s.wheel[id].mode]:this.longL(b),fg:(b||isWB)?T.ink:T.ink3,topLine:i?T.line:'transparent',bg:s.sel===id?AS:'transparent',lit:!!s.lit[vp+'|'+id],onClick:()=>this.setState({sel:id,mode:null,rec:null})}})});
+    const listGroups=[grp('Left side',KEYDEF.slice(0,17)),grp('Middle',KEYDEF.slice(17,38)),grp('Right side, above the wheel',KEYDEF.slice(38))];
+    // panel
+    const sel=s.sel,selB=sel?binds[sel]:null,isWBsel=WB.includes(sel);
+    const pBack=!!(sel&&selB&&selB.type==='back'),pWheelBtn=!!(sel&&isWBsel),normal=!!sel&&!pBack&&!pWheelBtn;
+    const pChoices=normal&&!s.mode,pDetail=normal&&!!s.mode;
+    const curType=selB?({web:'app',file:'app'}[selB.type]||selB.type):'clear';
+    const CH=[['shortcut','keyboard','Press a shortcut','Like Copy, Save or Mute'],['hold','pan_tool','Hold a key while I hold this one','Good for Shift or Alt'],['toggle','toggle_on','Turn a key on and off','Press once to hold it, again to let go'],['app','apps','Open an app or website','Spotify, a file, a web page…'],['wheel','volume_up','Turn the wheel into…','A volume or brightness knob'],['page','tab','Switch to another set of keys','Pages like Music or Browser'],['clear','block','Do nothing','Clear this key']];
+    const choices=CH.map(([t,icon,title,sub])=>{const cur=curType===t;return {icon,title,sub,current:cur,border:cur?A:T.line,bg:cur?AS:T.panel,iconBg:cur?A:T.sunk,iconFg:cur?(dark?'#0d1016':'#fff'):T.ink2,
+      onClick:()=>{if(t==='clear'){this.clearKey();return}const rec=(['shortcut','hold','toggle'].includes(t)&&curType!==t)?'main':null;this.setState({mode:t,rec,recLive:[],appQuery:'',webUrl:''})}}});
+    const MT={shortcut:'Press a shortcut',hold:'Hold a key while I hold this one',toggle:'Turn a key on and off',app:'Open an app or website',wheel:'Turn the wheel into…',page:'Switch to another set of keys'};
+    const MS={shortcut:`When you press ${sel}, freewheel presses this shortcut for you.`,hold:`The key stays held down for as long as you hold ${sel}.`,toggle:`Press ${sel} once to hold the key down. Press it again to let go.`,app:'',wheel:`Press ${sel} and the wheel becomes a knob for:`,page:'Pages are extra sets of keys, like “Music” or “Browser”. This key takes you to one.'};
+    const recM=['shortcut','hold','toggle'].includes(s.mode)&&normal;
+    const capsArr=k=>(k||[]).map((x,i)=>({k:this.kn(x),plus:i>0}));
+    const listening=s.rec==='main';const doneKeys=selB&&selB.keys&&selB.type===s.mode?selB.keys:null;
+    const capsM=listening?s.recLive:(doneKeys||[]);
+    const recMain=[{idle:!listening&&!doneKeys,listening,done:!listening&&!!doneKeys,hasCaps:capsM.length>0,caps:capsArr(capsM),onClick:set({rec:'main',recLive:[]}),borderStyle:listening||doneKeys?'solid':'dashed',borderColor:listening?A:(doneKeys?T.line2:T.line2),bg:listening?AS:T.bg,
+      idleHint:s.mode==='shortcut'?'Then press the keys together on your keyboard':'Then press one key, like Shift',listenText:s.mode==='shortcut'?'Listening… press your shortcut':'Listening… press a key'}];
+    const presetsList=s.mode==='shortcut'?[['Copy',['mod','C']],['Paste',['mod','V']],['Undo',['mod','Z']],['Redo',mac?['mod','shift','Z']:['mod','Y']],['Save',['mod','S']],['Play/Pause',['Play/Pause']],['Mute',['Mute']]]:[[null,['shift']],[null,['mod']],[null,['alt']]];
+    const presets=presetsList.map(([n,k])=>{const cur=selB&&selB.type===s.mode&&(n?selB.name===n:this.combo(selB.keys)===this.combo(k));const media=k.length===1&&k[0].length>2&&!n?false:k[0]===n;
+      return {name:n||this.combo(k),combo:n&&!media?this.combo(k):'',border:cur?A:T.line2,bg:cur?AS:T.panel,onClick:()=>this.applyBind(n?sc(n,k):{type:s.mode,keys:k})}});
+    const apps=APPS[s.platform].filter(([n])=>n.toLowerCase().includes(s.appQuery.toLowerCase()));
+    const appRows=apps.map(([n,h],i)=>{const cur=selB&&selB.type==='app'&&selB.app===n;return {name:n,initial:n[0],color:`oklch(0.62 0.13 ${h})`,topLine:i?T.line:'transparent',bg:cur?AS:T.panel,current:cur,onClick:()=>this.applyBind({type:'app',app:n})}});
+    const useWeb=()=>{const u=this.state.webUrl.trim().replace(/^https?:\/\//,'').replace(/\/$/,'');if(u)this.applyBind({type:'web',url:u})};
+    const wheelKeyOpts=[['volume','volume_up','System volume'],['appvolume','graphic_eq','Volume of the app I’m using'],['brightness','light_mode','Screen brightness']].map(([w,icon,title])=>{const cur=selB&&selB.type==='wheel'&&selB.what===w;return {icon,title,current:cur,border:cur?A:T.line,bg:cur?AS:T.panel,onClick:()=>this.applyBind({type:'wheel',what:w})}});
+    const otherPages=s.pages.filter(p=>p.id!==vp).map(p=>{const cur=selB&&selB.type==='page'&&selB.page===p.id;return {name:p.name,current:cur,border:cur?A:T.line,bg:cur?AS:T.panel,onClick:()=>this.linkPage(p.id)}});
+    const names=s.pages.map(p=>p.name.toLowerCase());
+    const pageSuggest=['Music','Browser','Editing','Video calls'].filter(n=>!names.includes(n.toLowerCase())).map(n=>({name:n,onClick:()=>this.createPage(n)}));
+    const bset=!!selB&&normal;
+    // wheel tab
+    const wb=s.wheel[s.wheelBtn];
+    const wheelBtns=WB.map(b=>({label:b,does:WMODE[s.wheel[b].mode],live:s.wheelLive===b&&s.conn!=='none',border:s.wheelBtn===b?A:T.line,bg:s.wheelBtn===b?AS:T.panel,onClick:set({wheelBtn:b,rec:null})}));
+    const wheelOpts=[['scroll','swap_vert','Scroll up and down','like a mouse wheel · usual choice'],['keys','keyboard','Press shortcuts','one for left, one for right'],['volume','volume_up','Change the volume',''],['brightness','light_mode','Change screen brightness',''],['none','block','Nothing','']].map(([m,icon,title,sub])=>({icon,title,sub,current:wb.mode===m,border:wb.mode===m?A:T.line,bg:wb.mode===m?AS:T.panel,ring:wb.mode===m?A:T.line2,onClick:()=>this.setState({wheel:{...s.wheel,[s.wheelBtn]:{...wb,mode:m}},rec:m==='keys'&&!wb.left.length?'left':null})}));
+    const recWheel=[['left','rotate_left','Turning left presses'],['right','rotate_right','Turning right presses']].map(([side,icon,label])=>{const l=s.rec===side;const k=wb[side]||[];const caps=l?s.recLive:k;return {icon,label,idle:!l&&!k.length,listening:l,done:!l&&k.length>0,hasCaps:caps.length>0,caps:capsArr(caps),borderStyle:l||k.length?'solid':'dashed',borderColor:l?A:T.line2,bg:l?AS:T.bg,onClick:set({rec:side,recLive:[]})}});
+    const ov=s.wheelOverride;
+    const wheelDoes=ov?WKS[ov.what]:WMODE[s.wheel[s.wheelLive].mode];
+    // tray
+    const trayItems=[{item:1,label:'Open settings…',check:'',onClick:openSettings},{item:1,label:'Start at login',check:s.login?'check':'',onClick:()=>this.setState({login:!s.login})},{divider:1},{item:1,label:'Download logs for support…',check:'',onClick:set({winOpen:true,trayOpen:false,tab:'help',firstRun:null,permFix:false})},{item:1,label:s.update==='ready'?'Restart to update':s.update==='downloading'?'Downloading update…':(s.checking?'Checking for updates…':'Check for updates'),check:'',onClick:s.update==='ready'?()=>this.restartUpdate():()=>this.checkUpdates()},{divider:1},{item:1,label:'Quit freewheel',check:'',onClick:set({quit:true,winOpen:false,trayOpen:false})}];
+    // simulator
+    const opt=(cur,list,fn)=>list.map(([v,l])=>({label:l,onClick:()=>fn(v),bg:cur===v?'#e8e8e6':'transparent',fg:cur===v?'#151618':'#c9c9cc',fw:cur===v?700:500}));
+    const simRows=[{title:'Computer',opts:opt(s.platform,[['win','Windows 11'],['mac','macOS 15']],v=>this.setState({platform:v}))},
+      {title:'Computer appearance',opts:opt(s.theme,[['light','Light'],['dark','Dark']],v=>this.setState({theme:v}))},
+      {title:'Speed Editor',opts:opt(s.conn,[['none','Not found'],['usb','USB'],['bt','Bluetooth 64%'],['btlow','Bluetooth 12%']],v=>this.setConn(v))},
+      {title:'DaVinci Resolve',opts:opt(s.resolveOpen,[[false,'Closed'],[true,'Open']],v=>this.setState({resolveOpen:v}))},
+      {title:'freewheel',opts:opt(s.on,[[true,'On'],[false,'Off']],v=>this.setState({on:v}))}];
+    if(mac)simRows.push({title:'macOS permission',opts:opt(s.perm,[[true,'Allowed'],[false,'Missing']],v=>this.setState({perm:v,perms:v?{keys:true,device:true}:{keys:false,device:true}}))});
+    simRows.push({title:'Keys',opts:opt(s.dataset,[['sample','Several set (2 pages)'],['empty','Empty setup']],v=>this.loadData(v))});
+    const simScreens=[{label:'First run',onClick:()=>this.startFirstRun()},{label:'Settings window',onClick:set({winOpen:true,quit:false,firstRun:null,permFix:false,trayOpen:false})},{label:'Tray menu',onClick:set({trayOpen:true,quit:false})},{label:'New version',onClick:()=>{this.setState({winOpen:true,quit:false,firstRun:null,permFix:false});if(this.state.autoUpdate)this.startDownload();else this.setState({update:'available'})}},{label:'Record a key',onClick:()=>this.setState({winOpen:true,quit:false,firstRun:null,permFix:false,tab:'keys',view:'drawing',sel:'CUT',mode:'shortcut',rec:'main',recLive:[]})},{label:s.quit?'Relaunch app':'Quit app',onClick:set(s.quit?{quit:false,winOpen:true}:{quit:true,winOpen:false,trayOpen:false})}];
+    const frCount=mac&&!(s.perms.keys&&s.perms.device&&s.firstRun!==2&&s.perm)?3:(mac?3:2);
+    const frDots=Array.from({length:mac?3:2},(_,i)=>({w:i===s.firstRun?22:6,bg:i<=s.firstRun?A:T.line2}));
+    const permRows=[['keys','keyboard','Allow freewheel to press keys for you','So your Speed Editor can send shortcuts and change the volume. Opens Privacy & Security → Accessibility.'],['device','usb','Allow freewheel to notice your Speed Editor','So it knows when you press a key. Opens Privacy & Security → Input Monitoring.']].map(([k,icon,title,sub])=>{const g=s.perms[k],w=s.permWaiting===k;return {icon,title,sub,granted:g,waiting:!g&&w,idle:!g&&!w,border:g?GOOD:T.line,onClick:()=>this.grantPerm(k)}});
+    const permOk=s.perms.keys&&s.perms.device;
+    return {rootStyle,isMac:mac,isWin:!mac,appRunning:!s.quit,ti,trayBtnBg:s.trayOpen?T.hover:'transparent',toggleTray:set({trayOpen:!s.trayOpen}),closeTray:set({trayOpen:false}),
+      trayRight:mac?120:12,trayTop:mac?'32px':'auto',trayBottom:mac?'auto':'56px',trayOpen:s.trayOpen&&!s.quit,trayItems,
+      onTitle:s.on?'freewheel is On':'freewheel is Off',onSub:s.on?(paused?'Paused while DaVinci Resolve is open':'Your Speed Editor runs your shortcuts'):'Resolve can use your Speed Editor',onShort:s.on?'On':'Off',
+      winOpen:s.winOpen&&!s.quit,noWin:!s.winOpen||s.quit,noWinText:s.quit?'freewheel isn’t running. Use “Relaunch app” in the prototype controls.':(mac?'freewheel keeps running in the menu bar. Click its icon at the top right to open settings.':'freewheel keeps running in the tray. Click its icon near the clock to open settings.'),
+      closeWin:()=>{this.setState({winOpen:false})},
+      showSetup,showDots:s.firstRun!==null,frDots,fr0:s.firstRun===0,fr1:s.firstRun===1,frLooking:s.conn==='none',frFound:s.conn!=='none',frNotFound:s.conn==='none',frBtnOp:s.conn==='none'?0.4:1,connText,
+      frNext:()=>this.frNext(),openBt:()=>this.showToast('Opens your computer’s Bluetooth settings'),
+      permScreen:s.firstRun===2||s.permFix,permTitle:s.firstRun!==null?'Let freewheel do its job':'freewheel needs your permission',permRows,permNotDone:!permOk,permBtnOp:permOk?1:0.4,permBtn:s.firstRun!==null?'Start using freewheel':'Done',
+      permDone:()=>{if(this.state.firstRun!==null)this.finishFirstRun();else this.setState({permFix:false})},
+      showMain:!showSetup,tabs,statusText,statusDot,statusClick,statusClickWin:permMissing?openPermFix:()=>{},statusCursor:permMissing?'pointer':'default',swOn:sw(s.on,toggleOn),
+      hasUpdate:!!s.update,updTitle:{available:'A new version is available',downloading:'Downloading the new version…',ready:'A new version is ready',restarting:'Restarting freewheel…'}[s.update]||'',updDownloading:s.update==='downloading',updPct:s.updProg,updSpin:(s.update==='downloading'||s.update==='restarting')?'fwspin 1.2s linear infinite':'none',updAvailable:s.update==='available',updReadyNow:s.update==='ready',updCanLater:s.update==='available'||s.update==='ready',startDownload:()=>this.startDownload(),updRestarting:s.update==='restarting',onDownloadDone:()=>{if(this.state.update==='downloading')this.setState({update:'ready',updStart:null})},onRestartDone:()=>{if(this.state.update==='restarting'){this.setState({update:null,updStart:null});this.showToast('Updated to freewheel 1.5.0')}},restartUpdate:()=>this.restartUpdate(),laterUpdate:set({update:null}),tabGeneral:s.tab==='general',swAuto:sw(s.autoUpdate,set({autoUpdate:!s.autoUpdate})),
+      appearOpts:[['system','Match my computer','contrast',null],['light','Light','light_mode','#f7f7f5'],['dark','Dark','dark_mode','#1e1e20']].map(([v,l,i,c])=>({label:l,icon:i,swatch:c||'linear-gradient(90deg,#f7f7f5 50%,#1e1e20 50%)',bar:v==='dark'?'#555':'#ccc',border:s.appearance===v?A:T.line,bg:s.appearance===v?AS:T.panel,onClick:set({appearance:v})})),
+      hasNotice:!!notice,notice:notice||{},
+      tabKeys:s.tab==='keys',tabWheel:s.tab==='wheel',tabResolve:s.tab==='resolve',tabHelp:s.tab==='help',
+      noPages:s.pages.length<2,showPills:s.pages.length>1&&!s.deleting,deletingPage:!!s.deleting,delName:s.deleting?this.pageName(s.deleting):'',confirmDelete,cancelDelete:set({deleting:null}),
+      pagePills,renameVal:s.renameVal,onRename:e=>this.setState({renameVal:e.target.value}),onRenameKey:e=>{if(e.key==='Enter')commitRename();if(e.key==='Escape')this.setState({renaming:null})},commitRename,addPage,viewOpts,
+      viewDrawing:s.view==='drawing',viewList:s.view==='list',mainRef:this.mainRef,deskRef:this.deskRef,winZoom:s.winZoom,zoom:s.zoom,hasYouPressed:!!s.youPressed,noYouPressed:!s.youPressed,youPressed:s.youPressed,
+      boardOp:s.conn==='none'?0.6:1,keys,showLabels:this.props.showDeviceLabels??true,wheelRot:s.wheelRot,wheelDoes,wheelBtnLabel:ov?ov.key:s.wheelLive,goWheel:set({tab:'wheel',rec:null}),listGroups,
+      noSel:!sel,hasSel:!!sel,sel,selNow:isWBsel?'A wheel button':(selB?'Right now: '+this.longL(selB):'Not set yet'),closePanel:set({sel:null,mode:null,rec:null}),
+      pWheelBtn,pBack,backTo:pBack?this.pageName(selB.page):'',viewBackPage:()=>this.setState({viewPage:selB.page,sel:null}),
+      pChoices,choices,pDetail,backToChoices:set({mode:null,rec:null}),modeTitle:MT[s.mode]||'',modeSub:MS[s.mode]||'',hasModeSub:!!MS[s.mode],
+      showRecMain:recM,recMain,cancelRec:set({rec:null,recLive:[]}),quickTitle:s.mode==='shortcut'?'Or pick a common one':'Quick picks',presets,isToggleMode:s.mode==='toggle',
+      mApp:normal&&s.mode==='app',appQuery:s.appQuery,onAppQuery:e=>this.setState({appQuery:e.target.value}),appRows,noApps:!apps.length,chooseFile:()=>this.applyBind({type:'file',file:'Budget 2026.xlsx'}),
+      webUrl:s.webUrl,onWeb:e=>this.setState({webUrl:e.target.value}),onWebKey:e=>{if(e.key==='Enter')useWeb()},useWeb,
+      mWheel:normal&&s.mode==='wheel',wheelKeyOpts,mPage:normal&&s.mode==='page',hasOtherPages:otherPages.length>0,otherPages,newPage:s.newPage,onNewPage:e=>this.setState({newPage:e.target.value}),onNewPageKey:e=>{if(e.key==='Enter')this.createPage(this.state.newPage)},createPageBtn:()=>this.createPage(this.state.newPage),pageSuggest,curPageName:this.pageName(vp),
+      isEmptySetup:Object.keys(s.bind.main||{}).length===0&&s.pages.length===1,
+      showTry:bset&&!s.rec,tryText:s.justSaved?`Saved. Press ${sel} on your Speed Editor to try it.`:`Try it: press ${sel} on your Speed Editor.`,tryIcon:s.justSaved?'check_circle':'touch_app',tryFg:s.justSaved?GOOD:T.ink2,
+      hasOverride:!!ov,overrideKey:ov?ov.key:'',overrideName:ov?WK[ov.what]:'',clearOverride:set({wheelOverride:null}),wheelBtns,wheelBtn:s.wheelBtn,wheelOpts,wheelKeysMode:wb.mode==='keys',recWheel,sens:s.sens,onSens:e=>this.setState({sens:+e.target.value}),
+      swResolve:sw(s.resolveAuto,set({resolveAuto:!s.resolveAuto})),toggleResolveMore:set({resolveMore:!s.resolveMore}),resolveMore:s.resolveMore,resolveMoreIcon:s.resolveMore?'expand_less':'expand_more',proc:s.proc,onProc:e=>this.setState({proc:e.target.value}),resetProc:set({proc:'Resolve'}),
+      saveLogs:()=>{this.setState({logsSaved:true})},logsSaved:s.logsSaved,noop:e=>e.preventDefault(),
+      backup:()=>this.setState({backupMsg:'Saved “My freewheel keys” to your Documents folder.'}),askRestore:set({confirmRestore:true}),confirmRestore:s.confirmRestore,cancelRestore:set({confirmRestore:false}),
+      doRestore:()=>{this.loadData('sample');this.setState({confirmRestore:false,backupMsg:'Your keys were restored from “My freewheel keys”.'})},hasBackupMsg:!!s.backupMsg,backupMsg:s.backupMsg,
+      updateSub:s.checking?'Checking…':s.update==='ready'?'A new version is ready.':s.update==='downloading'?'Downloading the new version…':s.upToDate?'You’re up to date.':'freewheel checks for updates by itself.',checking:s.checking,checkUpdates:()=>this.checkUpdates(),
+      swLogin:sw(s.login,set({login:!s.login})),toggleHelpMore:set({helpMore:!s.helpMore}),helpMore:s.helpMore,helpMoreIcon:s.helpMore?'expand_less':'expand_more',swDetailed:sw(s.detailed,set({detailed:!s.detailed})),
+      hasToast:!!s.toast,toast:s.toast,toastBottom:mac?24:64,
+      simQuick:['CUT','IN','ESC','TRANS','FULL VIEW','CAM1','JOG','SHTL','SCRL'].map(k=>({label:k,onClick:()=>this.press(k)})),allKeyIds:KEYDEF.map(k=>k[0]),simKey:s.simKey,onSimKey:e=>this.setState({simKey:e.target.value}),simPress:()=>this.press(this.state.simKey),
+      turnLeft:()=>this.turn(-1),turnRight:()=>this.turn(1),logRows:s.log,noLog:!s.log.length,simRows,simScreens};
+  }
+}
+</script>
+</body>
+</html>
