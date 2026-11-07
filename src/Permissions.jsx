@@ -1,13 +1,22 @@
 import { useEffect, useState } from "react";
+import Icon from "./Icon.jsx";
+
+// The prototype's row icons.
+const ROW_ICON = { Accessibility: "keyboard", InputMonitoring: "usb" };
 
 // macOS only: get_permissions is empty elsewhere (src-tauri permissions.rs).
 const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
 
 export const LABELS = { Accessibility: "Accessibility", InputMonitoring: "Input Monitoring" };
 
+// The prototype's row titles and helper text; the pane name closes the helper text.
+const TITLES = {
+  Accessibility: "Allow freewheel to press keys for you",
+  InputMonitoring: "Allow freewheel to notice your Speed Editor",
+};
 const ABOUT = {
-  Accessibility: "Lets freewheel press keys and shortcuts for you.",
-  InputMonitoring: "Lets freewheel hear the keys on your Speed Editor.",
+  Accessibility: "So your Speed Editor can send shortcuts and change the volume. Opens Privacy & Security → ",
+  InputMonitoring: "So it knows when you press a key. Opens Privacy & Security → ",
 };
 
 // Runs `check` now, every `poll` ms and whenever `target` (the window) regains
@@ -46,16 +55,30 @@ export default function Permissions({ initial = null, poll = 2000 }) {
   const names = Object.keys(permissions ?? {});
   if (names.length === 0) return null;
   return (
-    <section id="permissions">
-      <h2>Permissions</h2>
-      {Object.values(permissions).includes("Missing") && <p>Needs permission</p>}
+    <section id="permissions" className="permissions-section">
+      <h2 className="section-title">Permissions</h2>
+      {Object.values(permissions).includes("Missing") && (
+        <p className="permissions-status">
+          <span className="status-dot dot-orange" aria-hidden="true" />
+          Needs permission
+        </p>
+      )}
       {names.map((name) => (
-        <div key={name}>
-          <span>{LABELS[name] ?? name}</span>{" "}
+        <div key={name} className={`card card-row permission-card${permissions[name] === "Granted" ? " granted" : ""}`}>
+          <Icon name={ROW_ICON[name] ?? "lock"} className="icon permission-icon" />
+          <div className="grow">
+            <div className="card-title">{TITLES[name] ?? LABELS[name] ?? name}</div>
+            <div className="card-sub">
+              {ABOUT[name]}
+              <span>{LABELS[name] ?? name}</span>.
+            </div>
+          </div>
           {permissions[name] === "Granted" ? (
-            <span>✓ Allowed</span>
+            <span className="allowed">
+              <Icon name="check_circle" /> <span>Allowed</span>
+            </span>
           ) : (
-            <button onClick={() => invoke("open_permission_pane", { permission: name })}>
+            <button className="btn-primary" onClick={() => invoke("open_permission_pane", { permission: name })}>
               Open System Settings
             </button>
           )}
@@ -78,22 +101,26 @@ export function PermissionsScreen({ initial = null, initialAsked = [], poll = 20
   const names = Object.keys(permissions ?? {});
   const allowed = names.length > 0 && names.every((name) => permissions[name] === "Granted");
   return (
-    <section className="first-run" style={{ maxWidth: 540, margin: "0 auto", display: "flex", flexDirection: "column", gap: 12 }}>
-      <h1 style={{ textAlign: "center" }}>Allow freewheel on your Mac</h1>
-      <p style={{ textAlign: "center" }}>
+    <section className="first-run permissions">
+      <h1>{button === "Done" ? "freewheel needs your permission" : "Let freewheel do its job"}</h1>
+      <p className="lead">
         macOS asks you to allow these once. Click a button, switch freewheel on in System Settings, then come back here.
       </p>
       {names.map((name) => {
         const state = rowState(permissions[name], asked.includes(name));
         return (
-          <div key={name} className={`permission-row ${state}`} style={{ display: "flex", alignItems: "center", gap: 14, padding: 16 }}>
-            <div style={{ flex: 1 }}>
-              <strong>{LABELS[name] ?? name}</strong>
-              <div>{ABOUT[name]}</div>
+          <div key={name} className={`permission-row ${state}`}>
+            <Icon name={ROW_ICON[name] ?? "lock"} className="icon permission-icon" />
+            <div className="grow">
+              <strong>{TITLES[name] ?? LABELS[name] ?? name}</strong>
+              <div className="card-sub">
+                {ABOUT[name]}
+                <span>{LABELS[name] ?? name}</span>.
+              </div>
             </div>
             {state === "granted" && (
               <span className="allowed">
-                <span aria-hidden="true">✓</span> <span>Allowed</span>
+                <Icon name="check_circle" /> <span>Allowed</span>
               </span>
             )}
             {state === "waiting" && (
@@ -103,6 +130,7 @@ export function PermissionsScreen({ initial = null, initialAsked = [], poll = 20
             )}
             {state === "idle" && (
               <button
+                className="btn-primary"
                 onClick={() => {
                   setAsked((a) => [...a, name]);
                   openPane(name);
@@ -114,7 +142,7 @@ export function PermissionsScreen({ initial = null, initialAsked = [], poll = 20
           </div>
         );
       })}
-      <button style={{ alignSelf: "center" }} disabled={!allowed} onClick={onDone}>
+      <button className="btn-primary btn-lg" disabled={!allowed} onClick={onDone}>
         {button}
       </button>
     </section>

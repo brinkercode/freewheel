@@ -22,9 +22,11 @@ test("a missing permission shows Needs permission and a button to its pane", () 
   const html = renderToString(
     <Permissions initial={{ Accessibility: "Missing", InputMonitoring: "Granted" }} />,
   );
-  for (const text of ["Permissions", "Needs permission", "Accessibility", "Open System Settings", "Input Monitoring", "✓ Allowed"]) {
+  // "✓ Allowed" became the bundled check_circle icon with "Allowed" (card item 12)
+  for (const text of ["Permissions", "Needs permission", "Accessibility", "Open System Settings", "Input Monitoring", "Allowed"]) {
     expect(html).toContain(text);
   }
+  expect(html).toMatch(/data-icon="check_circle"[^>]*><svg[\s\S]*?<\/span> <span>Allowed<\/span>/);
 });
 
 test("all granted: no Needs permission", () => {

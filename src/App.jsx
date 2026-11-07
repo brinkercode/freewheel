@@ -84,7 +84,7 @@ function Settings({ autoUpdate, storage }) {
     );
   return (
     <>
-      <Toolbar tab={tab} onTab={setTab} state={state} onToggle={status ? () => turn(!state.enabled) : undefined} />
+      <Toolbar tab={tab} onTab={setTab} state={state} onToggle={status ? () => turn(!state.enabled) : undefined} onFix={() => setFixing(true)} />
       <UpdateBanner
         update={update}
         onInstall={() => download(pending.current, setUpdate)}
@@ -116,7 +116,7 @@ function Settings({ autoUpdate, storage }) {
           {tab === "Wheel" && <WheelTab />}
           {tab === "DaVinci Resolve" && <ResolveTab />}
           <Permissions />
-          {tab === "Help & backup" && <Backup onToast={(text) => showToast(setToast, text)} />}
+          {tab === "Help & backup" && <Backup />}
         </main>
       )}
       <Toast text={toast} />

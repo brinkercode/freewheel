@@ -69,7 +69,7 @@ test("the permission fix from the notice bar or the tray status line reuses the 
   done.setItem("freewheel.first-run-done", "1");
   render(<App autoUpdate={false} storage={done} />);
   fireEvent.click(await screen.findByText("Fix this"));
-  expect(screen.getByText("Allow freewheel on your Mac")).toBeTruthy();
+  expect(screen.getByText("freewheel needs your permission")).toBeTruthy();
   expect(screen.getByText("Done").disabled).toBe(true);
   expect(await screen.findByText("Open System Settings")).toBeTruthy();
   expect(screen.queryByText("Start using freewheel")).toBeNull();

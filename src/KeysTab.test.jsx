@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { renderToString } from "react-dom/server";
 import { expect, test, vi } from "vitest";
-import KeysTab, { ButtonList, KeyEditor, PageSelector, handlePress, saveKey } from "./KeysTab.jsx";
+import KeysTab, { ButtonList, KIND_TEXT, KeyEditor, PageSelector, handlePress, saveKey } from "./KeysTab.jsx";
 import Status from "./Status.jsx";
 import { DRAWING, KEYS, LABELS, addPage, comboError, comboFromEvent, deletePage, formatCombo, renamePage } from "./keys.js";
 import { saveErrorText } from "./settingsApi.js";
@@ -28,7 +28,7 @@ test("every Speed Editor key has its printed label and one place in the drawing"
 
 test("the page selector adds, renames and deletes pages", () => {
   const html = renderToString(<PageSelector config={config} page="edit" />);
-  for (const t of [">Main</option>", ">Editing</option>", 'value="Editing"', ">Add page</button>", ">Delete page</button>"]) expect(html).toContain(t);
+  for (const t of [">Main</button>", ">Editing</button>", 'value="Editing"', ">Add page</button>", ">Delete page</button>"]) expect(html).toContain(t);
   const added = addPage(config);
   expect(added.id).toBe("page-3");
   expect(added.config.layers.at(-1)).toEqual({ id: "page-3", name: "Page 3", bindings: {} });
@@ -64,15 +64,38 @@ test("the list has one row per Speed Editor key with its action on the selected 
   expect(renderToString(<ButtonList config={config} page="edit" />)).toContain("<td>CUT</td><td>Hold Space</td>");
 });
 
+test("the list groups the keys in three titled cards, as the prototype's listGroups", () => {
+  const html = renderToString(<ButtonList config={config} page="base" />);
+  const cards = html.split('class="list-group"').slice(1);
+  const titles = cards.map((c) => c.match(/class="list-group-title">([^<]+)</)[1]);
+  expect(titles).toEqual(["Left side", "Middle", "Right side, above the wheel"]);
+  const keysIn = (c) => [...c.matchAll(/<tr[^>]*><td>([^<]+)<\/td>/g)].map((m) => m[1]);
+  expect(keysIn(cards[0])).toEqual(DRAWING[0].flat().map((k) => LABELS[k]));
+  expect(keysIn(cards[0])).toHaveLength(17);
+  expect(keysIn(cards[0])[0]).toBe("SMART INSRT");
+  expect(keysIn(cards[0]).at(-1)).toBe("SMTH CUT");
+  expect(keysIn(cards[1])).toHaveLength(21);
+  expect(keysIn(cards[1])[0]).toBe("ESC");
+  expect(keysIn(cards[1]).at(-1)).toBe("STOP/PLAY");
+  expect(keysIn(cards[2])).toEqual(["SOURCE", "TIMELINE", "SHTL", "JOG", "SCRL"]);
+  // set rows read in --ink, unset ones get is-unset (--ink3)
+  expect(html).toMatch(/<tr aria-selected="false"><td>CUT<\/td>/);
+  expect(html).toMatch(/<tr aria-selected="false" class="is-unset"><td>STOP\/PLAY<\/td>/);
+  const css = readFileSync(new URL("./styles/base.css", import.meta.url), "utf8");
+  expect(css).toMatch(/\.list-group-title \{[^}]*font-size: var\(--fs-caption\); font-weight: var\(--fw-semibold\); color: var\(--ink3\)/);
+  expect(css).toMatch(/tr\.is-unset td:nth-child\(2\) \{ color: var\(--ink3\); \}/);
+});
+
 test("clicking a row opens the action editor for that key", () => {
   const onSelect = vi.fn();
-  const table = ButtonList({ config, page: "base", onSelect });
-  const cut = table.props.children.props.children.find((row) => row.key === "Cut");
+  const groups = ButtonList({ config, page: "base", onSelect }).props.children;
+  const cut = groups.flatMap((g) => g.props.children[1].props.children.props.children).find((row) => row.key === "Cut");
   cut.props.onClick();
   expect(onSelect).toHaveBeenCalledWith("Cut");
   expect(renderToString(<KeysTab initial={config} />)).not.toContain("key-editor");
   const open = renderToString(<KeysTab initial={config} initialSelected="Cut" />);
-  expect(open).toContain("What should CUT do?");
+  expect(open).not.toContain("What should CUT do?");
+  expect(open).toContain("When I press Cut…");
   expect(open).toContain('value="Ctrl+C"');
 });
 
@@ -109,9 +132,9 @@ test("a physical press shows 'You pressed X' for 2 s and selects that key", () =
 });
 
 test("the editor offers Hotkey, Held and Latched", () => {
-  const html = renderToString(<KeyEditor keyName="Cut" action={config.layers[1].bindings.Cut} />);
-  for (const kind of ["Hotkey", "Held", "Latched"]) expect(html).toContain(`<strong>${kind}</strong>`);
-  expect(html).toMatch(/checked=""[^>]*\/><strong>Held/);
+  const html = renderToString(<KeyEditor keyName="Cut" action={config.layers[1].bindings.Cut} initialMode={null} />);
+  for (const kind of ["Hotkey", "Held", "Latched"]) expect(html).toContain(`<strong>${KIND_TEXT[kind][0]}</strong>`);
+  expect(html).toMatch(/checked=""[^>]*\/><span class="choice-icon" data-icon="pan_tool"/);
 });
 
 test("capture records modifiers plus one key and shows it", () => {
@@ -134,7 +157,7 @@ test("an invalid combo shows an inline error and is never saved", async () => {
   const r = await saveKey({ config, pageId: "base", key: "Out", kind: "Latched", combo: combo("", "Ctrl"), save });
   expect(r.error).toBe("Add a key to go with the modifier, like Ctrl+K.");
   expect(save).not.toHaveBeenCalled();
-  const html = renderToString(<KeyEditor keyName="Out" initialError={r.error} />);
+  const html = renderToString(<KeyEditor keyName="Out" initialError={r.error} initialMode="Latched" />);
   expect(html).toMatch(/aria-invalid="true"/);
   expect(html).toContain('role="alert">Add a key to go with the modifier, like Ctrl+K.</p>');
 });

@@ -3,29 +3,36 @@ export default function UpdateBanner({ update, onInstall, onLater, onRestart }) 
   // Checking and up to date show only on the General tab.
   if (!update || update.status === "checking" || update.status === "current") return null;
   const { status, version, progress } = update;
+  const busy = status === "downloading" || status === "restarting";
   return (
     <div role="status" className="update-banner">
+      <span className={`logo-disc${busy ? " is-spinning" : ""}`} aria-hidden="true" />
+      <div className="update-text">
+        {status === "available" && <span className="update-title">freewheel {version} is available.</span>}
+        {status === "downloading" && (
+          <>
+            <span className="update-title">Downloading freewheel {version}…</span>
+            <progress max="100" value={progress ?? undefined} />
+          </>
+        )}
+        {status === "ready" && <span className="update-title">freewheel {version} is ready.</span>}
+        {status === "restarting" && <span className="update-title">Restarting…</span>}
+      </div>
       {status === "available" && (
-        <>
-          <span>freewheel {version} is available.</span>
-          <button onClick={onInstall}>Download and install</button>
-          <button onClick={onLater}>Later</button>
-        </>
-      )}
-      {status === "downloading" && (
-        <>
-          <span>Downloading freewheel {version}…</span>
-          <progress max="100" value={progress ?? undefined} />
-        </>
+        <button className="btn-sm btn-primary" onClick={onInstall}>
+          Download and install
+        </button>
       )}
       {status === "ready" && (
-        <>
-          <span>freewheel {version} is ready.</span>
-          <button onClick={onRestart}>Restart to update</button>
-          <button onClick={onLater}>Later</button>
-        </>
+        <button className="btn-sm btn-primary" onClick={onRestart}>
+          Restart to update
+        </button>
       )}
-      {status === "restarting" && <span>Restarting…</span>}
+      {(status === "available" || status === "ready") && (
+        <button className="btn-sm btn-ghost" onClick={onLater}>
+          Later
+        </button>
+      )}
     </div>
   );
 }
