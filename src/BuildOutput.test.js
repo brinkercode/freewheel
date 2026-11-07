@@ -7,6 +7,7 @@
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { build } from "vite";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
@@ -23,7 +24,7 @@ beforeAll(async () => {
   const env = process.env.NODE_ENV;
   process.env.NODE_ENV = "production";
   try {
-    await build({ root: new URL("..", import.meta.url).pathname, mode: "production", logLevel: "silent", build: { outDir: out, emptyOutDir: true } });
+    await build({ root: fileURLToPath(new URL("..", import.meta.url)), mode: "production", logLevel: "silent", build: { outDir: out, emptyOutDir: true } });
   } finally {
     process.env.NODE_ENV = env;
   }

@@ -8,7 +8,7 @@ use freewheel_core::overrides::{
 };
 
 /// The error of a control this OS has no backend for.
-#[cfg_attr(windows, allow(dead_code))] // Windows has every backend
+#[cfg_attr(any(windows, target_os = "macos"), allow(dead_code))] // Windows has every backend; macOS uses its own reasons
 pub const UNAVAILABLE: &str = "not available on this system";
 
 /// A control that is not there: every step fails with `self.0`.
