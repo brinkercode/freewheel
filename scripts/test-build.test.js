@@ -4,7 +4,7 @@ import { checkWorkflow } from "./check-workflow.mjs";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const wf = read("../.github/workflows/test-build.yml");
-const workflows = ["ci.yml", "release.yml", "test-build.yml", "release-please.yml", "update-e2e.yml"].map((f) => [f, read(`../.github/workflows/${f}`)]);
+const workflows = ["ci.yml", "release.yml", "test-build.yml", "release-please.yml", "update-e2e.yml", "e2e-windows.yml"].map((f) => [f, read(`../.github/workflows/${f}`)]);
 
 // Repo rules: SHA pinning required, selected actions only.
 test.each(workflows)("%s pins every action to a commit SHA from an allowed owner", (_file, text) => {
@@ -38,13 +38,21 @@ test("test-build job runs tauri build on hosted Windows with updater artifacts o
   for (const uses of wf.match(/uses: \S+/g)) expect(uses).toMatch(/@[0-9a-f]{40}$/);
 });
 
-test("test-build job uploads only the portable freewheel.exe, kept 1 day", () => {
+test("test-build job uploads only the portable freewheel.exe and freewheel-simulate.cmd, kept 1 day", () => {
   const upload = wf.match(/- uses: actions\/upload-artifact@[0-9a-f]{40}.*\r?\n((?:\s{8,}.*\r?\n)*)/);
   expect(upload).not.toBeNull();
   expect(upload[1]).toMatch(/^\s+retention-days: 1$/m);
   expect(upload[1]).toMatch(/^\s+if-no-files-found: error$/m);
-  expect(upload[1]).toMatch(/^\s+path: target\/release\/freewheel\.exe$/m);
+  expect(upload[1]).toMatch(/^\s+path: test-build$/m);
+  expect(wf).toContain("cp target/release/freewheel.exe src-tauri/windows/freewheel-simulate.cmd test-build/");
   expect(upload[1]).not.toMatch(/bundle|setup/);
+});
+
+test("freewheel-simulate.cmd starts the exe next to it with --simulate, CRLF", () => {
+  const cmd = read("../src-tauri/windows/freewheel-simulate.cmd");
+  expect(cmd).toMatch(/^@echo off\r\n/);
+  expect(cmd).toContain('start "" "%~dp0freewheel.exe" --simulate\r\n');
+  expect(cmd.replace(/\r\n/g, "")).not.toContain("\n");
 });
 
 // The zero-install gate release.yml runs on what ships, minus its Windows-only

@@ -112,3 +112,19 @@ test("the tray status line asks for the permission fix by the event the settings
   const api = readFileSync("src/settingsApi.js", "utf8");
   expect(api).toContain('FIX_PERMISSIONS_EVENT = "fix-permissions"');
 });
+
+test("the permissions screen shows the permissions that asked for it, live, without get_permissions (--simulate on Windows)", () => {
+  const calls = fakeTauri(() => ({}));
+  const onFinish = vi.fn();
+  const granted = { Accessibility: "Granted", InputMonitoring: "Missing" };
+  const { rerender } = render(<FirstRun state={usb} permissions={granted} step={1} onFinish={onFinish} />);
+  fireEvent.click(screen.getByText("Continue"));
+  const start = screen.getByText("Start using freewheel");
+  expect(screen.getByText("Allow freewheel to press keys for you")).toBeTruthy();
+  expect(start.disabled).toBe(true);
+  rerender(<FirstRun state={usb} permissions={{ ...granted, InputMonitoring: "Granted" }} step={1} onFinish={onFinish} />);
+  expect(screen.getByText("Start using freewheel").disabled).toBe(false);
+  fireEvent.click(screen.getByText("Start using freewheel"));
+  expect(onFinish).toHaveBeenCalledOnce();
+  expect(calls.filter(([cmd]) => cmd === "get_permissions")).toEqual([]);
+});

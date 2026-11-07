@@ -31,18 +31,22 @@ export function watch(check, target, poll) {
   };
 }
 
-/** Polls freewheel-m5-5's checks (get_permissions) unless `initial` is given. */
+/**
+ * Polls freewheel-m5-5's checks (get_permissions) unless `initial` is given;
+ * a given `initial` is followed as it changes (the status event's live view).
+ */
 function usePermissions(initial, poll) {
-  const [permissions, setPermissions] = useState(initial);
+  const [polled, setPolled] = useState(null);
+  const given = initial != null;
   useEffect(() => {
-    if (initial) return undefined;
+    if (given) return undefined;
     const check = () =>
-      invoke("get_permissions").then(setPermissions, (error) =>
+      invoke("get_permissions").then(setPolled, (error) =>
         console.error("freewheel: checking permissions failed:", String(error)),
       );
     return watch(check, window, poll);
-  }, [initial, poll]);
-  return permissions;
+  }, [given, poll]);
+  return initial ?? polled;
 }
 
 const openPane = (name) =>

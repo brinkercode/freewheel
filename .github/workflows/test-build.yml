@@ -1,7 +1,7 @@
 # Test build for freewheel: on demand or on a push to main, builds an
 # unsigned NSIS installer and the portable freewheel.exe on a hosted Windows
 # runner, runs release.yml's zero-install gate on both, and uploads only
-# freewheel.exe as an artifact kept for 1 day. Updater artifacts are off, so
+# freewheel.exe (plus freewheel-simulate.cmd) as an artifact kept for 1 day. Updater artifacts are off, so
 # no signing secret and no updater pubkey are needed.
 name: test-build
 
@@ -63,9 +63,17 @@ jobs:
           if ($install.ExitCode -ne 0) { throw "installer exit $($install.ExitCode)" }
           node scripts/check-windows-exe.mjs "$env:LOCALAPPDATA\freewheel\freewheel.exe"
 
+      # freewheel.exe and, next to it, the double-click freewheel-simulate.cmd
+      # (starts `freewheel.exe --simulate`).
+      - name: Stage freewheel.exe and freewheel-simulate.cmd
+        shell: bash
+        run: |
+          mkdir -p test-build
+          cp target/release/freewheel.exe src-tauri/windows/freewheel-simulate.cmd test-build/
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: freewheel-windows-${{ github.sha }}
-          path: target/release/freewheel.exe
+          path: test-build
           if-no-files-found: error
           retention-days: 1
