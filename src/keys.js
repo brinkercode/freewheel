@@ -50,6 +50,14 @@ const NAMED = {
   Delete: "Delete", Home: "Home", End: "End", PageUp: "PageUp", PageDown: "PageDown",
   ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right",
   ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`F${i + 1}`, `F${i + 1}`])),
+  // The media keys, sent as the OS media keys (core inject.rs MEDIA_KEYS).
+  MediaPlayPause: "PlayPause", AudioVolumeMute: "Mute", AudioVolumeUp: "VolumeUp",
+  AudioVolumeDown: "VolumeDown", MediaTrackNext: "NextTrack", MediaTrackPrevious: "PrevTrack",
+};
+/** What a media key is called on screen, as the prototype names it. */
+export const MEDIA_NAMES = {
+  PlayPause: "Play/Pause", Mute: "Mute", VolumeUp: "Volume up", VolumeDown: "Volume down",
+  NextTrack: "Next track", PrevTrack: "Previous track",
 };
 const SENDABLE = new Set(Object.values(NAMED));
 
@@ -110,10 +118,11 @@ const NAMED_COMBOS = [
   ["Undo", [MOD], "Z"],
   ["Redo", MAC ? [MOD, "Shift"] : [MOD], MAC ? "Z" : "Y"],
   ["Save", [MOD], "S"],
+  ...Object.entries(MEDIA_NAMES).map(([key, name]) => [name, [], key]),
 ];
 const MAC_KEYS = { Meta: "⌘", Ctrl: "⌃", Shift: "⇧", Alt: "⌥" };
 /** A key as the prototype's kn() names it: ⌘ ⌃ ⇧ ⌥ on a Mac, Ctrl Shift Alt Win elsewhere. */
-export const keyName = (k) => (MAC ? MAC_KEYS[k] : { Meta: "Win" }[k]) ?? k;
+export const keyName = (k) => MEDIA_NAMES[k] ?? (MAC ? MAC_KEYS[k] : { Meta: "Win" }[k]) ?? k;
 /** The combo's keys, each named as keyName does. */
 export const comboKeys = (combo) => [...combo.modifiers, combo.key].filter(Boolean).map(keyName);
 /** "Ctrl + Z" (the prototype's combo with a separator). */
@@ -136,7 +145,8 @@ export function appName(path) {
 
 /** What a LaunchApp opens: the website it opens in the browser, else the app's name. */
 export function launchName(v) {
-  if (/(^|[\\/])(explorer\.exe|open)$/i.test(v.path) && /^https?:\/\//.test(v.args?.[0] ?? "")) return appName(v.args[0]);
+  // A website, a Start Menu shortcut or a .app opens through the OS opener: name what it opens.
+  if (/(^|[\\/])(explorer\.exe|open)$/i.test(v.path) && v.args?.[0]) return appName(v.args[0]);
   return appName(v.path);
 }
 
@@ -165,8 +175,10 @@ export function shortLabel(action, config) {
       return `Hold ${comboText(v.combo)}`;
     case "Latched":
       return `${comboText(v.combo)} on/off`;
-    case "LaunchApp":
-      return `Opens ${launchName(v).replace(/^(Google|Microsoft) /, "").replace(" Studio", "")}`;
+    case "LaunchApp": {
+      const opens = `Opens ${launchName(v).replace(/^(Google|Microsoft) /, "").replace(" Studio", "")}`;
+      return v.enabled === false ? `${opens} (off)` : opens;
+    }
     case "LayerPush":
       return `→ ${pageName(config, v.target)}`;
     case "OverrideToggle":
@@ -185,14 +197,16 @@ export function longLabel(action, config) {
   switch (kind) {
     case "Hotkey": {
       const name = comboName(v.combo);
-      return name ? `${name} (${comboText(v.combo, " + ")})` : `Presses ${comboText(v.combo, " + ")}`;
+      const keys = comboText(v.combo, " + ");
+      if (name) return name === keys ? name : `${name} (${keys})`;
+      return `Presses ${keys}`;
     }
     case "Held":
       return `Holds ${comboText(v.combo, " + ")} while held`;
     case "Latched":
       return `Turns ${comboText(v.combo, " + ")} on and off`;
     case "LaunchApp":
-      return `Opens ${launchName(v)}`;
+      return v.enabled === false ? `Opens ${launchName(v)} (off: restored from a file)` : `Opens ${launchName(v)}`;
     case "LayerPush":
       return `Goes to the ${pageName(config, v.target)} page`;
     case "OverrideToggle":

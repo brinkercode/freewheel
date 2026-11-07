@@ -18,6 +18,11 @@ const COMMANDS: &[&str] = &[
     "open_release_page",
     "simulate",
     "sim_jump",
+    "sim_tray",
+    "show_logs_file",
+    "exit_wheel_override",
+    "list_apps",
+    "choose_app",
 ];
 
 fn main() {

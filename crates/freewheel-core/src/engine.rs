@@ -78,6 +78,16 @@ impl Engine {
         std::mem::take(&mut self.override_exited)
     }
 
+    /// The Wheel tab's 'Back to normal': leaves the active dial override,
+    /// as pressing its key again does. Returns whether one was active.
+    pub fn exit_override(&mut self) -> bool {
+        let Some(mode) = self.active_override else {
+            return false;
+        };
+        self.toggle_override(mode);
+        true
+    }
+
     /// Switches the dial to `mode`, or back to jog actions if it is active.
     fn toggle_override(&mut self, mode: OverrideMode) {
         self.override_exited |= self.active_override.is_some();
@@ -261,6 +271,19 @@ impl Engine {
                         warn!(%path, error = %e, "app launch failed");
                         self.launch_errors.push(e);
                     }
+                    Ok(())
+                }
+                Some(Action::LaunchApp {
+                    path,
+                    enabled: false,
+                    ..
+                }) => {
+                    // Restored from a file without 'Let restored keys open
+                    // apps' (T1): nothing runs, and the user is told why.
+                    info!(%path, "app launch is off (restored from a file)");
+                    self.launch_errors.push(LaunchError(format!(
+                        "{path} is off: it came from a restored file. Pick the app again to turn it on."
+                    )));
                     Ok(())
                 }
                 _ => Ok(()),
@@ -885,7 +908,9 @@ mod tests {
             .handle(&Release(Key::Cam1), &mut mock, &mut launcher)
             .unwrap();
         assert!(launcher.calls().is_empty());
-        assert!(engine.take_launch_errors().is_empty());
+        let errors = engine.take_launch_errors();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].0.contains("/usr/bin/app is off"), "{errors:?}");
     }
 
     #[test]
@@ -940,6 +965,20 @@ mod tests {
         }
         bindings.insert("Cut".into(), Action::Hotkey { combo: ctrl_s() });
         Engine::new(&config)
+    }
+
+    #[test]
+    fn back_to_normal_leaves_the_override_as_its_key_would() {
+        let mut engine = override_engine();
+        assert!(!engine.exit_override());
+        let (mut keys, mut apps) = (MockInjector::new(), MockLauncher::new());
+        engine
+            .handle(&DeviceEvent::Press(Key::Cam1), &mut keys, &mut apps)
+            .unwrap();
+        assert_eq!(engine.active_override(), Some(OverrideMode::SystemVolume));
+        assert!(engine.exit_override());
+        assert_eq!(engine.active_override(), None);
+        assert!(engine.take_override_exit());
     }
 
     #[test]

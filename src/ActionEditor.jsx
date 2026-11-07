@@ -11,7 +11,7 @@ import {
   longLabel,
   setBinding,
 } from "./keys.js";
-import { getConfig, saveConfig, saveErrorText } from "./settingsApi.js";
+import { chooseApp, getConfig, listApps, saveConfig, saveErrorText } from "./settingsApi.js";
 
 // The key panel ("When I press X…") of the design handoff (screens-and-components
 // 3b): the choices list, each choice's detail, the record box and the footer.
@@ -108,34 +108,81 @@ export const websiteAction = (url) => {
   return { LaunchApp: { path: OPENER, args: [`https://${u}`], enabled: true } };
 };
 
-/** The app picker: the app to open, or a website, each with Use (screens-and-components 3b). */
-export function ActionForm({ action, errors = {}, onChange, onUse }) {
+/** An app's avatar colour, one of 12 hues (the stylesheet’s .app-initial[data-hue]), from its name. */
+export function appHue(name) {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.codePointAt(0)) % 12;
+  return h;
+}
+
+/** The apps whose name contains `query`, ignoring case. */
+export const filterApps = (apps, query) => {
+  const q = query.trim().toLowerCase();
+  return q ? apps.filter((a) => a.name.toLowerCase().includes(q)) : apps;
+};
+
+const sameLaunch = (v, app) => v.path === app.path && (v.args[0] ?? "") === (app.args[0] ?? "");
+const toAction = (app) => ({ LaunchApp: { path: app.path, args: app.args, enabled: true } });
+const tauriReady = () => Boolean(globalThis.window?.__TAURI__);
+
+/**
+ * The app picker (screens-and-components 3b): search the installed apps
+ * (`list_apps`), pick one, or 'Choose file…' (`choose_app`); or a website
+ * with Use. Each pick saves at once through `onUse`.
+ */
+export function ActionForm({ action, errors = {}, onUse, initialApps = null, loadApps = listApps, choose = chooseApp }) {
   const v = action.LaunchApp;
-  const web = v.path === OPENER ? (v.args[0] ?? "").replace(/^https?:\/\//, "") : "";
-  const [app, setApp] = useState(web ? "" : v.path);
+  const web = v.path === OPENER && /^https?:\/\//.test(v.args[0] ?? "") ? v.args[0].replace(/^https?:\/\//, "") : "";
+  const [apps, setApps] = useState(initialApps);
+  const [query, setQuery] = useState("");
   const [site, setSite] = useState(web);
-  const useApp = () => onUse?.({ LaunchApp: { ...v, path: app.trim(), args: web ? [] : v.args } });
+  const [chooseError, setChooseError] = useState(null);
+  useEffect(() => {
+    if (initialApps || !tauriReady()) return;
+    loadApps().then(setApps, (e) => console.error("freewheel: listing the apps failed:", String(e)));
+  }, [initialApps, loadApps]);
+  const shown = filterApps(apps ?? [], query);
   const useSite = () => site.trim() && onUse?.(websiteAction(site));
+  const chooseFile = () => {
+    setChooseError(null);
+    choose().then(
+      (app) => app && onUse?.(toAction(app)),
+      (e) => setChooseError(`The file could not be chosen: ${String(e)}`),
+    );
+  };
   return (
     <>
-      <div className="field-label">An app or a file</div>
-      <div className="input-row">
-        <span className="input-icon-box">
-          <Icon name="folder_open" />
-          <input
-            aria-label="App"
-            value={app}
-            placeholder="Spotify, a file…"
-            aria-invalid={!!errors.path}
-            onChange={(e) => (setApp(e.target.value), onChange?.({ LaunchApp: { ...v, path: e.target.value } }))}
-            onKeyDown={(e) => e.key === "Enter" && useApp()}
-          />
-        </span>
-        <button className="btn-primary btn-md" onClick={useApp}>
-          Use
-        </button>
+      {v.enabled === false && v.path && (
+        <div className="panel-note small" role="note">
+          This key came from a restored file, so it is off and opens nothing. Pick the app again to turn it on.
+        </div>
+      )}
+      <div className="input-icon-box app-search">
+        <Icon name="search" />
+        <input aria-label="Search your apps" value={query} placeholder="Search your apps" onChange={(e) => setQuery(e.target.value)} />
       </div>
+      <div className="app-list" role="listbox" aria-label="Your apps" aria-invalid={!!errors.path}>
+        {shown.map((app) => {
+          const current = sameLaunch(v, app);
+          return (
+            <button key={`${app.name}-${app.args[0] ?? app.path}`} role="option" aria-selected={current} className={`app-row${current ? " is-current" : ""}`} onClick={() => onUse?.(toAction(app))}>
+              <span className="app-initial" data-hue={appHue(app.name)} aria-hidden="true">
+                {app.name.charAt(0).toUpperCase()}
+              </span>
+              <span className="grow">{app.name}</span>
+              {current && <Icon name="check" className="icon app-check" />}
+            </button>
+          );
+        })}
+        {apps && shown.length === 0 && <div className="app-none">{query.trim() ? `No apps match “${query}”.` : "No apps found."}</div>}
+        {!apps && <div className="app-none">Looking for your apps…</div>}
+      </div>
+      <button className="choose-file" onClick={chooseFile}>
+        <Icon name="folder_open" />
+        Choose file…
+      </button>
       {errors.path && <span role="alert">{errors.path}</span>}
+      {chooseError && <span role="alert">{chooseError}</span>}
       <div className="field-label">Or a website</div>
       <div className="input-row">
         <input
@@ -192,6 +239,8 @@ export const PRESETS = [
   ["Undo", { modifiers: [MOD], key: "Z" }],
   ["Redo", MOD === "Meta" ? { modifiers: [MOD, "Shift"], key: "Z" } : { modifiers: [MOD], key: "Y" }],
   ["Save", { modifiers: [MOD], key: "S" }],
+  ["Play/Pause", { modifiers: [], key: "PlayPause" }],
+  ["Mute", { modifiers: [], key: "Mute" }],
 ];
 /**
  * The prototype's Held and Latched "Quick picks": Shift, Ctrl (Meta on a Mac) and Alt alone,
@@ -455,8 +504,15 @@ export function KeyPanel({
             <RecordBox key={mode} single={mode !== "Hotkey"} combo={combo} error={error} onRecord={saveCombo} autoListen={listen} />
             <div className="field-label">{mode === "Hotkey" ? "Or pick a common one" : "Quick picks"}</div>
             <div className="presets">
+              {/* The listening record box keeps focus until the click lands: blurring it on mousedown hid
+                  its Cancel button, the presets moved up and the click missed them. */}
               {(mode === "Hotkey" ? PRESETS : QUICK_PICKS).map(([name, c]) => (
-                <button key={name} className={`preset${sameCombo(c, combo) ? " is-current" : ""}`} onClick={() => saveCombo(c)}>
+                <button
+                  key={name}
+                  className={`preset${sameCombo(c, combo) ? " is-current" : ""}`}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => (globalThis.document?.activeElement?.blur?.(), saveCombo(c))}
+                >
                   <strong>{name}</strong>
                   {mode === "Hotkey" && <span className="preset-combo">{comboKeys(c).join(MAC ? "" : "+")}</span>}
                 </button>

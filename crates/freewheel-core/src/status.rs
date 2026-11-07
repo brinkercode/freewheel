@@ -53,6 +53,9 @@ pub struct StatusEvent {
     /// freewheel stepped aside (switched Off) because DaVinci Resolve is open.
     /// Never set while `settings.step_aside_for_resolve` is off.
     pub paused: bool,
+    /// The dial override a key turned the wheel into, until that key is
+    /// pressed again or the Wheel tab's 'Back to normal'.
+    pub wheel_override: Option<OverrideMode>,
 }
 
 impl StatusEvent {
@@ -66,6 +69,7 @@ impl StatusEvent {
             permissions: BTreeMap::new(),
             bus: None,
             paused: false,
+            wheel_override: None,
         }
     }
 
@@ -74,6 +78,7 @@ impl StatusEvent {
         if connection != ConnectionStatus::Connected {
             self.battery = None;
             self.bus = None;
+            self.wheel_override = None;
         }
         self.connection = connection;
     }
@@ -179,6 +184,7 @@ mod tests {
         status.set_permissions(&check_all(|p| p == Permission::Accessibility));
         status.bus = Some(Bus::Bluetooth);
         status.paused = true;
+        status.wheel_override = Some(OverrideMode::SystemVolume);
         assert_eq!(
             serde_json::to_value(&status).unwrap(),
             serde_json::json!({
@@ -190,7 +196,8 @@ mod tests {
                 ],
                 "permissions": {"Accessibility": "Granted", "InputMonitoring": "Missing"},
                 "bus": "Bluetooth",
-                "paused": true
+                "paused": true,
+                "wheel_override": "SystemVolume"
             })
         );
     }
