@@ -127,6 +127,8 @@ pub enum IconState {
 /// on a light taskbar, the brighter one on a dark taskbar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Taskbar {
+    /// Only Windows reads a light taskbar ([`taskbar`]).
+    #[cfg_attr(not(windows), allow(dead_code))]
     Light,
     Dark,
 }
