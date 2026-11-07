@@ -58,8 +58,9 @@ export default function Backup({
   initialMessage = null,
   initialMore = false,
   initialLogs = null,
-import { useEffect, useState } from "react";
-import DeviceTest from "./DeviceTest.jsx";
+  initialDeviceTest = false,
+  version = "",
+  trayLogs = null,
   detailedLogs,
   onDetailedLogs,
   showFile = showLogsFile,
@@ -70,8 +71,14 @@ import DeviceTest from "./DeviceTest.jsx";
   const [logs, setLogs] = useState(initialLogs);
   const [logsError, setLogsError] = useState(null);
   const [more, setMore] = useState(initialMore);
-import { useEffect, useState } from "react";
-import DeviceTest from "./DeviceTest.jsx";
+  const [deviceTest, setDeviceTest] = useState(initialDeviceTest);
+  // The tray's 'Download logs for support…' saved them (or could not): say so here.
+  useEffect(() => {
+    if (trayLogs?.path) {
+      setLogsError(null);
+      setLogs(logsSavedText(trayLogs.path));
+    } else if (trayLogs?.error) setLogsError(`The logs could not be saved: ${trayLogs.error}`);
+  }, [trayLogs]);
   const run = (action) => {
     setError(null);
     action().then(
