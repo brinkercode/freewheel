@@ -1059,19 +1059,6 @@ async function main() {
       await tray("toggle");
       await allRead(true, "tray On after the window's Off");
     }, ["simulator", "settings"]);
-    await step("On/Off: a settings window opened after the tray's Off reads Off", async () => {
-      await tray("toggle");
-      await allRead(false, "tray Off");
-      // Closing destroys the webview (#144); Open settings builds a new one.
-      await click("settings", ".window-control.window-close");
-      await tray("open-settings");
-      await findWindows();
-      await waitFor("settings", "the settings tabs", `return document.querySelector("nav.toolbar")`, [], 30000);
-      await allRead(false, "the new settings window");
-      await tray("toggle");
-      await allRead(true, "tray On");
-      await waitFor("settings", "Connected", `return document.querySelector("button.status")?.textContent.includes("Connected")`);
-    }, ["simulator", "settings"]);
 
     // ---- The header at the narrowest window: the status never overlaps -
     const OUT_HEADER = (name) => join(out, `header-${name}.png`);
@@ -1346,6 +1333,20 @@ async function main() {
       await click("settings", "nav.toolbar button.tab", "Wheel");
       await waitFor("settings", "the Wheel tab", `return document.body.innerText.includes("When I turn the wheel")`);
     });
+    // Last, so every step before runs on the window the first run opened.
+    await step("On/Off: a settings window opened after the tray's Off reads Off", async () => {
+      await tray("toggle");
+      await allRead(false, "tray Off");
+      // Closing destroys the webview (#144); Open settings builds a new one.
+      await click("settings", ".window-control.window-close");
+      await tray("open-settings");
+      await findWindows();
+      await waitFor("settings", "the settings tabs", `return document.querySelector("nav.toolbar")`, [], 30000);
+      await allRead(false, "the new settings window");
+      await tray("toggle");
+      await allRead(true, "tray On");
+      await waitFor("settings", "Connected", `return document.querySelector("button.status")?.textContent.includes("Connected")`);
+    }, ["simulator", "settings"]);
 
     say("step: tray: Quit freewheel");
     // The app may be gone before the click answers.
