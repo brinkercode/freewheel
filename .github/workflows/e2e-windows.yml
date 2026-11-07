@@ -6,21 +6,22 @@
 # each of its notes: the next release's real notes embedded at build, the
 # sample and pasted ones, each shown verbatim in What's new), requiring both windows to answer
 # within 5 s after every action (scripts/e2e-windows.mjs). Screenshots of
-# every step go to the 'e2e-screenshots' artifact; the exe plus a
-# double-click freewheel-simulate.cmd go to 'freewheel-windows-simulate'.
+# every step go to the 'e2e-screenshots' artifact; the exe and a
+# double-click freewheel-simulate.cmd are uploaded unzipped, one artifact each.
 #
 # The update job proves the portable update without a published release:
 # it builds freewheel.exe twice (version A, the repo's, and B, the next
 # minor), both e2e builds (the `e2e` feature: the DevTools port and the
 # updater's manifest URL override) with a throwaway updater key generated in
-# the job baked in, packs each as the release does
-# (scripts/portable-release.mjs), signs B's zip, unzips A into a folder with
-# a populated config, serves B from 127.0.0.1 (plus a tampered copy) and
+# the job baked in, makes each release file as the release does
+# (scripts/portable-release.mjs: freewheel-<ver>-windows-x64.exe), signs B's,
+# puts A's into a folder as a downloaded file, with a populated config,
+# serves B from 127.0.0.1 (plus a tampered copy) and
 # drives A: Check -> available -> a tampered B rejected with A intact ->
 # Download (progress) -> Restart -> the same path runs B with What's new
 # showing B's notes verbatim (the next release's real notes from the repo's
 # history, scripts/release-notes.mjs preview, in B's latest.json), the
-# config unchanged, freewheel.exe.old and the temp download gone
+# config unchanged, the exe's .old copy and the temp download gone
 # (scripts/e2e-update-windows.mjs). Screenshots of every state go to the
 # 'e2e-update-screenshots' artifact.
 name: e2e-windows
@@ -137,25 +138,29 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
-      # What the owner downloads: unzip, double-click freewheel-simulate.cmd.
-      - name: Stage the clickable simulate build
-        if: success()
-        shell: bash
-        run: |
-          mkdir -p simulate-build
-          cp target/release/freewheel.exe src-tauri/windows/freewheel-simulate.cmd simulate-build/
-      - name: Upload the clickable simulate build
+      # The clickable simulate build, unzipped: download freewheel.exe and
+      # freewheel-simulate.cmd into one folder, double-click the .cmd.
+      - name: Upload freewheel.exe (simulate build)
         if: success()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: freewheel-windows-simulate
-          path: simulate-build
+          path: target/release/freewheel.exe
+          archive: false
+          retention-days: 14
+          if-no-files-found: error
+      - name: Upload freewheel-simulate.cmd
+        if: success()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: src-tauri/windows/freewheel-simulate.cmd
+          archive: false
           retention-days: 14
           if-no-files-found: error
 
-  # What freewheel costs a PC: the release-built exe (as `tauri build` makes
-  # it, no e2e feature) and its portable zip, run normally (no Speed
-  # Editor attached) and with --simulate. Records exe/zip size, disk
+  # What freewheel costs a PC: the release file (the release-built exe as
+  # `tauri build` makes it, no e2e feature, named as the release names it),
+  # run normally (no Speed Editor attached) and with --simulate. Records the
+  # download's size (the exe), disk
   # written, RAM of freewheel.exe plus its WebView2 processes with the window
   # open and closed to the tray, and idle CPU; fails over the budgets in
   # scripts/footprint-budgets.json and writes the table to the job summary.
@@ -188,8 +193,8 @@ jobs:
 
       - run: npm ci
 
-      # The release build without the updater key, packed as the release packs it.
-      - name: Build freewheel.exe and the portable zip
+      # The release build without the updater key, as the release file.
+      - name: Build the release exe
         shell: bash
         run: |
           node "$TAURI_CLI" build --ci --no-bundle
@@ -198,8 +203,8 @@ jobs:
       - name: Measure the footprint
         shell: bash
         run: |
-          zip=$(ls footprint-package/*.zip | head -n 1)
-          node scripts/footprint-windows.mjs --app target/release/freewheel.exe --package "$zip" --budgets scripts/footprint-budgets.json --out footprint
+          exe=$(ls footprint-package/freewheel-*-windows-x64.exe | head -n 1)
+          node scripts/footprint-windows.mjs --app "$exe" --budgets scripts/footprint-budgets.json --out footprint
 
       - name: Upload the measurements
         if: always()
@@ -243,7 +248,7 @@ jobs:
       - run: npm ci
 
       # A throwaway key pair, made here and gone with the runner: never the
-      # release key. Both builds bake in its pubkey; B's zip is signed with it.
+      # release key. Both builds bake in its pubkey; B's exe is signed with it.
       - name: Make a test updater key
         shell: bash
         run: |
@@ -256,8 +261,8 @@ jobs:
           echo "TO_VERSION=$to" >> "$GITHUB_ENV"
           echo "update e2e: $from -> $to"
 
-      # The release's packaging and signing, with the test key: B's zip, its
-      # .sig (bound to B's version) and latest.json; A's zip.
+      # The release's files and signing, with the test key: B's exe, its .sig
+      # (bound to B's version) and latest.json; A's exe.
       - name: Build and pack version B, then A
         shell: bash
         run: |
@@ -266,8 +271,8 @@ jobs:
             node "$TAURI_CLI" build --ci --no-bundle --features e2e --config "$(node scripts/e2e-update-config.mjs "$v")" -- --locked
             node scripts/portable-release.mjs package --os windows --version "$v" --out "$RUNNER_TEMP/release-$v" --exe target/release/freewheel.exe
           done
-          zip="$RUNNER_TEMP/release-$TO_VERSION/freewheel-$TO_VERSION-windows-x64.zip"
-          node "$TAURI_CLI" signer sign -f "$E2E_UPDATER_KEY" -p "" --app-version "$TO_VERSION" "$zip" > /dev/null
+          exe="$RUNNER_TEMP/release-$TO_VERSION/freewheel-$TO_VERSION-windows-x64.exe"
+          node "$TAURI_CLI" signer sign -f "$E2E_UPDATER_KEY" -p "" --app-version "$TO_VERSION" "$exe" > /dev/null
           # B's notes: what the next release's notes are now, from the repo's real history.
           node scripts/release-notes.mjs preview --version "$TO_VERSION" --out "$RUNNER_TEMP/notes-$TO_VERSION.md"
           cat "$RUNNER_TEMP/notes-$TO_VERSION.md"
@@ -275,11 +280,14 @@ jobs:
             --base-url "https://github.com/brinkercode/freewheel/releases/download/v$TO_VERSION" > "$RUNNER_TEMP/release-$TO_VERSION/latest.json"
           ls -la "$RUNNER_TEMP"/release-*
 
-      - name: Unzip version A into a folder
+      # As a user does: the downloaded exe in a folder of its own, run as it is.
+      - name: Version A's exe into a folder
         shell: pwsh
         run: |
-          Expand-Archive "$env:RUNNER_TEMP\release-$env:FROM_VERSION\freewheel-$env:FROM_VERSION-windows-x64.zip" -DestinationPath "$env:RUNNER_TEMP\portable\freewheel"
-          Get-ChildItem "$env:RUNNER_TEMP\portable\freewheel" | Format-Table Name, Length
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\Downloads" | Out-Null
+          Copy-Item "$env:RUNNER_TEMP\release-$env:FROM_VERSION\freewheel-$env:FROM_VERSION-windows-x64.exe" "$env:RUNNER_TEMP\Downloads\"
+          "FREEWHEEL_EXE=$env:RUNNER_TEMP\Downloads\freewheel-$env:FROM_VERSION-windows-x64.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Get-ChildItem "$env:RUNNER_TEMP\Downloads" | Format-Table Name, Length
 
       - name: Install the msedgedriver matching WebView2
         shell: pwsh
@@ -301,21 +309,22 @@ jobs:
           do { Start-Sleep -Milliseconds 300; $up = Test-NetConnection 127.0.0.1 -Port 4444 -InformationLevel Quiet -WarningAction SilentlyContinue } until ($up -or (Get-Date) -gt $deadline)
           if (-not $up) { throw "msedgedriver did not start" }
           $b = "$env:RUNNER_TEMP\release-$env:TO_VERSION"
-          node scripts/e2e-update-windows.mjs --app "$env:RUNNER_TEMP\portable\freewheel\freewheel.exe" --manifest "$b\latest.json" --package "$b\freewheel-$env:TO_VERSION-windows-x64.zip" --from $env:FROM_VERSION --to $env:TO_VERSION --server-port $env:SERVER_PORT --port 9223 --out e2e-update-shots
+          node scripts/e2e-update-windows.mjs --app $env:FREEWHEEL_EXE --manifest "$b\latest.json" --package "$b\freewheel-$env:TO_VERSION-windows-x64.exe" --from $env:FROM_VERSION --to $env:TO_VERSION --server-port $env:SERVER_PORT --port 9223 --out e2e-update-shots
           $code = $LASTEXITCODE
           Stop-Process -Id $driver.Id -Force -ErrorAction SilentlyContinue
-          Get-Process freewheel -ErrorAction SilentlyContinue | Stop-Process -Force
+          Get-CimInstance Win32_Process | Where-Object ExecutablePath -eq $env:FREEWHEEL_EXE | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
           exit $code
 
-      - name: The folder's exe is version B
+      - name: The downloaded exe is version B now
         shell: pwsh
         run: |
-          $exe = "$env:RUNNER_TEMP\portable\freewheel\freewheel.exe"
+          $exe = $env:FREEWHEEL_EXE
           $v = (Get-Item $exe).VersionInfo
           $now = "{0}.{1}.{2}" -f $v.FileMajorPart, $v.FileMinorPart, $v.FileBuildPart
-          Write-Host "freewheel.exe is $now"
-          if ($now -ne $env:TO_VERSION) { throw "freewheel.exe is $now, expected $env:TO_VERSION" }
-          if (Test-Path "$exe.old") { throw "freewheel.exe.old is still there" }
+          Write-Host "$exe is $now"
+          if ($now -ne $env:TO_VERSION) { throw "$exe is $now, expected $env:TO_VERSION" }
+          if (Test-Path "$exe.old") { throw "$exe.old is still there" }
+          if ((Get-ChildItem "$env:RUNNER_TEMP\Downloads").Count -ne 1) { throw "the folder holds more than the exe" }
 
       - name: Upload screenshots
         if: always()

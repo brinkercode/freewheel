@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // What freewheel costs a Windows PC, measured on the release-built exe
-// (.github/workflows/e2e-windows.yml, job footprint): exe and portable zip size,
+// (.github/workflows/e2e-windows.yml, job footprint): the exe's size (the
+// release file users download: freewheel-<ver>-windows-x64.exe),
 // what a session writes to disk (config, logs, icon cache, the WebView2 data
 // folder), RAM of freewheel.exe plus every WebView2 process it started
 // (msedgewebview2.exe, found through the parent process ids) with the settings
@@ -9,8 +10,8 @@
 // --simulate. Fails when a number is over its budget (footprint-budgets.json)
 // and writes a Markdown table (to $GITHUB_STEP_SUMMARY in CI).
 //
-//   node scripts/footprint-windows.mjs --app target/release/freewheel.exe
-//     [--package freewheel-<ver>-windows-x64.zip] [--budgets scripts/footprint-budgets.json] [--out dir] [--idle 60]
+//   node scripts/footprint-windows.mjs --app <freewheel-<ver>-windows-x64.exe>
+//     [--budgets scripts/footprint-budgets.json] [--out dir] [--idle 60]
 import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
@@ -21,11 +22,10 @@ export const MB = 1024 * 1024;
 const PROBE = fileURLToPath(new URL("./footprint-windows.ps1", import.meta.url));
 
 export function parseArgs(argv) {
-  const opts = { app: null, package: null, budgets: null, out: "footprint", idle: 60 };
+  const opts = { app: null, budgets: null, out: "footprint", idle: 60 };
   for (let i = 0; i < argv.length; i += 2) {
     const [key, value] = [argv[i], argv[i + 1]];
     if (key === "--app") opts.app = value;
-    else if (key === "--package") opts.package = value;
     else if (key === "--budgets") opts.budgets = value;
     else if (key === "--out") opts.out = value;
     else if (key === "--idle") opts.idle = Number(value);
@@ -130,8 +130,7 @@ export function overBudget(result, budgets) {
   const check = (what, value, limit) => {
     if (limit != null && value > limit) problems.push(`${what}: ${value.toFixed(2)} > budget ${limit}`);
   };
-  check("exe MB", result.exe / MB, budgets.exeMB);
-  if (result.package != null) check("portable zip MB", result.package / MB, budgets.packageMB);
+  check("exe (download) MB", result.exe / MB, budgets.exeMB);
   for (const [mode, run] of Object.entries(result.modes)) {
     const b = budgets.modes?.[mode] ?? {};
     check(`${mode} disk MB`, run.disk.total / MB, b.diskMB);
@@ -150,8 +149,7 @@ const mb = (n) => `${(n / MB).toFixed(1)} MB`;
 /** The job summary: one table per mode plus the sizes. */
 export function summary(result) {
   const lines = ["## freewheel footprint (Windows, release build)", ""];
-  lines.push(`| | |`, `|---|---|`, `| freewheel.exe | ${mb(result.exe)} |`);
-  if (result.package != null) lines.push(`| portable zip | ${mb(result.package)} |`);
+  lines.push(`| | |`, `|---|---|`, `| ${result.exeName ?? "freewheel.exe"} (the download) | ${mb(result.exe)} |`);
   lines.push("");
   for (const [mode, run] of Object.entries(result.modes)) {
     lines.push(`### ${mode}`, "");
@@ -259,7 +257,7 @@ async function main() {
   mkdirSync(opts.out, { recursive: true });
   const result = {
     exe: statSync(opts.app).size,
-    package: opts.package ? statSync(opts.package).size : null,
+    exeName: path.basename(opts.app),
     modes: {},
   };
   result.modes.normal = await session(opts, "normal");

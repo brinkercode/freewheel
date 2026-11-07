@@ -70,8 +70,9 @@ test("the e2e workflow is a Windows PR check that builds the embedded UI and upl
   expect(wf).toContain("cargo build --release --locked -p freewheel --features tauri/custom-protocol");
   expect(wf).toContain("node scripts/e2e-windows.mjs --port 9222 --app target/release/freewheel.exe --out e2e-shots");
   expect(wf).toMatch(/name: e2e-screenshots\n\s+path: e2e-shots/);
-  expect(wf).toMatch(/name: freewheel-windows-simulate\n\s+path: simulate-build/);
-  expect(wf).toContain("cp target/release/freewheel.exe src-tauri/windows/freewheel-simulate.cmd simulate-build/");
+  // The clickable simulate build: the exe and the .cmd, each unzipped.
+  expect(wf).toMatch(/- name: Upload freewheel\.exe \(simulate build\)\n(.*\n)\s+uses: actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7\.0\.2\n\s+with:\n\s+path: target\/release\/freewheel\.exe\n\s+archive: false\n/);
+  expect(wf).toMatch(/- name: Upload freewheel-simulate\.cmd\n(.*\n)\s+uses: actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7\.0\.2\n\s+with:\n\s+path: src-tauri\/windows\/freewheel-simulate\.cmd\n\s+archive: false\n/);
 });
 
 test("the e2e checks the header never overlaps at 820px and that the tray and the window share one On/Off", async () => {

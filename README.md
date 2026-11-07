@@ -24,43 +24,51 @@ Use a Blackmagic Speed Editor with any app, without DaVinci Resolve.
 - **Key lights** follow what is on: the wheel mode, toggled keys, the page.
 - **Lives in the tray** (the menu bar on macOS): switch it Off and On, check
   for updates, open settings.
-- **Portable**: one folder, nothing to install.
+- **Portable**: one file you download and run, nothing to install.
 - **Small**: measured on Windows CI, about 31 MB of memory and 0.15% of one
-  CPU core when idle in the tray, from a 4.6 MB zip.
+  CPU core when idle in the tray, from a 14.5 MB exe.
 
 Works over USB and Bluetooth, on Windows 11 and macOS 15 (Apple Silicon and
 Intel).
 
 ## Download and run
 
-Get the newest zip from [Releases](https://github.com/brinkercode/freewheel/releases/latest).
-There is no installer.
+Download the file for your system from
+[Releases](https://github.com/brinkercode/freewheel/releases/latest) and run
+it. There is no installer.
 
-- **Windows**: `freewheel-<version>-windows-x64.zip`. Unzip it to a folder you
-  can write to (Documents, Desktop, a USB stick; not Program Files) and run
-  `freewheel.exe`. The exe is not code-signed, so SmartScreen may ask the
-  first time: **More info**, then **Run anyway**.
-- **macOS**: `freewheel-<version>-macos-universal.zip`. Unzip it and move
-  `freewheel.app` to Applications. It is not notarized yet, so macOS blocks
-  the first open: go to **System Settings → Privacy & Security**, click
-  **Open Anyway** next to freewheel and confirm. Then allow freewheel under
-  **Accessibility** and **Input Monitoring** (setup asks and takes you
-  there): it needs them to send keys and read the Speed Editor.
+- **Windows**: download `freewheel-<version>-windows-x64.exe` and run it. Keep
+  it anywhere you can write to (Downloads, Documents, Desktop, a USB stick;
+  not Program Files) so it can update itself. The exe is not code-signed, so
+  SmartScreen may ask the first time: **More info**, then **Run anyway**.
+- **macOS**: download `freewheel-<version>-macos-universal.dmg`, open it and
+  run freewheel, or drag it onto the Applications folder next to it to keep
+  it (and let it update itself: it can't from the open .dmg). It is not
+  notarized yet, so macOS blocks the first open: go to
+  **System Settings → Privacy & Security**, click **Open Anyway** next to
+  freewheel and confirm. Then allow freewheel under **Accessibility** and
+  **Input Monitoring** (setup asks and takes you there): it needs them to
+  send keys and read the Speed Editor.
+- **Linux**: download the `.AppImage`, make it executable (`chmod +x`, or
+  Properties → Allow executing as a program) and double-click it. The first
+  start asks once for permission to use the Speed Editor.
 
 The first start walks you through connecting the Speed Editor by cable or
 Bluetooth. Settings are kept in your user folder (`%APPDATA%\freewheel` on
 Windows, `~/Library/Application Support/freewheel` on macOS), not next to the
 app, so moving or replacing the app keeps them. To remove freewheel, quit it,
-turn off **Start freewheel when I log in**, and delete its folder.
+turn off **Start freewheel when I log in**, and delete the file (on macOS,
+freewheel.app).
 
 ## Updates
 
 freewheel checks GitHub for a newer release when it starts and when you click
 **Check for updates** (General tab). With **Update automatically** on (the
-default) it downloads the zip for your system, verifies its signature against
-the key built into your copy, and offers **Restart to update**. That swaps
-the new version into the same folder, restarts, shows what's new, and deletes
-the old copy and the download. Your settings are kept. If any step fails,
+default) it downloads the new version's file for your system, verifies its
+signature against the key built into your copy, and offers **Restart to
+update**. That puts the new version in place of the one you run (same file,
+same name, same place), restarts, shows what's new, and deletes the old copy
+and the download. Your settings are kept. If any step fails,
 the version you have keeps running. Turn **Update automatically** off to be
 asked before the download.
 
@@ -116,8 +124,9 @@ are for updates, to GitHub, over HTTPS:
 1. the release manifest,
    `https://github.com/brinkercode/freewheel/releases/latest/download/latest.json`,
    at start and when you click **Check for updates**;
-2. the zip for your system that the manifest lists (a file of the same GitHub
-   release), only when an update is downloaded.
+2. the file for your system that the manifest lists (the exe, the .dmg or
+   the AppImage of the same GitHub release), only when an update is
+   downloaded.
 
 Builds without the release's update key (built from source, CI test builds)
 make no requests at all. Links you click (What's new, a key set to open a

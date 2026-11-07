@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // The portable update, end to end, on a hosted Windows runner, without a
 // published release (.github/workflows/e2e-windows.yml, job update):
-// version A (unzipped from its portable package into a folder, as a user
-// does) and version B's package are e2e builds with a throwaway test pubkey
-// baked in. This script serves B's package, signature and latest.json
+// version A (its release file, freewheel-<A>-windows-x64.exe, in a folder as
+// a user downloads it) and version B's release file are e2e builds with a
+// throwaway test pubkey baked in. This script serves B's exe, signature and latest.json
 // (scripts/update-server.mjs), starts A from its folder with the updater
 // pointed at that server (FREEWHEEL_E2E_UPDATE_URL, e2e builds only) and
 // its WebView2 DevTools port open, and drives the settings window over
@@ -16,15 +16,15 @@
 //   -> Restart to update -> A swaps B in and starts it -> the same path now
 //   runs B, What's new in B shows B's notes (the next release's real notes,
 //   scripts/release-notes.mjs preview) verbatim, the config is exactly as before, and
-//   freewheel.exe.old and the temp download are gone.
+//   the exe's .old copy and the temp download are gone.
 // Every state is screenshotted into the output dir.
 //
-//   node scripts/e2e-update-windows.mjs --app <folder>\freewheel.exe --manifest <B latest.json> --package <B zip>
+//   node scripts/e2e-update-windows.mjs --app <folder>\freewheel-<A>-windows-x64.exe --manifest <B latest.json> --package <B's freewheel-<B>-windows-x64.exe>
 //        --from 0.1.0 --to 0.2.0 --server-port 8719 [--port 9223] [--driver http://127.0.0.1:4444] [--out e2e-update-shots]
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 import { notesText } from "../src/notesMarkdown.js";
 import { DEVTOOLS_PORT_ENV, Driver, FIND_JS, NOTES_ON_PAGE_JS, shotName } from "./e2e-windows.mjs";
@@ -73,10 +73,16 @@ export const configFile = (appData = process.env.APPDATA ?? "") => join(appData,
 /** The updater's temp dir (selfupdate.rs TEMP_DIR_NAME). */
 export const updateTemp = (temp = process.env.TEMP ?? "") => join(temp, "freewheel-update");
 
-/** The path every running freewheel.exe was started from (Windows). */
-function runningPaths() {
+/** The PowerShell that lists the path of every running process whose exe is named like `app` (Windows). */
+export function runningPathsCommand(app) {
+  const name = win32.basename(app).replace(/'/g, "''");
+  return `Get-CimInstance Win32_Process -Filter "Name = '${name}'" | ForEach-Object { $_.ExecutablePath }`;
+}
+
+/** The path every running copy of `app` (by file name) was started from (Windows). */
+function runningPaths(app) {
   try {
-    const out = execFileSync("powershell", ["-NoProfile", "-Command", "Get-Process freewheel -ErrorAction SilentlyContinue | ForEach-Object { $_.Path }"], { encoding: "utf8" });
+    const out = execFileSync("powershell", ["-NoProfile", "-Command", runningPathsCommand(app)], { encoding: "utf8" });
     return out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   } catch {
     return [];
@@ -272,7 +278,7 @@ async function main() {
     if (tampered.last.state !== "error") throw new Error(`the tampered package was not rejected: ${JSON.stringify(tampered.last)}`);
     if (!/couldn’t be verified/.test(tampered.last.text)) throw new Error(`the error does not say it failed verification: ${tampered.last.text}`);
     await shot("tampered package rejected");
-    if (sha(app) !== before.exe) throw new Error("the tampered package changed freewheel.exe");
+    if (sha(app) !== before.exe) throw new Error(`the tampered package changed ${app}`);
     if (folderFiles().join() !== before.files.join()) throw new Error(`the folder changed: ${folderFiles().join(", ")}`);
     if (existsSync(updateTemp())) throw new Error("the rejected download was kept");
     const still = await invoke("app_version");
@@ -304,7 +310,7 @@ async function main() {
     const b = await invoke("app_version");
     say(`running version after the restart: ${JSON.stringify(b)}`);
     if (b.ok !== opts.to) throw new Error(`expected ${opts.to} after the update, got ${JSON.stringify(b)}`);
-    const paths = runningPaths();
+    const paths = runningPaths(app);
     say(`  running from: ${paths.join(", ")}`);
     if (!paths.length || !paths.every((p) => p.toLowerCase() === app.toLowerCase())) throw new Error(`B does not run from ${app}: ${paths}`);
     const after = fileVersion(app);
@@ -327,7 +333,7 @@ async function main() {
     if (sha(configFile()) !== configHash) throw new Error("config.json changed on disk");
     const clean = Date.now() + 20000;
     while ((existsSync(`${app}.old`) || existsSync(updateTemp())) && Date.now() < clean) await sleep(250);
-    if (existsSync(`${app}.old`)) throw new Error("freewheel.exe.old is still there");
+    if (existsSync(`${app}.old`)) throw new Error(`${app}.old is still there`);
     if (existsSync(updateTemp())) throw new Error(`${updateTemp()} is still there`);
     if (folderFiles().join() !== before.files.join()) throw new Error(`the folder is not as before: ${folderFiles().join(", ")}`);
     say(`  config identical (sha256 ${configHash}); folder: ${folderFiles().join(", ")}; no .old, no temp download`);

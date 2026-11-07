@@ -1,9 +1,10 @@
 # Update end to end for freewheel against the real published releases, on
-# a hosted Windows runner: unzips the previous release's portable package
-# into a folder, runs that app's own updater headless
-# (`freewheel --update-check-and-install`: the release manifest on GitHub,
-# the package for this OS, its signature checked against the pubkey built
-# into that release, the exe swapped in place) and requires the same path
+# a hosted Windows runner: downloads the previous release's exe
+# (freewheel-<ver>-windows-x64.exe) into a folder, as a user does, runs that
+# app's own updater headless (`freewheel --update-check-and-install`: the
+# release manifest on GitHub, the exe for this OS, its signature checked
+# against the pubkey built into that release, the exe swapped in place
+# under the same name) and requires the same path
 # to become the newest release, start (--simulate --smoke), remove the old
 # exe it left aside and then report itself up to date. Runs after each
 # release (release.yml calls it) and on demand. Public releases only: no
@@ -62,7 +63,7 @@ jobs:
         shell: bash
         run: echo "::notice::update-e2e needs two published releases; skipped"
 
-      - name: Unzip the previous release into a folder
+      - name: Download the previous release's exe into a folder
         if: steps.pick.outputs.skip != 'true'
         shell: pwsh
         env:
@@ -70,13 +71,13 @@ jobs:
           FROM: ${{ steps.pick.outputs.from }}
           FROM_VERSION: ${{ steps.pick.outputs.from_version }}
         run: |
-          gh release download $env:FROM --repo $env:GITHUB_REPOSITORY --pattern "freewheel-$env:FROM_VERSION-windows-x64.zip" --dir old
-          Expand-Archive "old/freewheel-$env:FROM_VERSION-windows-x64.zip" -DestinationPath "$env:RUNNER_TEMP\freewheel"
-          $exe = "$env:RUNNER_TEMP\freewheel\freewheel.exe"
+          gh release download $env:FROM --repo $env:GITHUB_REPOSITORY --pattern "freewheel-$env:FROM_VERSION-windows-x64.exe" --dir "$env:RUNNER_TEMP\freewheel"
+          $exe = "$env:RUNNER_TEMP\freewheel\freewheel-$env:FROM_VERSION-windows-x64.exe"
           $v = (Get-Item $exe).VersionInfo
           $found = "{0}.{1}.{2}" -f $v.FileMajorPart, $v.FileMinorPart, $v.FileBuildPart
-          Write-Host "unzipped $found"
-          if ($found -ne $env:FROM_VERSION) { throw "unzipped $found, expected $env:FROM_VERSION" }
+          Write-Host "downloaded $found"
+          if ($found -ne $env:FROM_VERSION) { throw "downloaded $found, expected $env:FROM_VERSION" }
+          "FREEWHEEL_EXE=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Update with the app's own updater
         if: steps.pick.outputs.skip != 'true'
@@ -84,7 +85,7 @@ jobs:
         env:
           TO_VERSION: ${{ steps.pick.outputs.to_version }}
         run: |
-          $exe = "$env:RUNNER_TEMP\freewheel\freewheel.exe"
+          $exe = $env:FREEWHEEL_EXE
           $run = Start-Process -FilePath $exe -ArgumentList '--update-check-and-install' -Wait -PassThru
           # 0: verified and swapped in; 2: up to date; 3: no pubkey; 1: failed.
           if ($run.ExitCode -ne 0) { throw "update run exit $($run.ExitCode)" }
@@ -98,10 +99,11 @@ jobs:
         if: steps.pick.outputs.skip != 'true'
         shell: pwsh
         run: |
-          $exe = "$env:RUNNER_TEMP\freewheel\freewheel.exe"
+          $exe = $env:FREEWHEEL_EXE
           $run = Start-Process -FilePath $exe -ArgumentList '--update-check-and-install' -Wait -PassThru
           if ($run.ExitCode -ne 2) { throw "second update run exit $($run.ExitCode), expected 2 (up to date)" }
-          if (Test-Path "$exe.old") { throw "freewheel.exe.old is still there" }
+          if (Test-Path "$exe.old") { throw "$exe.old is still there" }
+          if ((Get-ChildItem "$env:RUNNER_TEMP\freewheel").Count -ne 1) { throw "the folder holds more than the exe" }
           if (Test-Path "$env:TEMP\freewheel-update") { throw "the update's temp dir is still there" }
           node scripts/check-windows-exe.mjs $exe
           if ($LASTEXITCODE -ne 0) { throw "smoke failed" }
