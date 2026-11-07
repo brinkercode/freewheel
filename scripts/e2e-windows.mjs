@@ -458,6 +458,7 @@ async function main() {
       return [...document.querySelectorAll(".fw-sim-log li")].slice(0, 14).some((li) => parts.every((p) => li.textContent.includes(p)));`, [parts]);
   const dialogs = join(out, "dialogs");
   let saved = null;
+  let freshWheel = null;
 
   /**
    * README-grade stills (docs/images): the window's own client area only
@@ -485,10 +486,17 @@ async function main() {
     mkdirSync(README_DIR, { recursive: true });
     await step("README: the sample setup over USB", async () => {
       await click("simulator", `[role=group][aria-label="Speed Editor"] button`, "USB");
+      // Only the sample keys on one page, and the wheel as a fresh install has it.
+      await click("simulator", `[role=group][aria-label="Keys"] button`, "Empty setup");
+      await logged("empty setup loaded");
+      await configShows("no keys", (c) => c.layers.length === 1 && Object.keys(c.layers[0].bindings).length === 0);
+      if (freshWheel) await saveConfig({ ...(await readConfig()), ...freshWheel });
       await click("simulator", `[role=group][aria-label="Keys"] button`, "Several set");
       await logged("sample mappings loaded");
       await waitFor("settings", "the drawing's Play/Pause", `return document.querySelector('.device [data-binding="StopPlay"]')?.getAttribute("title") === "Play/Pause"`, [], 20000);
       await waitFor("settings", "Connected", `return document.querySelector("button.status")?.textContent.includes("Connected")`);
+      await press("SCRL");
+      await waitFor("settings", "SCRL lit", `return document.querySelector('.device [data-binding="Scrl"]')?.classList.contains("is-lit")`);
     }, []);
     for (const look of ["Light", "Dark"]) {
       const f = look.toLowerCase();
@@ -573,6 +581,7 @@ async function main() {
     });
 
     await tab("Keys", "What each key does");
+    freshWheel = await readConfig().then((c) => ({ jog: c.jog, overrides: c.overrides })); // the README stills use the default wheel
     await step("Keys: click CUT in the drawing", async () => {
       await click("settings", '.device [data-binding="Cut"]');
       await waitFor("settings", "the key panel", `return document.querySelector('.side-panel [role=radiogroup][aria-label="Choices"]')`);

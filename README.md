@@ -84,6 +84,8 @@ A backup can hold keys that open apps. Restored keys that open apps stay off
 unless you turn on **Let restored keys open apps**: leave it off for a file
 someone sent you.
 
+Write or edit a mappings file by hand: see [SCHEMA.md](SCHEMA.md).
+
 ## Troubleshooting
 
 - **Help & backup → More → Device test** shows the connection, the unlock
