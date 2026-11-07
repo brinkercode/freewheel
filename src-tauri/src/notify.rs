@@ -82,6 +82,12 @@ impl Notifier {
         version: Option<&str>,
         window_in_front: bool,
     ) -> Option<Notify> {
+        if status == Some("restarting") {
+            // A real restart is a new process with nothing notified yet; the
+            // simulated one (--simulate) restarts in place, so forget here.
+            self.update_notified = None;
+            return None;
+        }
         let (Some("ready"), Some(version)) = (status, version) else {
             return None;
         };
@@ -188,12 +194,20 @@ mod tests {
             Some(Notify::Show(update_ready("0.2.0")))
         );
         assert_eq!(n.update(Some("ready"), Some("0.2.0"), false), None);
-        assert_eq!(n.update(Some("restarting"), Some("0.2.0"), false), None);
+        assert_eq!(n.update(Some("downloading"), Some("0.2.0"), false), None);
+        assert_eq!(n.update(Some("ready"), Some("0.2.0"), false), None);
         assert_eq!(
             n.update(Some("ready"), Some("0.3.0"), true),
             Some(Notify::Skipped(update_ready("0.3.0")))
         );
         assert_eq!(n.update(Some("ready"), Some("0.3.0"), false), None);
+        // After a restart (a new process for real, in place in --simulate)
+        // the same version is news again.
+        assert_eq!(n.update(Some("restarting"), Some("0.3.0"), false), None);
+        assert_eq!(
+            n.update(Some("ready"), Some("0.3.0"), false),
+            Some(Notify::Show(update_ready("0.3.0")))
+        );
         assert_eq!(n.update(Some("ready"), None, false), None);
         assert_eq!(update_ready("0.2.0").title, "freewheel 0.2.0 is ready");
     }
