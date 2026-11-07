@@ -26,10 +26,23 @@ export function Toolbar({ tab, onTab, state, onToggle, onFix }) {
         ))}
       </div>
       <div className="toolbar-right">
-        <button className={`status${fix ? " is-link" : ""}`} onClick={fix} tabIndex={fix ? 0 : -1}>
-          <span className={`status-dot dot-${status.dot}`} />
-          {status.text}
-        </button>
+        {/* The status takes only the room the tabs and the switch leave: the
+            text ends in an ellipsis, then only the dot shows (the
+            stylesheet's .status-slot); the tooltip and the notice bar say
+            it in full. */}
+        <div className="status-slot">
+          <button
+            className={`status${fix ? " is-link" : ""}`}
+            onClick={fix}
+            tabIndex={fix ? 0 : -1}
+            title={status.text}
+            aria-label={status.text}
+            data-dot={status.dot}
+          >
+            <span className={`status-dot dot-${status.dot}`} />
+            <span className="status-text">{status.text}</span>
+          </button>
+        </div>
         <span className="toolbar-sep" />
         <strong className="switch-text">{state.enabled ? "On" : "Off"}</strong>
         <button

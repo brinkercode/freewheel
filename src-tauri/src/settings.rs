@@ -132,16 +132,31 @@ impl Settings {
             .map_err(|_| "freewheel's device loop is not running".to_string())
     }
 
-    /// The settings window's On/Off switch: switches the device loop, like
-    /// the tray toggle, and tells the Resolve watcher it was by hand. The
-    /// `status` event then shows the new state.
-    pub fn set_enabled(&self, on: bool) -> Result<(), String> {
-        tracing::info!(on, "settings window switched freewheel");
-        let _ = lock(&self.manual).send(Message::Manual(on));
+    /// Switches freewheel On or Off by hand: the settings window's switch
+    /// and the tray's 'freewheel is On' both come here, so there is one
+    /// On/Off (`StatusEvent::enabled`). Switches the device loop, tells the
+    /// Resolve watcher it was by hand (a manual switch ends a step aside)
+    /// and returns the status to show everywhere ([`crate::tray::emit_status`]):
+    /// the window's switch and the tray's check follow it at once, not when
+    /// the device loop answers. A device loop that is gone changes nothing.
+    pub fn set_enabled(&self, on: bool, by: &str) -> Result<StatusEvent, String> {
+        tracing::info!(on, by, "freewheel switched by hand");
         self.commands.send(Command::SetEnabled(on)).map_err(|_| {
             tracing::error!(on, "device loop is gone; cannot switch freewheel");
             "freewheel's device loop is not running".to_string()
-        })
+        })?;
+        let _ = lock(&self.manual).send(Message::Manual(on));
+        let mut status = lock(&self.status);
+        status.enabled = on;
+        status.paused = false;
+        Ok(status.clone())
+    }
+
+    /// `--simulate`: the simulated device was switched by the Simulator
+    /// window itself (or stepped aside in it); returns the new status when
+    /// the On/Off changed.
+    pub fn mirror_enabled(&self, on: bool) -> Option<StatusEvent> {
+        self.change(|status| status.enabled = on)
     }
 
     /// Records how the device that is connecting is attached; the next
@@ -391,9 +406,17 @@ pub fn get_status(settings: tauri::State<'_, Settings>) -> StatusEvent {
     settings.status()
 }
 
+/// The settings window's On/Off switch; the `status` event (to every
+/// window) and the tray's check show the result.
 #[tauri::command]
-pub fn set_enabled(settings: tauri::State<'_, Settings>, on: bool) -> Result<(), String> {
-    settings.set_enabled(on)
+pub fn set_enabled(
+    app: tauri::AppHandle,
+    settings: tauri::State<'_, Settings>,
+    on: bool,
+) -> Result<(), String> {
+    let status = settings.set_enabled(on, "settings window")?;
+    crate::tray::emit_status(&app, &status);
+    Ok(())
 }
 
 /// Whether the OS login item is registered now.
@@ -548,12 +571,43 @@ mod tests {
     fn the_switch_turns_the_device_loop_off_and_on_by_hand() {
         let (_dir, settings, commands, manual) = settings_with_manual();
         for on in [false, true] {
-            settings.set_enabled(on).unwrap();
+            let status = settings.set_enabled(on, "test").unwrap();
+            assert_eq!(status.enabled, on);
+            assert_eq!(settings.status().enabled, on);
             assert!(matches!(commands.try_recv(), Ok(Command::SetEnabled(o)) if o == on));
             assert_eq!(manual.try_recv(), Ok(Message::Manual(on)));
         }
         drop(commands);
-        assert!(settings.set_enabled(false).is_err());
+        assert!(settings.set_enabled(false, "test").is_err());
+        // A switch the device loop never heard changes nothing.
+        assert!(settings.status().enabled);
+    }
+
+    #[test]
+    fn on_off_is_one_state_whoever_switches_it() {
+        let (_dir, settings, _commands, _manual) = settings_with_manual();
+        assert!(settings.status().enabled, "freewheel starts On");
+        // The tray, then the window: each sees what the other did.
+        assert!(!settings.set_enabled(false, "tray").unwrap().enabled);
+        assert!(!settings.status().enabled);
+        assert!(
+            settings
+                .set_enabled(true, "settings window")
+                .unwrap()
+                .enabled
+        );
+        // The device loop's own Off (stepping aside for Resolve) is a pause, not Off.
+        settings.set_paused(true).unwrap();
+        let s = settings
+            .apply(&Update::State(ConnectionStatus::Off))
+            .unwrap();
+        assert!(s.enabled && s.paused);
+        // Switching by hand ends the pause at once.
+        let off = settings.set_enabled(false, "tray").unwrap();
+        assert!(!off.enabled && !off.paused);
+        // The Simulator's own switch is mirrored; no news is None.
+        assert!(settings.mirror_enabled(true).unwrap().enabled);
+        assert_eq!(settings.mirror_enabled(true), None);
     }
 
     #[test]

@@ -1,7 +1,8 @@
 //! The tray icon and its menu, as the design handoff maps it (README, "Tray
 //! menu"):
 //!
-//! 1. `freewheel is On` — check item (toggles enabled)
+//! 1. `freewheel is On` — check item: the same On/Off as the settings
+//!    window's switch (`Settings::set_enabled`); either one moves the other
 //! 2. Status line — disabled, except "Needs permission (click to fix)", which
 //!    opens the permission screen
 //! 3. ——
@@ -18,7 +19,6 @@
 //! icon, the toggle and the status line ([`emit_status`]).
 
 use std::sync::Mutex;
-use std::sync::mpsc::Sender;
 
 use freewheel_core::config::ConfigStore;
 use freewheel_core::permissions::Grant;
@@ -34,9 +34,8 @@ use tauri_plugin_autostart::ManagerExt;
 use freewheel_core::battery::{self, Battery, LowBatteryAlert};
 use freewheel_core::connection::ConnectionStatus;
 
-use crate::device::{Command, TrayState, Update};
+use crate::device::{TrayState, Update};
 use crate::notify::{self, Notifier};
-use crate::resolve_watch::Message;
 
 const TOGGLE: &str = "toggle";
 const STATUS: &str = "status";
@@ -124,23 +123,77 @@ pub enum IconState {
     Attention,
 }
 
-/// The bundled icon for each state (macOS template images, else the
-/// Windows dark-taskbar set).
-pub fn icon(state: IconState) -> Image<'static> {
+/// The taskbar the tray icon sits on: its pink glyph is the darker accent
+/// on a light taskbar, the brighter one on a dark taskbar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Taskbar {
+    Light,
+    Dark,
+}
+
+/// The Windows taskbar's theme now (`SystemUsesLightTheme`, which is the
+/// taskbar's, not the apps'); dark when unknown and on other systems.
+#[cfg(windows)]
+pub fn taskbar() -> Taskbar {
+    use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
+    use windows::core::w;
+    let mut light: u32 = 0;
+    let mut size = std::mem::size_of::<u32>() as u32;
+    // SAFETY: the out pointers point at `light` and `size`, which live
+    // across the call; RRF_RT_REG_DWORD writes at most 4 bytes.
+    let read = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            w!(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"),
+            w!("SystemUsesLightTheme"),
+            RRF_RT_REG_DWORD,
+            None,
+            Some(std::ptr::from_mut(&mut light).cast()),
+            Some(&mut size),
+        )
+    };
+    if read.is_ok() && light == 1 {
+        Taskbar::Light
+    } else {
+        Taskbar::Dark
+    }
+}
+
+#[cfg(not(windows))]
+pub fn taskbar() -> Taskbar {
+    Taskbar::Dark
+}
+
+/// The bundled icon for each state: on Windows (and Linux) the app's pink
+/// for the `taskbar` (scripts/tray-icons.mjs makes them from the design
+/// handoff's glyphs); on macOS the handoff's template images, which the menu
+/// bar tints itself (a template must stay black on transparent).
+pub fn icon(state: IconState, taskbar: Taskbar) -> Image<'static> {
     #[cfg(target_os = "macos")]
-    let [on, off, absent, attention] = [
-        tauri::include_image!("icons/tray/macos/tray-onTemplate@2x.png"),
-        tauri::include_image!("icons/tray/macos/tray-offTemplate@2x.png"),
-        tauri::include_image!("icons/tray/macos/tray-not-connectedTemplate@2x.png"),
-        tauri::include_image!("icons/tray/macos/tray-attentionTemplate@2x.png"),
-    ];
+    let [on, off, absent, attention] = {
+        let _ = taskbar;
+        [
+            tauri::include_image!("icons/tray/macos/tray-onTemplate@2x.png"),
+            tauri::include_image!("icons/tray/macos/tray-offTemplate@2x.png"),
+            tauri::include_image!("icons/tray/macos/tray-not-connectedTemplate@2x.png"),
+            tauri::include_image!("icons/tray/macos/tray-attentionTemplate@2x.png"),
+        ]
+    };
     #[cfg(not(target_os = "macos"))]
-    let [on, off, absent, attention] = [
-        tauri::include_image!("icons/tray/windows/dark-taskbar/tray-on-32.png"),
-        tauri::include_image!("icons/tray/windows/dark-taskbar/tray-off-32.png"),
-        tauri::include_image!("icons/tray/windows/dark-taskbar/tray-not-connected-32.png"),
-        tauri::include_image!("icons/tray/windows/dark-taskbar/tray-attention-32.png"),
-    ];
+    let [on, off, absent, attention] = match taskbar {
+        Taskbar::Dark => [
+            tauri::include_image!("icons/tray/windows/dark-taskbar/tray-on-32.png"),
+            tauri::include_image!("icons/tray/windows/dark-taskbar/tray-off-32.png"),
+            tauri::include_image!("icons/tray/windows/dark-taskbar/tray-not-connected-32.png"),
+            tauri::include_image!("icons/tray/windows/dark-taskbar/tray-attention-32.png"),
+        ],
+        Taskbar::Light => [
+            tauri::include_image!("icons/tray/windows/light-taskbar/tray-on-32.png"),
+            tauri::include_image!("icons/tray/windows/light-taskbar/tray-off-32.png"),
+            tauri::include_image!("icons/tray/windows/light-taskbar/tray-not-connected-32.png"),
+            tauri::include_image!("icons/tray/windows/light-taskbar/tray-attention-32.png"),
+        ],
+    };
     match state {
         IconState::On => on,
         IconState::Off => off,
@@ -183,8 +236,9 @@ pub struct TrayStatus {
 /// device → Paused (Resolve) → Connected (USB / Bluetooth · N%).
 pub fn tray_status(status: &StatusEvent, low_battery: u8) -> TrayStatus {
     let paused = status.paused;
-    // Stepped aside for Resolve the device loop is Off, yet freewheel is On.
-    let on = paused || status.connection != ConnectionStatus::Off;
+    // The one On/Off (Settings::set_enabled); stepped aside for Resolve the
+    // device loop is Off, yet freewheel is On.
+    let on = status.enabled;
     let missing = status.permissions.values().any(|g| *g == Grant::Missing);
     let connected = paused || status.connection == ConnectionStatus::Connected;
     let level = status.battery.map(|b| b.level);
@@ -420,8 +474,6 @@ pub struct TrayMenu<R: Runtime> {
     login: CheckMenuItem<R>,
     status: MenuItem<R>,
     update: MenuItem<R>,
-    commands: Sender<Command>,
-    manual: Sender<Message>,
     updates_available: bool,
     low_battery: u8,
     live: Mutex<Live>,
@@ -471,7 +523,7 @@ impl<R: Runtime> TrayMenu<R> {
         let _ = self.status.set_text(&view.line);
         let _ = self.status.set_enabled(view.fix);
         if let Some(tray) = app.tray_by_id("main") {
-            let _ = tray.set_icon(Some(icon(view.icon)));
+            let _ = tray.set_icon(Some(icon(view.icon, taskbar())));
             let _ = tray.set_icon_as_template(cfg!(target_os = "macos"));
         }
         lock(&self.live).status = view;
@@ -507,10 +559,16 @@ impl<R: Runtime> TrayMenu<R> {
     pub fn clicked(&self, app: &AppHandle<R>, id: &str) {
         match id {
             TOGGLE => {
+                // The OS flipped the check: switch to it, through the same
+                // On/Off as the settings window's switch, then show the
+                // result everywhere (the window hears the `status` event).
                 let on = self.toggle.is_checked().unwrap_or(true);
-                let _ = self.toggle.set_text(toggle_text(on));
-                let _ = self.commands.send(Command::SetEnabled(on));
-                let _ = self.manual.send(Message::Manual(on));
+                let settings = app.state::<crate::settings::Settings>();
+                let status = settings.set_enabled(on, "tray").unwrap_or_else(|e| {
+                    tracing::error!(error = %e, on, "the tray cannot switch freewheel");
+                    settings.status()
+                });
+                emit_status(app, &status);
             }
             STATUS => {
                 let existed = show_settings(app);
@@ -633,17 +691,34 @@ pub fn emit_status<R: Runtime>(app: &AppHandle<R>, status: &StatusEvent) {
     }
 }
 
-/// Builds the tray. The toggle sends On/Off to the device loop and tells the
-/// Resolve watcher (`manual`) the switch was by hand; Quit exits the app,
-/// whose exit hook releases every held key. The menu's parts are managed
-/// as [`TrayMenu`]. `updates_available`: this run has an update source.
+/// Builds the tray. The toggle switches freewheel through
+/// [`crate::settings::Settings::set_enabled`] (managed before the tray), as
+/// the settings window's switch does; Quit exits the app, whose exit hook
+/// releases every held key. The menu's parts are managed as [`TrayMenu`].
+/// `updates_available`: this run has an update source.
 pub fn build<R: Runtime>(
     app: &AppHandle<R>,
-    commands: Sender<Command>,
-    manual: Sender<Message>,
     updates_available: bool,
     low_battery: u8,
 ) -> tauri::Result<TrayIcon<R>> {
+    let menu = manage_menu(app, updates_available, low_battery)?;
+    TrayIconBuilder::with_id("main")
+        .icon(icon(IconState::Absent, taskbar()))
+        .icon_as_template(cfg!(target_os = "macos"))
+        .tooltip(status_text(TrayState::NotConnected))
+        .menu(&menu)
+        .on_menu_event(move |app, event| {
+            app.state::<TrayMenu<R>>().clicked(app, event.id().as_ref());
+        })
+        .build(app)
+}
+
+/// Builds the tray menu and manages its live parts as [`TrayMenu`].
+fn manage_menu<R: Runtime>(
+    app: &AppHandle<R>,
+    updates_available: bool,
+    low_battery: u8,
+) -> tauri::Result<Menu<R>> {
     // The checkbox shows the OS login item, not the config, at startup.
     let parts = menu(app, autostart_enabled(app), updates_available)?;
     let (_, update_action) = update_item(updates_available, &UpdateReport::default());
@@ -652,8 +727,6 @@ pub fn build<R: Runtime>(
         login: parts.login,
         status: parts.status,
         update: parts.update,
-        commands,
-        manual,
         updates_available,
         low_battery,
         live: Mutex::new(Live {
@@ -667,15 +740,7 @@ pub fn build<R: Runtime>(
         }),
         notifier: Mutex::new(Notifier::default()),
     });
-    TrayIconBuilder::with_id("main")
-        .icon(icon(IconState::Absent))
-        .icon_as_template(cfg!(target_os = "macos"))
-        .tooltip(status_text(TrayState::NotConnected))
-        .menu(&parts.menu)
-        .on_menu_event(move |app, event| {
-            app.state::<TrayMenu<R>>().clicked(app, event.id().as_ref());
-        })
-        .build(app)
+    Ok(parts.menu)
 }
 
 /// `--simulate` only: the Simulator window's Tray menu clicks a tray item
@@ -814,20 +879,163 @@ mod tests {
         }
     }
 
+    const STATES: [IconState; 4] = [
+        IconState::On,
+        IconState::Off,
+        IconState::Absent,
+        IconState::Attention,
+    ];
+
     #[test]
     fn each_state_has_its_own_bundled_icon() {
-        let all = [
-            IconState::On,
-            IconState::Off,
-            IconState::Absent,
-            IconState::Attention,
-        ]
-        .map(icon);
-        for (i, a) in all.iter().enumerate() {
-            for b in &all[i + 1..] {
-                assert_ne!(a.rgba(), b.rgba());
+        for taskbar in [Taskbar::Light, Taskbar::Dark] {
+            let all = STATES.map(|s| icon(s, taskbar));
+            for (i, a) in all.iter().enumerate() {
+                for b in &all[i + 1..] {
+                    assert_ne!(a.rgba(), b.rgba());
+                }
             }
         }
+    }
+
+    /// The most used colour among the icon's visible pixels, and how many
+    /// pixels are amber (the attention badge).
+    #[cfg(not(target_os = "macos"))]
+    fn ink(image: &Image<'_>) -> ([u8; 3], usize) {
+        let mut counts = BTreeMap::<[u8; 3], usize>::new();
+        let mut amber = 0;
+        for px in image.rgba().chunks(4) {
+            if px[3] < 24 {
+                continue;
+            }
+            if px[..3] == [240, 160, 32] {
+                amber += 1;
+            } else {
+                *counts.entry([px[0], px[1], px[2]]).or_default() += 1;
+            }
+        }
+        let top = counts.into_iter().max_by_key(|(_, n)| *n).unwrap().0;
+        (top, amber)
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn the_windows_tray_icons_are_the_app_pink_for_the_taskbar() {
+        // scripts/tray-icons.mjs: the light accent on a light taskbar, the
+        // brighter pink on a dark one.
+        for (taskbar, pink) in [
+            (Taskbar::Light, [0xc4, 0x46, 0x7f]),
+            (Taskbar::Dark, [0xf0, 0x7f, 0xae]),
+        ] {
+            for state in STATES {
+                let (top, amber) = ink(&icon(state, taskbar));
+                assert_eq!(top, pink, "{taskbar:?} {state:?}");
+                // Only Needs attention keeps the handoff's amber badge.
+                assert_eq!(
+                    amber > 0,
+                    state == IconState::Attention,
+                    "{taskbar:?} {state:?}"
+                );
+            }
+            // Off is the dimmed glyph: less ink than On.
+            let alpha = |s| -> u32 {
+                icon(s, taskbar)
+                    .rgba()
+                    .chunks(4)
+                    .map(|p| u32::from(p[3]))
+                    .sum()
+            };
+            assert!(
+                alpha(IconState::Off) < alpha(IconState::On) * 3 / 4,
+                "{taskbar:?}"
+            );
+        }
+        // Off Windows there is no taskbar theme to read: dark.
+        #[cfg(not(windows))]
+        assert_eq!(taskbar(), Taskbar::Dark);
+        // On Windows it is read from the registry (either is fine on a runner).
+        #[cfg(windows)]
+        let _ = taskbar();
+    }
+
+    #[test]
+    fn the_tray_check_is_the_one_on_off_not_the_connection() {
+        // Just switched Off: the device loop has not said Off yet.
+        let mut s = status(ConnectionStatus::Absent);
+        s.enabled = false;
+        let v = tray_status(&s, LOW_BATTERY);
+        assert!(!v.on);
+        assert_eq!(v.icon, IconState::Off);
+        assert_eq!(v.line, "Off: Resolve can use it");
+        // Just switched On: still Off in the device loop, the check is on.
+        let mut s = status(ConnectionStatus::Off);
+        s.enabled = true;
+        let v = tray_status(&s, LOW_BATTERY);
+        assert!(v.on);
+        assert_eq!(v.line, LOOKING);
+        // Stepped aside for Resolve: On, paused, never Off.
+        s.paused = true;
+        let v = tray_status(&s, LOW_BATTERY);
+        assert!(v.on);
+        assert_eq!(v.icon, IconState::Off);
+        assert_eq!(v.line, "Paused: DaVinci Resolve is open");
+    }
+
+    /// A tray built on a mock app with the real Settings behind it.
+    fn mock_tray() -> (
+        tauri::App<tauri::test::MockRuntime>,
+        tempfile::TempDir,
+        std::sync::mpsc::Receiver<crate::device::Command>,
+    ) {
+        let app = tauri::test::mock_app();
+        let dir = tempfile::tempdir().unwrap();
+        let (commands, rx) = std::sync::mpsc::channel();
+        let (manual, _) = std::sync::mpsc::channel();
+        let mut store = ConfigStore::new(dir.path());
+        let config = store.load_or_default().0;
+        app.manage(crate::settings::Settings::new(
+            store, config, commands, manual,
+        ));
+        // The simulator's login item: the OS one is not touched.
+        app.manage(crate::simulate::SimHandle::new());
+        // The menu without the OS tray icon (no system tray in a test).
+        manage_menu(app.handle(), false, LOW_BATTERY).unwrap();
+        (app, dir, rx)
+    }
+
+    #[test]
+    fn the_tray_and_the_window_switch_the_same_on_off_both_ways() {
+        use crate::device::Command;
+        let (app, _dir, commands) = mock_tray();
+        let app = app.handle();
+        let menu = app.state::<TrayMenu<tauri::test::MockRuntime>>();
+        let settings = app.state::<crate::settings::Settings>();
+        assert!(menu.state().on);
+        // The tray's item, as the OS delivers it: the check flips, then the click.
+        menu.toggle.set_checked(false).unwrap();
+        menu.clicked(app, TOGGLE);
+        assert!(matches!(
+            commands.try_recv(),
+            Ok(Command::SetEnabled(false))
+        ));
+        assert!(!settings.status().enabled, "the window reads Off");
+        assert!(!menu.state().on);
+        assert_eq!(menu.toggle.text().unwrap(), "freewheel is Off");
+        // The window's switch (the set_enabled command's path): the check follows.
+        let status = settings.set_enabled(true, "settings window").unwrap();
+        emit_status(app, &status);
+        assert!(matches!(commands.try_recv(), Ok(Command::SetEnabled(true))));
+        assert!(menu.state().on);
+        assert!(menu.toggle.is_checked().unwrap());
+        assert_eq!(menu.toggle.text().unwrap(), "freewheel is On");
+        // (Stepped aside for Resolve keeps the check on:
+        // the_tray_check_is_the_one_on_off_not_the_connection.)
+        // A device loop that is gone: the check goes back to what is true.
+        drop(commands);
+        menu.toggle.set_checked(false).unwrap();
+        menu.clicked(app, TOGGLE);
+        assert!(menu.toggle.is_checked().unwrap());
+        assert!(settings.status().enabled);
     }
 
     fn texts(model: &[Entry]) -> Vec<String> {
@@ -951,9 +1159,11 @@ mod tests {
         assert_eq!(idle, UpdateReport::default());
     }
 
+    /// A status from the device loop; Off here is switched Off.
     fn status(connection: ConnectionStatus) -> StatusEvent {
         let mut s = StatusEvent::new("base");
         s.set_connection(connection);
+        s.enabled = connection != ConnectionStatus::Off;
         s
     }
 
@@ -999,7 +1209,9 @@ mod tests {
                 Attention
             )
         );
+        // Stepped aside: the device loop is Off, freewheel is still On.
         let mut paused = status(ConnectionStatus::Off);
+        paused.enabled = true;
         paused.paused = true;
         assert_eq!(
             view(&paused),
@@ -1025,9 +1237,11 @@ mod tests {
         );
         // Off wins over the permission, as in the toolbar.
         s.set_connection(ConnectionStatus::Off);
+        s.enabled = false;
         assert_eq!(view(&s).1, "Off: Resolve can use it");
         s.permissions.insert("Accessibility".into(), Grant::Granted);
         s.set_connection(ConnectionStatus::Connected);
+        s.enabled = true;
         assert!(!view(&s).2);
     }
 

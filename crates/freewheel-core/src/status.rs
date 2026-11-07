@@ -40,6 +40,11 @@ impl From<&OverrideError> for OverrideErrorStatus {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct StatusEvent {
+    /// freewheel is On: the one On/Off the app has, whoever switched it (the
+    /// settings window's switch, the tray's 'freewheel is On', the
+    /// Simulator). Stepping aside for Resolve leaves it On and sets
+    /// `paused`; `connection` then reads Off.
+    pub enabled: bool,
     pub connection: ConnectionStatus,
     pub battery: Option<Battery>,
     pub layer: LayerId,
@@ -66,6 +71,7 @@ impl StatusEvent {
     /// The status before the device loop has said anything.
     pub fn new(layer: impl Into<LayerId>) -> Self {
         StatusEvent {
+            enabled: true,
             connection: ConnectionStatus::Absent,
             battery: None,
             layer: layer.into(),
@@ -195,6 +201,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&status).unwrap(),
             serde_json::json!({
+                "enabled": true,
                 "connection": "Connected",
                 "battery": {"level": 64, "charging": true},
                 "layer": "edit",
