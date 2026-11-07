@@ -1,31 +1,34 @@
 #!/usr/bin/env node
-// The release workflow's tauriScript. For `build` it checks the updater
-// pubkey variable and the signing secrets are set, then injects the pubkey
-// with `tauri build --config`: no key of any kind is committed to the repo.
-// Empty APPLE_* variables (the secrets are not set yet) are removed first:
-// the bundler treats a set-but-empty APPLE_CERTIFICATE as a certificate and
-// fails, so until they exist the macOS app is ad-hoc signed and not notarized.
-// Every other command passes through to the Tauri CLI unchanged.
+// The release workflow's Tauri CLI wrapper (`npm run tauri -- build ...`).
+// For `build` it requires the updater pubkey variable and bakes it into the
+// binary through FREEWHEEL_UPDATER_PUBKEY (src-tauri/src/selfupdate.rs reads
+// it with option_env!): no key of any kind is committed to the repo, and
+// the build needs no secret (the packages are signed afterwards, in
+// release.yml's sign step). Empty APPLE_* variables (the secrets are not set
+// yet) are removed first: the bundler treats a set-but-empty
+// APPLE_CERTIFICATE as a certificate and fails, so until they exist the
+// macOS app is ad-hoc signed and not notarized. Every other command passes
+// through to the Tauri CLI unchanged.
 import { fileURLToPath } from "node:url";
 
-/** The GitHub Actions variable (public) and the secrets the release build needs. */
-export const RELEASE_ENV = ["TAURI_UPDATER_PUBKEY", "TAURI_SIGNING_PRIVATE_KEY", "TAURI_SIGNING_PRIVATE_KEY_PASSWORD"];
+/** The GitHub Actions variable (public) the release build needs. */
+export const RELEASE_ENV = ["TAURI_UPDATER_PUBKEY"];
 
-/** Returns { problems, args }: the Tauri CLI args with the pubkey override, or what is missing. */
+/** The variable the Rust build reads the pubkey from. */
+export const BAKED_PUBKEY_ENV = "FREEWHEEL_UPDATER_PUBKEY";
+
+/** Returns { problems, args, env }: the Tauri CLI args and the env to add, or what is missing. */
 export function releaseArgs(args, env) {
-  if (args[0] !== "build") return { problems: [], args };
+  if (args[0] !== "build") return { problems: [], args, env: {} };
   const missing = RELEASE_ENV.filter((name) => !env[name]?.trim());
   if (missing.length) {
     return {
-      problems: [
-        `release build needs ${missing.join(", ")}: set the variable TAURI_UPDATER_PUBKEY and the secrets ` +
-          "TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD in the 'release' environment",
-      ],
+      problems: [`release build needs ${missing.join(", ")}: set the variable TAURI_UPDATER_PUBKEY (the updater key's public half)`],
       args: null,
+      env: {},
     };
   }
-  const config = JSON.stringify({ plugins: { updater: { pubkey: env.TAURI_UPDATER_PUBKEY.trim() } } });
-  return { problems: [], args: ["build", "--config", config, ...args.slice(1)] };
+  return { problems: [], args, env: { [BAKED_PUBKEY_ENV]: env.TAURI_UPDATER_PUBKEY.trim() } };
 }
 
 /** The macOS signing and notarization variables the bundler reads. */
@@ -53,10 +56,11 @@ export function appleEnv(env) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const { problems, args } = releaseArgs(process.argv.slice(2), process.env);
+  const { problems, args, env } = releaseArgs(process.argv.slice(2), process.env);
   if (args?.[0] === "build" && process.platform === "darwin") for (const note of appleEnv(process.env)) console.warn(note);
   for (const problem of problems) console.error(problem);
   if (problems.length) process.exit(1);
+  Object.assign(process.env, env);
   const cli = (await import("@tauri-apps/cli")).default;
   cli.run(args, "tauri").catch((err) => {
     cli.logError(err.message);

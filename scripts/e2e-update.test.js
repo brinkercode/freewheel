@@ -3,36 +3,30 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { checkWorkflow } from "./check-workflow.mjs";
-import { e2eConfig } from "./e2e-update-config.mjs";
-import { NOTES, parseArgs } from "./e2e-update-windows.mjs";
-import { chunks, latestJson, startUpdateServer } from "./update-server.mjs";
+import { e2eConfig, nextVersion } from "./e2e-update-config.mjs";
+import { NOTES, UPDATE_URL_ENV, configFile, parseArgs, populate, updateTemp } from "./e2e-update-windows.mjs";
+import { chunks, localManifest, startUpdateServer, tamper } from "./update-server.mjs";
+import { sampleConfig } from "../src/dev/mockTauri.js";
 import { noteSections } from "../src/whatsNew.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const wf = read("../.github/workflows/e2e-windows.yml");
 const job = wf.slice(wf.indexOf("\n  update:"));
 
-test("the e2e build override: the version, the test pubkey and a loopback-only http endpoint", () => {
-  const c = e2eConfig({ version: "0.2.0", pubkey: " PUB\n", port: "8719" });
-  expect(c.version).toBe("0.2.0");
-  expect(c.bundle.createUpdaterArtifacts).toBe(true);
-  expect(c.plugins.updater).toEqual({
-    pubkey: "PUB",
-    endpoints: ["http://127.0.0.1:8719/latest.json"],
-    dangerousInsecureTransportProtocol: true,
-  });
-  expect(() => e2eConfig({ version: "x", pubkey: "P", port: 1 })).toThrow(/version/);
-  expect(() => e2eConfig({ version: "0.2.0", pubkey: " ", port: 1 })).toThrow(/pubkey/);
-  expect(() => e2eConfig({ version: "0.2.0", pubkey: "P", port: 0 })).toThrow(/port/);
+test("the e2e builds: only the version is overridden; the next version is the next minor", () => {
+  expect(e2eConfig({ version: "0.2.0" })).toEqual({ version: "0.2.0" });
+  expect(() => e2eConfig({ version: "x" })).toThrow(/version/);
+  expect(nextVersion("0.1.0")).toBe("0.2.0");
+  expect(nextVersion("v1.4.2")).toBe("1.5.0");
+  expect(nextVersion("0.2.0-beta.1")).toBe("0.3.0");
 });
 
-test("latest.json has the shape the updater reads, for Windows", () => {
-  expect(latestJson({ version: "0.2.0", notes: "n", signature: "SIG\n", url: "http://127.0.0.1:1/a.exe", pubDate: "d" })).toEqual({
-    version: "0.2.0",
-    notes: "n",
-    pub_date: "d",
-    platforms: { "windows-x86_64": { signature: "SIG", url: "http://127.0.0.1:1/a.exe" } },
-  });
+test("the local server moves the manifest's urls to itself; a tampered copy differs in one byte", () => {
+  const m = { version: "0.2.0", notes: "n", platforms: { "windows-x86_64": { url: "https://github.com/x/releases/download/v0.2.0/freewheel-0.2.0-windows-x64.zip", signature: "S" } } };
+  expect(localManifest(m, "http://127.0.0.1:9").platforms["windows-x86_64"]).toEqual({ url: "http://127.0.0.1:9/freewheel-0.2.0-windows-x64.zip", signature: "S" });
+  const data = Buffer.alloc(10, 1);
+  const bad = tamper(data);
+  expect([...bad].filter((b, i) => b !== data[i])).toHaveLength(1);
   expect(chunks(10, 4)).toEqual([
     [0, 4],
     [4, 8],
@@ -40,67 +34,106 @@ test("latest.json has the shape the updater reads, for Windows", () => {
   ]);
 });
 
-test("the local release server fails, then has nothing, then offers the bundle, streamed in chunks", async () => {
+test("the local release server fails, has nothing, offers the package streamed in chunks, or a tampered one", async () => {
   const dir = mkdtempSync(join(tmpdir(), "fw-upd-"));
-  const bundle = join(dir, "freewheel_0.2.0_x64-setup.exe");
-  writeFileSync(bundle, Buffer.alloc(300 * 1024, 7));
-  const server = await startUpdateServer({ bundle, signature: "SIG", version: "0.2.0", notes: "n", downloadMs: 200 });
+  const pkg = join(dir, "freewheel-0.2.0-windows-x64.zip");
+  writeFileSync(pkg, Buffer.alloc(300 * 1024, 7));
+  const manifest = { version: "0.2.0", notes: "n", platforms: { "windows-x86_64": { url: "https://x/freewheel-0.2.0-windows-x64.zip", signature: "SIG" } } };
+  const server = await startUpdateServer({ manifest, package: pkg, downloadMs: 200 });
+  const body = async (url) => {
+    const res = await fetch(url);
+    let reads = 0;
+    const parts = [];
+    for await (const part of res.body) {
+      reads++;
+      parts.push(part);
+    }
+    return { res, reads, data: Buffer.concat(parts) };
+  };
   try {
     expect((await fetch(`${server.url}/latest.json`)).status).toBe(500);
-    await fetch(`${server.url}/__mode`, { method: "POST", body: "none" });
+    server.setMode("none");
     expect((await fetch(`${server.url}/latest.json`)).status).toBe(204);
     server.setMode("offer");
     const latest = await (await fetch(`${server.url}/latest.json`)).json();
     expect(latest.version).toBe("0.2.0");
-    expect(latest.platforms["windows-x86_64"].url).toBe(`${server.url}/freewheel_0.2.0_x64-setup.exe`);
-    const res = await fetch(latest.platforms["windows-x86_64"].url);
-    expect(res.headers.get("content-length")).toBe(String(300 * 1024));
-    let reads = 0;
-    let size = 0;
-    for await (const part of res.body) {
-      reads++;
-      size += part.length;
-    }
-    expect(size).toBe(300 * 1024);
-    expect(reads).toBeGreaterThan(1);
-    expect((await fetch(`${server.url}/__mode`, { method: "POST", body: "nope" })).status).toBe(400);
+    expect(latest.platforms["windows-x86_64"]).toEqual({ url: `${server.url}/freewheel-0.2.0-windows-x64.zip`, signature: "SIG" });
+    const good = await body(latest.platforms["windows-x86_64"].url);
+    expect(good.res.headers.get("content-length")).toBe(String(300 * 1024));
+    expect(good.reads).toBeGreaterThan(1);
+    expect(good.data.equals(readFileSync(pkg))).toBe(true);
+    server.setMode("tampered");
+    const bad = await body(latest.platforms["windows-x86_64"].url);
+    expect(bad.data.length).toBe(300 * 1024);
+    expect(bad.data.equals(readFileSync(pkg))).toBe(false);
+    expect(() => server.setMode("nope")).toThrow(/unknown mode/);
   } finally {
     await server.close();
   }
 });
 
-test("the update e2e script needs the app, both versions and B's bundle and signature", () => {
+test("the update e2e script needs the app, both versions and B's manifest and package; it keeps a populated config", () => {
   expect(() => parseArgs([])).toThrow(/--app/);
-  const o = parseArgs(["--app", "a.exe", "--bundle", "b.exe", "--sig", "b.sig", "--from", "0.1.0", "--to", "0.2.0"]);
+  const o = parseArgs(["--app", "a\\freewheel.exe", "--manifest", "latest.json", "--package", "b.zip", "--from", "0.1.0", "--to", "0.2.0"]);
   expect(o["server-port"]).toBe("8719");
   expect(o.port).toBe("9223");
   // What's new for B shows the notes it was published with.
   expect(noteSections(NOTES).map((s) => s.title)).toEqual(["Features", "Bug Fixes"]);
+  const c = populate(sampleConfig());
+  expect(c.layers.find((l) => l.id === "e2e-page").bindings.Out.Hotkey.combo.key).toBe("J");
+  expect(c.layers.find((l) => l.id === c.base_layer).bindings.Cut).toEqual({ LayerPush: { target: "e2e-page" } });
+  expect(populate(c)).toEqual(c);
+  expect(configFile("C:\\Users\\u\\AppData\\Roaming")).toBe(join("C:\\Users\\u\\AppData\\Roaming", "freewheel", "config", "config.json"));
+  expect(updateTemp("T")).toBe(join("T", "freewheel-update"));
+  // The override the script sets is the one only e2e builds read.
+  expect(read("../src-tauri/src/selfupdate.rs")).toContain(`pub const E2E_MANIFEST_URL_ENV: &str = "${UPDATE_URL_ENV}";`);
 });
 
-test("the update job: no secrets, a throwaway key, two e2e builds, A installed, B asserted, screenshots kept", () => {
+test("the script checks what the owner asked: tampered rejected with A intact, progress, same path runs B, What's new, config kept, no leftovers", () => {
+  const script = read("./e2e-update-windows.mjs");
+  for (const needle of [
+    'server.setMode("tampered")',
+    "the tampered package changed freewheel.exe",
+    "the rejected download was kept",
+    "the download showed too little progress",
+    "B does not run from",
+    "freewheel is updated to",
+    "the config changed",
+    "config.json changed on disk",
+    "freewheel.exe.old is still there",
+  ])
+    expect(script).toContain(needle);
+});
+
+test("the update job: no secrets, a throwaway key, two e2e builds packed as the release packs them, A unzipped, B asserted", () => {
   expect(checkWorkflow(wf)).toEqual([]);
   expect(job).toContain("name: update e2e (windows-2025, local release server)");
   expect(job).toContain('signer generate --ci -p "" -w "$key" -f');
-  expect(job).toContain("--features e2e --bundles nsis --config");
-  expect(job).toContain("node scripts/e2e-update-config.mjs");
+  expect(job).toContain('export FREEWHEEL_UPDATER_PUBKEY="$(cat "$E2E_UPDATER_KEY.pub")"');
+  expect(job).toContain('build --ci --no-bundle --features e2e --config "$(node scripts/e2e-update-config.mjs "$v")" -- --locked');
+  expect(job).toContain("node scripts/portable-release.mjs package --os windows");
+  expect(job).toContain('signer sign -f "$E2E_UPDATER_KEY" -p "" --app-version "$TO_VERSION" "$zip"');
+  expect(job).toContain("node scripts/portable-release.mjs manifest --version \"$TO_VERSION\"");
+  expect(job).toContain("Expand-Archive");
   expect(job).toContain("node scripts/e2e-update-windows.mjs");
-  expect(job).toContain("-ArgumentList '/S' -Wait");
-  expect(job).toMatch(/if \(\$installed -ne \$env:TO_VERSION\)/);
+  expect(job).not.toMatch(/nsis|setup\.exe|\/S'/);
+  expect(job).toMatch(/if \(\$now -ne \$env:TO_VERSION\)/);
   expect(job).toMatch(/name: e2e-update-screenshots\n\s+path: e2e-update-shots/);
-  // The port and server the builds point at are the ones the script serves.
   expect(job).toContain('SERVER_PORT: "8719"');
 });
 
-test("shipped builds never get the e2e feature, the e2e config or an http endpoint", () => {
+test("shipped builds never get the e2e feature or the e2e override", () => {
   for (const file of ["release.yml", "ci.yml", "test-build.yml", "update-e2e.yml"]) {
     const text = read(`../.github/workflows/${file}`);
-    expect(text, file).not.toMatch(/features[ =]+e2e|e2e-update-config|dangerousInsecure/);
+    expect(text, file).not.toMatch(/features[ =]+e2e|features e2e|e2e-update-config|FREEWHEEL_E2E_UPDATE_URL/);
   }
-  expect(read("./tauri-release.mjs")).not.toMatch(/e2e|dangerousInsecure/);
+  expect(read("./tauri-release.mjs")).not.toMatch(/e2e/);
   const cargo = read("../src-tauri/Cargo.toml");
   expect(cargo).toMatch(/^e2e = \[\]$/m);
   expect(cargo).not.toMatch(/^default = .*e2e/m);
+  // release.yml and test-build.yml check the binaries they ship.
+  expect(read("../.github/workflows/release.yml")).toContain("node scripts/check-release-binary.mjs");
+  expect(read("../.github/workflows/test-build.yml")).toContain("node scripts/check-release-binary.mjs target/release/freewheel.exe");
 });
 
 test("the release PR gets every required check without approval: release-please dispatches ci.yml and e2e-windows.yml", () => {

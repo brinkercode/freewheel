@@ -509,7 +509,7 @@ async function main() {
         await click("settings", "button.appearance-option", look);
         await waitFor("settings", `appearance ${look}`, `return document.documentElement.dataset.appearance === arguments[0]`, [look]);
       });
-    // Updates in --simulate: the simulated update source (src/simUpdate.js)
+    // Updates in --simulate: the Rust updater's simulated source (selfupdate.rs)
     // through the same states as a real update, dark then light.
     const updateState = (state, ms = 15000) =>
       waitFor("settings", `the update state ${state}`, `return document.querySelector('.version-card [data-update="' + arguments[0] + '"]')`, [state], ms);

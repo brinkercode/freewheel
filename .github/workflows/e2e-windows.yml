@@ -7,15 +7,18 @@
 # every step go to the 'e2e-screenshots' artifact; the exe plus a
 # double-click freewheel-simulate.cmd go to 'freewheel-windows-simulate'.
 #
-# The update job proves the real update without a published release: it
-# builds the installer twice (version A, the repo's, and B, the next minor),
-# both with a throwaway updater key generated in the job and their updater
-# endpoint on this runner (scripts/e2e-update-config.mjs; e2e builds only,
-# with the e2e-only `e2e` feature that opens the DevTools port), installs A,
-# serves B's signed bundle and latest.json from 127.0.0.1, and clicks A's
-# Check for updates -> Download and install -> Restart to update until B runs
-# and shows What's new (scripts/e2e-update-windows.mjs). Screenshots of every
-# state go to the 'e2e-update-screenshots' artifact.
+# The update job proves the portable update without a published release:
+# it builds freewheel.exe twice (version A, the repo's, and B, the next
+# minor), both e2e builds (the `e2e` feature: the DevTools port and the
+# updater's manifest URL override) with a throwaway updater key generated in
+# the job baked in, packs each as the release does
+# (scripts/portable-release.mjs), signs B's zip, unzips A into a folder with
+# a populated config, serves B from 127.0.0.1 (plus a tampered copy) and
+# drives A: Check -> available -> a tampered B rejected with A intact ->
+# Download (progress) -> Restart -> the same path runs B with What's new, the
+# config unchanged, freewheel.exe.old and the temp download gone
+# (scripts/e2e-update-windows.mjs). Screenshots of every state go to the
+# 'e2e-update-screenshots' artifact.
 name: e2e-windows
 
 on:
@@ -220,7 +223,7 @@ jobs:
       - run: npm ci
 
       # A throwaway key pair, made here and gone with the runner: never the
-      # release key. Both builds embed its pubkey; B's bundle is signed with it.
+      # release key. Both builds bake in its pubkey; B's zip is signed with it.
       - name: Make a test updater key
         shell: bash
         run: |
@@ -233,29 +236,27 @@ jobs:
           echo "TO_VERSION=$to" >> "$GITHUB_ENV"
           echo "update e2e: $from -> $to"
 
-      - name: Build version A and B installers
+      # The release's packaging and signing, with the test key: B's zip, its
+      # .sig (bound to B's version) and latest.json; A's zip.
+      - name: Build and pack version B, then A
         shell: bash
         run: |
-          export TAURI_SIGNING_PRIVATE_KEY="$(cat "$E2E_UPDATER_KEY")"
-          export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+          export FREEWHEEL_UPDATER_PUBKEY="$(cat "$E2E_UPDATER_KEY.pub")"
           for v in "$TO_VERSION" "$FROM_VERSION"; do
-            node scripts/e2e-update-config.mjs "$v" "$E2E_UPDATER_KEY.pub" "$SERVER_PORT" > "$RUNNER_TEMP/e2e-$v.json"
-            node "$TAURI_CLI" build --ci --features e2e --bundles nsis --config "$RUNNER_TEMP/e2e-$v.json"
-            mkdir -p "$RUNNER_TEMP/e2e-$v"
-            cp target/release/bundle/nsis/*_"$v"_*-setup.exe* "$RUNNER_TEMP/e2e-$v/"
-            ls -la "$RUNNER_TEMP/e2e-$v"
+            node "$TAURI_CLI" build --ci --no-bundle --features e2e --config "$(node scripts/e2e-update-config.mjs "$v")" -- --locked
+            node scripts/portable-release.mjs package --os windows --version "$v" --out "$RUNNER_TEMP/release-$v" --exe target/release/freewheel.exe
           done
+          zip="$RUNNER_TEMP/release-$TO_VERSION/freewheel-$TO_VERSION-windows-x64.zip"
+          node "$TAURI_CLI" signer sign -f "$E2E_UPDATER_KEY" -p "" --app-version "$TO_VERSION" "$zip" > /dev/null
+          node scripts/portable-release.mjs manifest --version "$TO_VERSION" --dir "$RUNNER_TEMP/release-$TO_VERSION" --only windows \
+            --base-url "https://github.com/brinkercode/freewheel/releases/download/v$TO_VERSION" > "$RUNNER_TEMP/release-$TO_VERSION/latest.json"
+          ls -la "$RUNNER_TEMP"/release-*
 
-      - name: Install version A
+      - name: Unzip version A into a folder
         shell: pwsh
         run: |
-          $setup = Get-ChildItem "$env:RUNNER_TEMP\e2e-$env:FROM_VERSION\*-setup.exe" | Select-Object -First 1
-          $install = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait -PassThru
-          if ($install.ExitCode -ne 0) { throw "installer exit $($install.ExitCode)" }
-          $v = (Get-Item "$env:LOCALAPPDATA\freewheel\freewheel.exe").VersionInfo
-          $installed = "{0}.{1}.{2}" -f $v.FileMajorPart, $v.FileMinorPart, $v.FileBuildPart
-          Write-Host "installed $installed from $($setup.Name)"
-          if ($installed -ne $env:FROM_VERSION) { throw "installed $installed, expected $env:FROM_VERSION" }
+          Expand-Archive "$env:RUNNER_TEMP\release-$env:FROM_VERSION\freewheel-$env:FROM_VERSION-windows-x64.zip" -DestinationPath "$env:RUNNER_TEMP\portable\freewheel"
+          Get-ChildItem "$env:RUNNER_TEMP\portable\freewheel" | Format-Table Name, Length
 
       - name: Install the msedgedriver matching WebView2
         shell: pwsh
@@ -276,22 +277,22 @@ jobs:
           $deadline = (Get-Date).AddSeconds(30)
           do { Start-Sleep -Milliseconds 300; $up = Test-NetConnection 127.0.0.1 -Port 4444 -InformationLevel Quiet -WarningAction SilentlyContinue } until ($up -or (Get-Date) -gt $deadline)
           if (-not $up) { throw "msedgedriver did not start" }
-          $bundle = Get-ChildItem "$env:RUNNER_TEMP\e2e-$env:TO_VERSION\*-setup.exe" | Select-Object -First 1
-          node scripts/e2e-update-windows.mjs --app "$env:LOCALAPPDATA\freewheel\freewheel.exe" --bundle $bundle.FullName --sig "$($bundle.FullName).sig" --from $env:FROM_VERSION --to $env:TO_VERSION --server-port $env:SERVER_PORT --port 9223 --out e2e-update-shots
+          $b = "$env:RUNNER_TEMP\release-$env:TO_VERSION"
+          node scripts/e2e-update-windows.mjs --app "$env:RUNNER_TEMP\portable\freewheel\freewheel.exe" --manifest "$b\latest.json" --package "$b\freewheel-$env:TO_VERSION-windows-x64.zip" --from $env:FROM_VERSION --to $env:TO_VERSION --server-port $env:SERVER_PORT --port 9223 --out e2e-update-shots
           $code = $LASTEXITCODE
           Stop-Process -Id $driver.Id -Force -ErrorAction SilentlyContinue
           Get-Process freewheel -ErrorAction SilentlyContinue | Stop-Process -Force
           exit $code
 
-      - name: The installed app is version B
+      - name: The folder's exe is version B
         shell: pwsh
         run: |
-          $v = (Get-Item "$env:LOCALAPPDATA\freewheel\freewheel.exe").VersionInfo
-          $installed = "{0}.{1}.{2}" -f $v.FileMajorPart, $v.FileMinorPart, $v.FileBuildPart
-          $reg = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\freewheel' -ErrorAction SilentlyContinue
-          Write-Host "installed exe $installed, uninstall entry DisplayVersion $($reg.DisplayVersion)"
-          if ($installed -ne $env:TO_VERSION) { throw "installed $installed, expected $env:TO_VERSION" }
-          if ($reg -and $reg.DisplayVersion -ne $env:TO_VERSION) { throw "uninstall entry says $($reg.DisplayVersion), expected $env:TO_VERSION" }
+          $exe = "$env:RUNNER_TEMP\portable\freewheel\freewheel.exe"
+          $v = (Get-Item $exe).VersionInfo
+          $now = "{0}.{1}.{2}" -f $v.FileMajorPart, $v.FileMinorPart, $v.FileBuildPart
+          Write-Host "freewheel.exe is $now"
+          if ($now -ne $env:TO_VERSION) { throw "freewheel.exe is $now, expected $env:TO_VERSION" }
+          if (Test-Path "$exe.old") { throw "freewheel.exe.old is still there" }
 
       - name: Upload screenshots
         if: always()

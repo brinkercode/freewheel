@@ -4,3 +4,4 @@
 *.ico binary
 *.icns binary
 *.cmd text eol=crlf
+src-tauri/fixtures/** binary

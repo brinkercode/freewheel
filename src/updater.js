@@ -1,7 +1,8 @@
-// The update flow through tauri-plugin-updater (or, in `freewheel --simulate`
-// only, the simulated source in src/simUpdate.js: the same states, the same
-// screens). The plugin verifies the minisign signature against
-// plugins.updater.pubkey before installing.
+// The update flow through freewheel's portable updater (src/selfUpdate.js,
+// src-tauri/src/selfupdate.rs; in `freewheel --simulate` its simulated
+// source: the same states, the same screens). The download verifies the
+// package's minisign signature against the pubkey baked into the release
+// build before anything is installed.
 //
 // The states the banner and the General tab draw (null is idle):
 //   { status: "checking" }
@@ -10,20 +11,31 @@
 //   { status: "downloading", version, progress }            progress 0-100, or null when the size is unknown
 //   { status: "ready", version }
 //   { status: "restarting", version }
-//   { status: "error", during: "check" | "download" | "install", version?, message, notConfigured? }
+//   { status: "error", during: "check" | "download" | "install", version?, message,
+//     notConfigured?, notWritable?, folder?, badSignature? }
 
 /** How long 'Checking…' shows at least, so a fast answer still reads as a check. */
 export const MIN_CHECK_MS = 900;
 
 const sleep = (ms) => new Promise((resolve) => globalThis.setTimeout(resolve, ms));
 
-/** The error state; `notConfigured` when this build has no updater (dev and CI builds have no pubkey). */
+/**
+ * The error state, from the Rust updater's error codes (selfupdate.rs
+ * UpdateError): `notConfigured` when this build has no updater (dev and CI
+ * builds have no pubkey), `notWritable` (+ `folder`) when the app's folder
+ * can't be changed, `badSignature` when the download did not verify.
+ */
 export function errorState(during, error, version) {
   const message = String(error?.message ?? error ?? "");
   const state = { status: "error", during, message };
   if (version) state.version = version;
-  if (during === "check" && /plugin updater not found|updater.*not (found|initialized|registered)/i.test(message))
-    state.notConfigured = true;
+  const code = message.match(/^([a-z-]+):\s?/);
+  if (during === "check" && code?.[1] === "not-configured") state.notConfigured = true;
+  if (code?.[1] === "not-writable") {
+    state.notWritable = true;
+    state.folder = message.slice(code[0].length);
+  }
+  if (code?.[1] === "bad-signature") state.badSignature = true;
   return state;
 }
 
@@ -90,11 +102,11 @@ export async function download(update, onState, log = console.error) {
 }
 
 /**
- * Installs the downloaded update (Windows runs the passive NSIS installer,
- * which exits this app and starts the new version) and relaunches.
- * `beforeInstall` runs first: on Windows the app exits inside install(), so
- * anything for after the restart is kept before it. A failed install is an
- * error to retry.
+ * Installs the downloaded update (the new version is swapped in place of
+ * this one, started, and this app exits) and relaunches. `beforeInstall`
+ * runs first: the app exits right after install(), so anything for after
+ * the restart is kept before it. A failed install (the old version is put
+ * back) is an error to retry.
  */
 export async function restart(update, relaunch, onState, beforeInstall = () => {}, log = console.error) {
   onState({ status: "restarting", version: update.version });

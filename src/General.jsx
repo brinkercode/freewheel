@@ -63,7 +63,10 @@ export function updateText(update) {
     case "restarting":
       return "Restarting freewheel…";
     case "error":
-      if (update.notConfigured) return "This test build can’t update itself. Installed versions of freewheel can.";
+      if (update.notConfigured) return "This test build can’t update itself. Released versions of freewheel can.";
+      if (update.notWritable)
+        return `freewheel can’t update itself in ${update.folder || "this folder"}. Move the freewheel folder somewhere you can change, like Documents, or download freewheel ${v} from GitHub.`;
+      if (update.badSignature) return `The download of freewheel ${v} couldn’t be verified, so nothing was changed. Try again.`;
       if (update.during === "download") return `freewheel ${v} didn’t download. Check your internet connection and try again.`;
       if (update.during === "install") return `freewheel ${v} didn’t install. Try again.`;
       return "Couldn’t check for updates. Check your internet connection and try again.";

@@ -14,7 +14,10 @@
 //   ?simulate=1            as in --simulate: the Simulator harness drives it (__fwEmit)
 //   ?updated=0.1.1         just updated from 0.1.0 to that version: What's new shows
 
+import { compareVersions } from "../whatsNew.js";
+
 const params = new URLSearchParams(globalThis.location?.search ?? "");
+const sleep = (ms) => new Promise((r) => globalThis.setTimeout(r, ms));
 
 const hotkey = (key, ...modifiers) => ({ Hotkey: { combo: { modifiers, key } } });
 
@@ -109,6 +112,7 @@ export function installMockTauri(win = window) {
   let config = sampleConfig();
   const status = sampleStatus();
   const listeners = {};
+  const updates = { current: params.get("updated") ?? "0.1.0", published: null, offer: null };
   const commands = {
     get_config: () => structuredClone(config),
     save_config: ({ config: next }) => {
@@ -182,7 +186,31 @@ export function installMockTauri(win = window) {
           .map((p) => [p, "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="]),
       ),
     tray_update_state: () => null,
-    "plugin:updater|check": () => null,
+    // As selfupdate.rs's simulated source: the Simulator's New version publishes one.
+    update_check: async () => {
+      await sleep(1500);
+      const { current, published } = updates;
+      if (!published || compareVersions(published, current) <= 0) return (updates.offer = null);
+      updates.offer = published;
+      return { version: published, current_version: current, body: sampleNotes(published) };
+    },
+    update_download: async ({ onEvent }) => {
+      if (!updates.offer) throw "nothing: no update to download or install";
+      const size = 8_400_000;
+      onEvent.onmessage({ event: "Started", data: { contentLength: size } });
+      for (let i = 0; i < 32; i++) {
+        await sleep(100);
+        onEvent.onmessage({ event: "Progress", data: { chunkLength: size / 32 } });
+      }
+      onEvent.onmessage({ event: "Finished" });
+      return null;
+    },
+    update_install: () => {
+      if (!updates.offer) throw "nothing: no update to download or install";
+      updates.current = updates.offer;
+      updates.offer = null;
+      return "simulated";
+    },
   };
   const invoke = async (cmd, args = {}) => {
     const run = commands[cmd];
@@ -195,7 +223,10 @@ export function installMockTauri(win = window) {
       listeners[event] = listeners[event].filter((h) => h !== handler);
     };
   };
-  win.__TAURI__ = { core: { invoke }, event: { listen } };
+  class Channel {
+    onmessage = () => {};
+  }
+  win.__TAURI__ = { core: { invoke, Channel }, event: { listen } };
   // @tauri-apps/plugin-* talk to the internals directly.
   let id = 0;
   win.__TAURI_INTERNALS__ = {
@@ -207,7 +238,15 @@ export function installMockTauri(win = window) {
   win.__fwPress = (key, label = key.toUpperCase()) =>
     (listeners["key-pressed"] ?? []).forEach((f) => f({ payload: { key, label } }));
   // The Simulator harness (src/dev/simHarness.jsx) emits the simulate-only events.
-  win.__fwEmit = (event, payload) => (listeners[event] ?? []).forEach((f) => f({ payload }));
+  win.__fwEmit = (event, payload) => {
+    // "New version": the simulated source publishes the next minor, as selfupdate.rs does.
+    if (event === "sim-update") {
+      const base = updates.published && compareVersions(updates.published, updates.current) > 0 ? updates.published : updates.current;
+      const [major, minor] = base.split(".").map(Number);
+      updates.published = `${major}.${minor + 1}.0`;
+    }
+    (listeners[event] ?? []).forEach((f) => f({ payload }));
+  };
   if (params.get("simulate") === "1") win.__FREEWHEEL_SIMULATE__ = true;
   const storage = win.localStorage;
   if (params.get("firstrun") === "1") storage.removeItem("freewheel.first-run-done");
