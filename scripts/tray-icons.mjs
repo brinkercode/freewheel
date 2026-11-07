@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // The Windows tray icons in the app's pink, made from the design handoff's
-// glyphs (design/handoff/icons/tray/windows: white for a dark taskbar,
+// glyphs (the private design handoff, icons/tray/windows: white for a dark taskbar,
 // near-black for a light one) into src-tauri/icons/tray/windows:
 //
 //   node scripts/tray-icons.mjs          # write them
@@ -21,7 +21,10 @@ import { fileURLToPath } from "node:url";
 import zlib from "node:zlib";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-export const SOURCE = path.join(root, "design/handoff/icons/tray/windows");
+// The owner's design handoff is never committed: point FREEWHEEL_HANDOFF at a local copy to regenerate.
+export const SOURCE = process.env.FREEWHEEL_HANDOFF
+  ? path.join(process.env.FREEWHEEL_HANDOFF, "icons/tray/windows")
+  : null;
 export const OUT = path.join(root, "src-tauri/icons/tray/windows");
 /** The glyph's pink per taskbar. */
 export const PINK = { "light-taskbar": [0xc4, 0x46, 0x7f], "dark-taskbar": [0xf0, 0x7f, 0xae] };
@@ -126,6 +129,7 @@ export function pinkIcons() {
     for (const state of STATES)
       for (const size of SIZES) {
         const name = `${taskbar}/tray-${state}-${size}.png`;
+        if (!SOURCE) throw new Error("set FREEWHEEL_HANDOFF to a local copy of the design handoff");
         all.push([name, encode(tint(decode(fs.readFileSync(path.join(SOURCE, name))), pink))]);
       }
   return all;
