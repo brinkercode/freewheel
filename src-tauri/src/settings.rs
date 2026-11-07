@@ -262,7 +262,9 @@ impl Settings {
             .map_err(|e| SaveError::SaveFailed {
                 message: e.to_string(),
             })?;
-        let before = std::mem::replace(&mut *lock(&self.config), config.clone()).settings;
+        let old = std::mem::replace(&mut *lock(&self.config), config.clone());
+        log_changes(&old, &config);
+        let before = old.settings;
         let after = &config.settings;
         if before.step_aside_for_resolve != after.step_aside_for_resolve {
             let _ = lock(&self.manual).send(Message::StepAside(after.step_aside_for_resolve));
@@ -304,6 +306,18 @@ impl Settings {
         let before = status.clone();
         f(&mut status);
         (*status != before).then(|| status.clone())
+    }
+}
+
+/// Logs what a save changed, one line per key, page and setting:
+/// `config saved: CUT: Do nothing -> Open website example.com`.
+pub fn log_changes(old: &Config, new: &Config) {
+    let changes = freewheel_core::describe::config_changes(old, new);
+    if changes.is_empty() {
+        tracing::info!("config saved: no changes");
+    }
+    for change in changes {
+        tracing::info!("config saved: {change}");
     }
 }
 
@@ -1028,6 +1042,6 @@ mod tests {
             text.contains("freewheel 9.9.9 starting on TestOS"),
             "{text}"
         );
-        assert!(text.contains("== config (redacted) =="), "{text}");
+        assert!(text.contains("== config =="), "{text}");
     }
 }

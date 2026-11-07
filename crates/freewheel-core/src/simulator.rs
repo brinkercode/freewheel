@@ -1,7 +1,10 @@
 //! Simulator mode (`freewheel --simulate`): the real connection manager and
 //! mapping engine on a [`FakeTransport`] that the Simulator window drives
-//! instead of a Speed Editor. Injection is off until "send for real" is on;
-//! until then every action is a toast and a log line ("would press Ctrl+C").
+//! instead of a Speed Editor. With 'Do actions for real' on (the default,
+//! kept in the simulator's own state file) a press does what its mapping
+//! says on this PC, through the same injector, launcher and dial controls as
+//! the device loop; off, each result line says "not done: Do actions for real
+//! is off (would press Ctrl+C)".
 
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -18,6 +21,7 @@ use crate::first_run::{FakeFirstRun, FirstRun};
 use crate::hid::{FakeTransport, HidError, HidTransport};
 use crate::inject::{InjectError, KeyCombo, KeyInjector, Keystroke};
 use crate::launch::{LaunchError, Launcher};
+use crate::overrides::{DialOutput, NoDial};
 use crate::report::{DeviceEvent, Key};
 use crate::resolve::{FakeProcessLister, HandOff, ProcessLister, ResolveWatcher};
 
@@ -25,6 +29,45 @@ use crate::resolve::{FakeProcessLister, HandOff, ProcessLister, ResolveWatcher};
 pub const FLAG: &str = "--simulate";
 /// The simulator's config lives in this subdirectory of the real config dir.
 pub const SIMULATOR_DIR: &str = "simulator";
+/// The Simulator's own switches, next to its config.
+pub const STATE_FILE: &str = "simulator-state.json";
+
+/// What the Simulator keeps between runs (not part of any config).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SimState {
+    /// 'Do actions for real': presses send keys, open apps and change the
+    /// volume on this PC. On unless the user turned it off.
+    #[serde(default = "on")]
+    pub do_actions_for_real: bool,
+}
+
+fn on() -> bool {
+    true
+}
+
+impl Default for SimState {
+    fn default() -> Self {
+        SimState {
+            do_actions_for_real: true,
+        }
+    }
+}
+
+impl SimState {
+    /// The state in `dir`; the default when there is none or it is unreadable.
+    pub fn load(dir: &std::path::Path) -> Self {
+        std::fs::read(dir.join(STATE_FILE))
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default()
+    }
+
+    fn save(&self, dir: &std::path::Path) -> std::io::Result<()> {
+        std::fs::create_dir_all(dir)?;
+        let json = serde_json::to_vec_pretty(self).map_err(std::io::Error::other)?;
+        std::fs::write(dir.join(STATE_FILE), json)
+    }
+}
 
 /// True when the command line asks for simulator mode.
 pub fn requested(args: impl IntoIterator<Item = String>) -> bool {
@@ -277,50 +320,25 @@ impl Clock for SimClock {
     }
 }
 
-/// The injector and launcher while "send for real" is off: each action
-/// becomes a toast and a log line instead of input.
+/// The injector and launcher while 'Do actions for real' is off: they do
+/// nothing; the engine's result lines say what they would have done.
 #[derive(Default)]
-struct DryRun(Vec<String>);
+struct NoOutput;
 
-impl DryRun {
-    fn would(&mut self, what: String) {
-        let line = format!("would {what}");
-        info!("{line}");
-        self.0.push(line);
-    }
-}
-
-fn keystroke_name(key: &Keystroke) -> String {
-    match key {
-        Keystroke::Modifier(m) => format!("{m:?}"),
-        Keystroke::Key(k) => k.clone(),
-    }
-}
-
-impl KeyInjector for DryRun {
-    fn key_down(&mut self, key: &Keystroke) -> Result<(), InjectError> {
-        self.would(format!("hold {}", keystroke_name(key)));
+impl KeyInjector for NoOutput {
+    fn key_down(&mut self, _: &Keystroke) -> Result<(), InjectError> {
         Ok(())
     }
-    fn key_up(&mut self, key: &Keystroke) -> Result<(), InjectError> {
-        self.would(format!("release {}", keystroke_name(key)));
+    fn key_up(&mut self, _: &Keystroke) -> Result<(), InjectError> {
         Ok(())
     }
-    fn scroll(&mut self, amount: i32) -> Result<(), InjectError> {
-        self.would(format!("scroll {amount}"));
-        Ok(())
-    }
-    fn tap_combo(&mut self, combo: &KeyCombo) -> Result<(), InjectError> {
-        let mut parts: Vec<String> = combo.modifiers.iter().map(|m| format!("{m:?}")).collect();
-        parts.push(combo.key.clone());
-        self.would(format!("press {}", parts.join("+")));
+    fn scroll(&mut self, _: i32) -> Result<(), InjectError> {
         Ok(())
     }
 }
 
-impl Launcher for DryRun {
-    fn launch(&mut self, path: &str, _args: &[String]) -> Result<(), LaunchError> {
-        self.would(format!("launch {path}"));
+impl Launcher for NoOutput {
+    fn launch(&mut self, _: &str, _: &[String]) -> Result<(), LaunchError> {
         Ok(())
     }
 }
@@ -347,6 +365,7 @@ pub struct Simulator {
     led_session: Option<u64>,
     injector: Box<dyn KeyInjector>,
     launcher: Box<dyn Launcher>,
+    dial: Box<dyn DialOutput>,
     send_for_real: bool,
     connection: Option<ConnectionStatus>,
     battery: Option<(u8, bool)>,
@@ -361,7 +380,8 @@ pub struct Simulator {
 
 impl Simulator {
     /// Starts with no device attached. `injector` and `launcher` are only
-    /// used while "send for real" is on.
+    /// used while 'Do actions for real' is on ([`SimState`], on by default);
+    /// the dial controls are [`NoDial`] until [`with_dial`](Self::with_dial).
     pub fn new(
         mut store: ConfigStore,
         injector: Box<dyn KeyInjector>,
@@ -381,9 +401,14 @@ impl Simulator {
             None => Err(HidError::Io("no simulated device attached".into())),
         });
         let clock = SimClock::new();
+        let real = SimState::load(store.dir()).do_actions_for_real;
+        info!(
+            "simulator: Do actions for real is {}",
+            if real { "on" } else { "off" }
+        );
         let mut sim = Simulator {
             manager: ConnectionManager::new(open, clock.clone(), (|c: u64| !c) as fn(u64) -> u64),
-            engine: Engine::new(&config),
+            engine: sim_engine(&config, JogModeKeep::Default, real),
             leds: LedWriter::default(),
             led_session: None,
             resolve: ResolveWatcher::from_settings(&config.settings),
@@ -398,7 +423,8 @@ impl Simulator {
             shuttle_clock: SimClock::new(),
             injector,
             launcher,
-            send_for_real: false,
+            dial: Box::new(NoDial),
+            send_for_real: real,
             connection: None,
             battery: None,
             held: Vec::new(),
@@ -406,6 +432,27 @@ impl Simulator {
         };
         sim.tick();
         sim
+    }
+
+    /// Turns the dial overrides (volume, brightness) through `dial` while
+    /// 'Do actions for real' is on, as the device loop's OverrideWorker.
+    pub fn with_dial(mut self, mut dial: Box<dyn DialOutput>) -> Self {
+        dial.set_steps(self.config.overrides.clone());
+        self.dial = dial;
+        self
+    }
+
+    /// Ends a wheel turn that has rested at `now` and returns its line
+    /// (the session thread calls this while no control comes in).
+    pub fn idle(&mut self, now: Instant) -> Vec<String> {
+        self.engine.end_idle_wheel_gesture(now);
+        self.engine.take_outcomes()
+    }
+
+    /// Quit: releases every held key on the side in use, keeping the switch.
+    pub fn release_all(&mut self) {
+        self.run(|engine, injector, _| engine.release_all(injector));
+        self.dial.release();
     }
 
     /// Applies one control and returns the status the UI receives.
@@ -450,8 +497,22 @@ impl Simulator {
             }
             Control::SendForReal { on } => {
                 // Nothing stays held on the side we switch away from.
-                self.run(|engine, injector, _| engine.release_all(injector));
+                self.release_all();
                 self.send_for_real = on;
+                self.engine.set_dry_run(!on);
+                let state = SimState {
+                    do_actions_for_real: on,
+                };
+                if let Err(e) = state.save(self.store.dir()) {
+                    warn!(error = %e, "simulator state not saved");
+                }
+                let line = if on {
+                    "Do actions for real is on: presses send keys, open apps and change the volume on this PC"
+                } else {
+                    "Do actions for real is off: presses only show what they would do"
+                };
+                info!("simulator: {line}");
+                self.toasts.push(line.into());
             }
             Control::SetBinding { key, action } => self.set_binding(key, action),
             Control::LoadSampleMappings => {
@@ -493,10 +554,10 @@ impl Simulator {
             Control::StepUpdate => self.update = update_step(),
             Control::ResetFirstRun => self.first_run.reset(),
             Control::ExitOverride => {
-                if self.engine.exit_override() {
-                    info!("simulator: wheel back to normal");
-                    self.toasts.push("the wheel is back to normal".into());
-                }
+                self.run(|engine, _, _| {
+                    engine.exit_override();
+                    Ok(())
+                });
             }
         }
         self.status()
@@ -580,12 +641,16 @@ impl Simulator {
         }
         self.run(|engine, injector, _| engine.release_all(injector));
         self.resolve = ResolveWatcher::from_settings(&config.settings);
+        let changes = crate::describe::config_changes(&self.config, &config).len();
         self.config = config;
-        let mode = self.engine.jog_mode();
-        self.engine = Engine::new(&self.config);
-        self.engine.set_jog_mode(mode);
+        self.dial.set_steps(self.config.overrides.clone());
+        self.engine = sim_engine(
+            &self.config,
+            JogModeKeep::Keep(self.engine.jog_mode()),
+            self.send_for_real,
+        );
         self.engine.take_reports();
-        info!("simulator: config from the settings window applied");
+        info!("simulator: running the saved config ({changes} changes)");
         true
     }
 
@@ -639,9 +704,11 @@ impl Simulator {
             self.toasts.push(e.to_string());
         }
         self.run(|engine, injector, _| engine.release_all(injector));
-        let mode = self.engine.jog_mode();
-        self.engine = Engine::new(&self.config);
-        self.engine.set_jog_mode(mode);
+        self.engine = sim_engine(
+            &self.config,
+            JogModeKeep::Keep(self.engine.jog_mode()),
+            self.send_for_real,
+        );
         self.engine.take_reports();
     }
 
@@ -691,31 +758,40 @@ impl Simulator {
         }
     }
 
-    /// Runs `f` on the engine with the real or the dry-run outputs.
+    /// Runs `f` on the engine with the real outputs (the same injector,
+    /// launcher and dial controls as the device loop) or, with 'Do actions
+    /// for real' off, outputs that do nothing.
     fn run(
         &mut self,
         f: impl FnOnce(&mut Engine, &mut dyn KeyInjector, &mut dyn Launcher) -> Result<(), InjectError>,
     ) {
+        let dial = self.engine.active_override();
         let result = if self.send_for_real {
             f(&mut self.engine, &mut *self.injector, &mut *self.launcher)
         } else {
-            let (mut keys, mut apps) = (DryRun::default(), DryRun::default());
-            let result = f(&mut self.engine, &mut keys, &mut apps);
-            self.toasts.extend(keys.0.into_iter().chain(apps.0));
-            result
+            f(&mut self.engine, &mut NoOutput, &mut NoOutput)
         };
         if let Err(e) = result {
-            warn!(error = %e, "simulated action failed");
-            self.toasts.push(e.to_string());
+            warn!(error = %e, "simulated device: action failed");
         }
-        let errors = self.engine.take_launch_errors();
-        self.toasts.extend(errors.iter().map(ToString::to_string));
-        // The dial controls are the OS's; the simulator only says what
-        // they would do.
-        for (mode, ticks) in self.engine.take_override_ticks() {
-            let line = override_toast(mode, ticks);
-            info!("{line}");
-            self.toasts.push(line);
+        // The engine said what each action did (or would have done).
+        self.toasts.extend(self.engine.take_outcomes());
+        self.engine.take_launch_errors();
+        let ticks = self.engine.take_override_ticks();
+        let exited = self.engine.take_override_exit();
+        if self.send_for_real {
+            // As the device loop: leaving app volume drops its tap,
+            // entering it asks for the permission.
+            if exited && dial == Some(OverrideMode::AppVolume) {
+                self.dial.release();
+            }
+            let now = self.engine.active_override();
+            if now != dial && now == Some(OverrideMode::AppVolume) {
+                self.dial.activate(OverrideMode::AppVolume);
+            }
+            for (mode, ticks) in ticks {
+                self.dial.push(mode, ticks);
+            }
         }
         // Output reports (the wheel mode) go to the simulated device, so the
         // Device test view lists them as the real one would.
@@ -725,17 +801,22 @@ impl Simulator {
     }
 }
 
-/// "would turn the volume up 2 steps" for dial override ticks.
-fn override_toast(mode: OverrideMode, ticks: i32) -> String {
-    let what = match mode {
-        OverrideMode::SystemVolume => "the volume",
-        OverrideMode::AppVolume => "the app's volume",
-        OverrideMode::Brightness => "the brightness",
-    };
-    let way = if ticks < 0 { "down" } else { "up" };
-    let n = ticks.unsigned_abs();
-    let steps = if n == 1 { "step" } else { "steps" };
-    format!("would turn {what} {way} {n} {steps}")
+/// Whether a rebuilt engine keeps the wheel mode it was in.
+enum JogModeKeep {
+    Default,
+    Keep(JogMode),
+}
+
+/// The engine for the simulated device: its lines say so, and with 'Do
+/// actions for real' off its results say what they would have done.
+fn sim_engine(config: &Config, mode: JogModeKeep, real: bool) -> Engine {
+    let mut engine = Engine::new(config);
+    if let JogModeKeep::Keep(mode) = mode {
+        engine.set_jog_mode(mode);
+    }
+    engine.set_simulated(true);
+    engine.set_dry_run(!real);
+    engine
 }
 
 #[cfg(test)]
@@ -779,7 +860,15 @@ mod tests {
         }
     }
 
+    /// A simulator with 'Do actions for real' off (most tests check what
+    /// it would do); [`real_sim_in`] keeps the default.
     fn sim_in(dir: &std::path::Path) -> (Simulator, SharedMock) {
+        let (mut sim, mock) = real_sim_in(dir);
+        sim.apply(Control::SendForReal { on: false });
+        (sim, mock)
+    }
+
+    fn real_sim_in(dir: &std::path::Path) -> (Simulator, SharedMock) {
         let mock = SharedMock::default();
         let sim = Simulator::new(
             ConfigStore::new(dir),
@@ -787,6 +876,18 @@ mod tests {
             Box::new(MockLauncher::new()),
         );
         (sim, mock)
+    }
+
+    /// The result line with 'Do actions for real' off.
+    fn off(what: &str) -> String {
+        format!("{} (would {what})", crate::engine::NOT_DONE)
+    }
+
+    /// Turns the wheel by `value` and lets it rest: the turn's line.
+    fn turn(sim: &mut Simulator, value: i32) -> Vec<String> {
+        let mut lines = sim.apply(Control::Wheel { value }).toasts;
+        lines.extend(sim.idle(Instant::now() + Duration::from_secs(1)));
+        lines
     }
 
     fn connected(bus: Bus) -> (tempfile::TempDir, Simulator, SharedMock) {
@@ -918,7 +1019,7 @@ mod tests {
             });
             let s = key(&mut sim, &name, true);
             assert_eq!(s.held_keys, std::slice::from_ref(&name));
-            assert_eq!(s.toasts, ["would press Ctrl+C"], "{name}");
+            assert_eq!(s.toasts, [off("press Ctrl+C")], "{name}");
             let s = key(&mut sim, &name, false);
             assert!(s.held_keys.is_empty(), "{name}");
             assert!(s.toasts.is_empty(), "{name}");
@@ -948,11 +1049,11 @@ mod tests {
         let (mut sim, _) = sim_in(dir.path());
         sim.apply(Control::Connect { bus: Bus::Usb });
 
-        assert_eq!(key(&mut sim, "Cut", true).toasts, ["would press Ctrl+B"]);
+        assert_eq!(key(&mut sim, "Cut", true).toasts, [off("press Ctrl+B")]);
         key(&mut sim, "Cut", false);
         assert_eq!(key(&mut sim, "Cam1", true).page, "edit");
         key(&mut sim, "Cam1", false);
-        assert_eq!(key(&mut sim, "Cut", true).toasts, ["would press X"]);
+        assert_eq!(key(&mut sim, "Cut", true).toasts, [off("press X")]);
         key(&mut sim, "Cut", false);
         assert_eq!(key(&mut sim, "Cam1", true).page, "base");
     }
@@ -985,7 +1086,7 @@ mod tests {
             .insert("Cut".into(), hotkey(&[Modifier::Ctrl], "S"));
         assert!(sim.sync_config(changed));
         assert_eq!(sim.apply(Control::Status).mapped_keys, 1);
-        assert_eq!(key(&mut sim, "Cut", true).toasts, ["would press Ctrl+S"]);
+        assert_eq!(key(&mut sim, "Cut", true).toasts, [off("press Ctrl+S")]);
     }
 
     #[test]
@@ -1010,13 +1111,13 @@ mod tests {
         assert!(sample_mappings().len() >= 5);
 
         // The engine acts on them.
-        assert_eq!(key(&mut sim, "Cut", true).toasts, ["would press Ctrl+C"]);
+        assert_eq!(key(&mut sim, "Cut", true).toasts, [off("press Ctrl+C")]);
         key(&mut sim, "Cut", false);
         let s = key(&mut sim, SAMPLE_PUSH_KEY, true);
         assert_eq!(s.page, SAMPLE_LAYER);
         assert_eq!(s.lit_leds, ["Snap", "Scrl"]);
         key(&mut sim, SAMPLE_PUSH_KEY, false);
-        assert_eq!(key(&mut sim, "Cut", true).toasts, ["would press X"]);
+        assert_eq!(key(&mut sim, "Cut", true).toasts, [off("press X")]);
         key(&mut sim, "Cut", false);
         let s = key(&mut sim, SAMPLE_PUSH_KEY, true);
         assert_eq!(
@@ -1080,19 +1181,23 @@ mod tests {
         sim.apply(Control::Connect { bus: Bus::Usb });
 
         for (mode, led, left, right) in [
-            (JogMode::Scroll, "Scrl", "would scroll -1", "would scroll 1"),
-            (JogMode::Jog, "Jog", "would press Left", "would press Right"),
-            (
-                JogMode::Shuttle,
-                "Shtl",
-                "would press Left",
-                "would press Right",
-            ),
+            (JogMode::Scroll, "Scrl", "scroll -1 ×1", "scroll 1 ×1"),
+            (JogMode::Jog, "Jog", "press Left ×1", "press Right ×1"),
+            (JogMode::Shuttle, "Shtl", "press Left ×1", "press Right ×1"),
         ] {
             let s = sim.apply(Control::WheelMode { mode });
             assert_eq!((s.jog_mode, s.lit_leds), (mode, vec![led.to_string()]));
-            assert_eq!(sim.apply(Control::Wheel { value: -1 }).toasts, [left]);
-            assert_eq!(sim.apply(Control::Wheel { value: 1 }).toasts, [right]);
+            let m = crate::describe::jog_mode(mode);
+            let line = |v: &str, did: &str| {
+                format!(
+                    "simulated device: wheel turned {v} in {m} mode (1 report) -> {}",
+                    off(did)
+                )
+            };
+            assert_eq!(turn(&mut sim, -1), [line("-1", left)]);
+            // Shuttle reports the dial position: -1 to 1 is a turn of 2.
+            let by = if mode == JogMode::Shuttle { "+2" } else { "+1" };
+            assert_eq!(turn(&mut sim, 1), [line(by, right)]);
         }
         assert!(mock.calls().is_empty());
     }
@@ -1103,45 +1208,34 @@ mod tests {
         let (mut sim, mock) = sim_in(dir.path());
         sim.apply(Control::Connect { bus: Bus::Usb });
         for (mode, what) in [
-            (JogMode::Volume, "the volume"),
-            (JogMode::Brightness, "the brightness"),
+            (JogMode::Volume, "volume"),
+            (JogMode::Brightness, "brightness"),
         ] {
             let s = sim.apply(Control::WheelMode { mode });
             assert_eq!(s.jog_mode, mode);
             assert_eq!(
-                sim.apply(Control::Wheel { value: 2 }).toasts,
-                [format!("would turn {what} up 2 steps")]
+                turn(&mut sim, 2),
+                [format!(
+                    "simulated device: wheel turned +2 in {what} knob mode (1 report) -> {}",
+                    off(&format!("turn {what} up ×2"))
+                )]
             );
-            assert_eq!(
-                sim.apply(Control::Wheel { value: -1 }).toasts,
-                [format!("would turn {what} down 1 step")]
+            sim.apply(Control::Wheel { value: -1 });
+            let lines = turn(&mut sim, -2);
+            assert_eq!(lines.len(), 1, "{lines:?}");
+            assert!(
+                lines[0].ends_with(&format!(
+                    "(2 reports) -> {}",
+                    off(&format!("turn {what} down ×3"))
+                )),
+                "{lines:?}"
             );
         }
         assert!(mock.calls().is_empty());
     }
 
-    /// Collects what the `tracing` fmt layer writes.
-    #[derive(Clone, Default)]
-    struct LogBuf(Arc<Mutex<Vec<u8>>>);
-
-    impl std::io::Write for LogBuf {
-        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            lock(&self.0).extend_from_slice(buf);
-            Ok(buf.len())
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-
     #[test]
     fn send_for_real_off_only_toasts_and_logs_on_reaches_the_injector() {
-        let logs = LogBuf::default();
-        let writer = logs.clone();
-        let subscriber = tracing_subscriber::fmt()
-            .with_ansi(false)
-            .with_writer(move || writer.clone())
-            .finish();
         let (_dir, mut sim, mock) = connected(Bus::Usb);
         sim.apply(Control::SetBinding {
             key: "Cut".into(),
@@ -1157,22 +1251,25 @@ mod tests {
             }),
         });
 
-        let s = tracing::subscriber::with_default(subscriber, || key(&mut sim, "Cut", true));
-        assert_eq!(s.toasts, ["would press Ctrl+C"]);
-        let log = String::from_utf8(lock(&logs.0).clone()).unwrap();
-        assert!(log.contains("would press Ctrl+C"), "{log}");
-        key(&mut sim, "Cut", false);
-        assert_eq!(key(&mut sim, "In", true).toasts, ["would hold A"]);
-        assert_eq!(key(&mut sim, "In", false).toasts, ["would release A"]);
-        assert_eq!(
-            sim.apply(Control::Wheel { value: 1 }).toasts,
-            ["would scroll 1"]
+        let mut s = None;
+        let log = crate::logging::capture(tracing::Level::INFO, || {
+            s = Some(key(&mut sim, "Cut", true));
+        });
+        assert_eq!(s.unwrap().toasts, [off("press Ctrl+C")]);
+        assert!(log.contains(&off("press Ctrl+C")), "{log}");
+        assert!(
+            log.contains(r#"simulated device: key CUT pressed on page "Base" -> Press Ctrl+C"#),
+            "{log}"
         );
+        key(&mut sim, "Cut", false);
+        assert_eq!(key(&mut sim, "In", true).toasts, [off("hold A")]);
+        assert_eq!(key(&mut sim, "In", false).toasts, [off("release A")]);
+        assert!(turn(&mut sim, 1)[0].ends_with(&off("scroll 1 ×1")));
         assert!(mock.calls().is_empty());
 
         assert!(sim.apply(Control::SendForReal { on: true }).send_for_real);
         let s = key(&mut sim, "Cut", true);
-        assert!(s.toasts.is_empty());
+        assert_eq!(s.toasts, ["sent Ctrl+C"]);
         let ctrl = Keystroke::Modifier(Modifier::Ctrl);
         let c = Keystroke::Key("C".into());
         assert_eq!(
@@ -1214,11 +1311,11 @@ mod tests {
                 action: Some(action),
             });
         }
-        assert_eq!(key(&mut sim, "In", true).toasts, ["would hold Shift"]);
-        assert_eq!(key(&mut sim, "In", false).toasts, ["would release Shift"]);
-        assert_eq!(key(&mut sim, "Snap", true).toasts, ["would hold Shift"]);
+        assert_eq!(key(&mut sim, "In", true).toasts, [off("hold Shift")]);
+        assert_eq!(key(&mut sim, "In", false).toasts, [off("release Shift")]);
+        assert_eq!(key(&mut sim, "Snap", true).toasts, [off("hold Shift")]);
         assert!(key(&mut sim, "Snap", false).toasts.is_empty());
-        assert_eq!(key(&mut sim, "Snap", true).toasts, ["would release Shift"]);
+        assert_eq!(key(&mut sim, "Snap", true).toasts, [off("release Shift")]);
         assert!(mock.calls().is_empty());
     }
 
@@ -1472,5 +1569,110 @@ mod tests {
         let d = sim.diagnostics();
         assert_eq!(d.reports[0].decoded, "wheel LEDs 0x00");
         assert_eq!(d.reports[1].decoded, "key LEDs mask 0x00000");
+    }
+
+    /// A launcher and dial the test keeps a handle to after the simulator takes them.
+    #[derive(Clone, Default)]
+    struct Recorder(Rc<RefCell<Vec<String>>>);
+
+    impl Launcher for Recorder {
+        fn launch(&mut self, path: &str, args: &[String]) -> Result<(), LaunchError> {
+            self.0.borrow_mut().push(format!("launch {path} {args:?}"));
+            Ok(())
+        }
+    }
+
+    impl DialOutput for Recorder {
+        fn push(&mut self, mode: OverrideMode, ticks: i32) {
+            self.0.borrow_mut().push(format!("dial {mode:?} {ticks}"));
+        }
+        fn activate(&mut self, mode: OverrideMode) {
+            self.0.borrow_mut().push(format!("activate {mode:?}"));
+        }
+        fn release(&mut self) {
+            self.0.borrow_mut().push("release".into());
+        }
+        fn set_steps(&mut self, _: crate::config::OverrideSettings) {}
+    }
+
+    fn recorded_sim(dir: &std::path::Path) -> (Simulator, Recorder, SharedMock) {
+        let rec = Recorder::default();
+        let mock = SharedMock::default();
+        let sim = Simulator::new(
+            ConfigStore::new(dir),
+            Box::new(mock.clone()),
+            Box::new(rec.clone()),
+        )
+        .with_dial(Box::new(rec.clone()));
+        (sim, rec, mock)
+    }
+
+    #[test]
+    fn do_actions_for_real_is_on_by_default_runs_the_real_outputs_and_is_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut sim, rec, mock) = recorded_sim(dir.path());
+        let s = sim.apply(Control::Connect { bus: Bus::Usb });
+        assert!(s.send_for_real, "on by default");
+        let site = Action::LaunchApp {
+            path: "explorer.exe".into(),
+            args: vec!["https://example.com".into()],
+            enabled: true,
+            cwd: None,
+        };
+        sim.apply(Control::SetBinding {
+            key: "Cut".into(),
+            action: Some(site),
+        });
+        sim.apply(Control::SetBinding {
+            key: "In".into(),
+            action: Some(hotkey(&[Modifier::Ctrl], "C")),
+        });
+        let s = key(&mut sim, "Cut", true);
+        assert_eq!(
+            s.toasts,
+            [r#"launched example.com ok: explorer.exe "https://example.com""#]
+        );
+        assert_eq!(
+            *rec.0.borrow(),
+            [r#"launch explorer.exe ["https://example.com"]"#]
+        );
+        key(&mut sim, "Cut", false);
+        assert_eq!(key(&mut sim, "In", true).toasts, ["sent Ctrl+C"]);
+        assert_eq!(mock.calls().len(), 4);
+        key(&mut sim, "In", false);
+        // The wheel as a volume knob turns the real dial controls.
+        sim.apply(Control::WheelMode {
+            mode: JogMode::Volume,
+        });
+        let lines = turn(&mut sim, 3);
+        assert_eq!(
+            lines,
+            [
+                "simulated device: wheel turned +3 in volume knob mode (1 report) -> turn volume up ×3"
+            ]
+        );
+        assert!(rec.0.borrow().contains(&"dial SystemVolume 3".to_string()));
+
+        // Off: nothing runs, the line says so, and the next run remembers.
+        let s = sim.apply(Control::SendForReal { on: false });
+        assert!(!s.send_for_real);
+        assert!(
+            s.toasts[0].starts_with("Do actions for real is off"),
+            "{:?}",
+            s.toasts
+        );
+        sim.release_all();
+        drop(sim);
+        let (mut sim, rec, _) = recorded_sim(dir.path());
+        sim.apply(Control::Connect { bus: Bus::Usb });
+        assert!(!sim.apply(Control::Status).send_for_real);
+        assert_eq!(
+            key(&mut sim, "Cut", true).toasts,
+            [off(r#"run explorer.exe "https://example.com""#)]
+        );
+        assert!(rec.0.borrow().is_empty());
+        sim.apply(Control::SendForReal { on: true });
+        drop(sim);
+        assert!(SimState::load(dir.path()).do_actions_for_real);
     }
 }

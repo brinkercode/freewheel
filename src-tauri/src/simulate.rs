@@ -205,7 +205,19 @@ pub fn mirror(before: Option<&SimStatus>, now: &SimStatus) -> Vec<Mirror> {
 pub fn session(mut sim: Simulator, rx: Receiver<Msg>, mut sink: impl FnMut(Mirror)) {
     let mut last: Option<SimStatus> = None;
     let mut last_diagnostics: Option<DeviceDiagnostics> = None;
-    for msg in rx {
+    loop {
+        let msg = match rx.recv_timeout(IDLE_TICK) {
+            Ok(msg) => msg,
+            // No control: a wheel turn that rested gets its line.
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                let lines = sim.idle(std::time::Instant::now());
+                if !lines.is_empty() {
+                    sink(Mirror::Log(lines));
+                }
+                continue;
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => return,
+        };
         let config_before = sim.config().clone();
         let (mut status, reply) = match msg {
             Msg::Ui(control, reply) => (sim.apply(control), Some(reply)),
@@ -216,8 +228,8 @@ pub fn session(mut sim: Simulator, rx: Receiver<Msg>, mut sink: impl FnMut(Mirro
                 (sim.apply(Control::Status), None)
             }
             Msg::Device(Command::Quit(done)) => {
-                // Nothing stays held: switching "send for real" off releases.
-                sim.apply(Control::SendForReal { on: false });
+                // Nothing stays held ('Do actions for real' stays as it is).
+                sim.release_all();
                 let _ = done.send(());
                 return;
             }
@@ -247,9 +259,33 @@ pub fn session(mut sim: Simulator, rx: Receiver<Msg>, mut sink: impl FnMut(Mirro
     }
 }
 
+/// How often the idle session checks for a rested wheel turn.
+const IDLE_TICK: Duration = Duration::from_millis(150);
+
+/// The dial controls 'Do actions for real' turns: the OS volume and
+/// brightness through the same OverrideWorker as the device loop.
+#[cfg(not(test))]
+fn real_dial() -> Box<dyn freewheel_core::overrides::DialOutput> {
+    use freewheel_core::clock::SystemClock;
+    use freewheel_core::config::OverrideSettings;
+    use freewheel_core::overrides::{OverrideRunner, OverrideWorker};
+    Box::new(OverrideWorker::spawn(OverrideRunner::new(
+        crate::controls::os_controls(),
+        OverrideSettings::default(),
+        SystemClock,
+    )))
+}
+
+#[cfg(test)]
+fn real_dial() -> Box<dyn freewheel_core::overrides::DialOutput> {
+    Box::new(freewheel_core::overrides::NoDial)
+}
+
 /// Starts the session thread on `store` (the simulator's own config, shared
-/// with the settings window in this mode). `injector` is built there and is
-/// only used while "send for real" is on. `sink` runs on that thread.
+/// with the settings window in this mode). `injector` is built there and,
+/// with the launcher and the dial controls, is used while 'Do actions for
+/// real' is on: the same outputs as the device loop. `sink` runs on that
+/// thread.
 pub fn spawn(
     handle: &SimHandle,
     store: ConfigStore,
@@ -261,7 +297,8 @@ pub fn spawn(
         return;
     };
     std::thread::spawn(move || {
-        let sim = Simulator::new(store, injector(), Box::new(ProcessLauncher));
+        let sim =
+            Simulator::new(store, injector(), Box::new(ProcessLauncher)).with_dial(real_dial());
         session(sim, rx, sink);
     });
 }

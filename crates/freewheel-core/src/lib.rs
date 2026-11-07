@@ -6,6 +6,7 @@ pub mod clock;
 pub mod config;
 pub mod connection;
 pub mod ddc;
+pub mod describe;
 pub mod diagnostics;
 pub mod engine;
 pub mod first_run;

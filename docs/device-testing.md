@@ -65,9 +65,11 @@ Unplug the cable first. The Speed Editor pairs as a Bluetooth LE device.
 2. **Help & backup → Download logs** after the whole run.
 3. Turn **detailed logs** off again (they turn themselves off after a day).
 
-Privacy: the diagnostics and logs hold the device's report bytes and key
-names. They never hold the unlock (auth) bytes, what you type, your
-shortcuts, or the apps you open.
+Privacy: the diagnostics and logs hold the device's report bytes, key
+names, and what each press did (the page, what the key is set to, the app or
+website host it opened, the shortcut it sent). Logs stay on your computer
+until you send them. They never hold the unlock (auth) bytes or what you
+type; a website's full address only with detailed logs on.
 
 ## 4. Linux (X11 and Wayland)
 
