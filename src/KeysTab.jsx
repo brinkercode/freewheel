@@ -327,8 +327,11 @@ export default function KeysTab({
   useEffect(() => {
     const layer = status?.layer;
     if (!config || !layer || layer === deviceLayer.current) return;
+    // The first layer this tab sees is where the device already is, not a
+    // switch: it keeps the key the tab opened on (the Simulator's Record a key).
+    const switched = deviceLayer.current !== null;
     deviceLayer.current = layer;
-    if (config.layers.some((l) => l.id === layer)) (setPage(layer), setSelected(null), setPageError(null));
+    if (config.layers.some((l) => l.id === layer)) (setPage(layer), switched && setSelected(null), setPageError(null));
   }, [status?.layer, config]);
   if (!config) return null;
 
