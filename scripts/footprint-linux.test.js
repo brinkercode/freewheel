@@ -50,7 +50,9 @@ test("the Linux footprint job measures the release build under Xvfb and enforces
   expect(wf).toContain('node "$TAURI_CLI" build --ci --no-bundle');
   expect(wf).toContain("node scripts/footprint-linux.mjs --app target/release/freewheel --budgets scripts/footprint-budgets-linux.json");
   // Closed to the tray, only WebKit's network process stays.
-  for (const mode of ["normal", "simulate"]) expect(budgets.modes[mode].tray.webviewProcesses).toBe(1);
+  // Closed to the tray only freewheel is left: WebKit's network process ends too (linux_idle.rs).
+  for (const mode of ["normal", "simulate"]) expect(budgets.modes[mode].tray.webviewProcesses).toBe(0);
+  expect(budgets.idleCpuPercentOfOneCore).toBeLessThanOrEqual(1);
   expect(budgets.idleCpuPercentOfOneCore).toBeLessThanOrEqual(3);
   expect(overBudget({ exe: 40 * 1024 * 1024, exeLabel: "exe", modes: {} }, budgets)).toEqual(["exe MB: 40.00 > budget 32"]);
 });

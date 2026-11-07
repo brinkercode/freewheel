@@ -18,7 +18,7 @@
 //
 //   node scripts/e2e-update-linux.mjs --appimage <folder>/freewheel.AppImage --manifest <B latest.json> --package <B AppImage>
 //        --server-port 8719 [--out e2e-update-shots]
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   copyFileSync,
@@ -70,6 +70,30 @@ export const configFile = (env = process.env, home = os.homedir()) =>
 export const updateTemp = (env = process.env) =>
   path.posix.join(env.TMPDIR || "/tmp", "freewheel-update");
 
+/**
+ * Runs `cmd` without blocking this process (the update server lives here):
+ * resolves to { status, signal, stderr }.
+ */
+export function runAsync(cmd, args, options, ms = 120000) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, {
+      ...options,
+      stdio: ["ignore", "inherit", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.on("data", (d) => {
+      stderr += d;
+      process.stderr.write(d);
+    });
+    const timer = setTimeout(() => child.kill("SIGKILL"), ms);
+    child.on("error", reject);
+    child.on("close", (status, signal) => {
+      clearTimeout(timer);
+      resolve({ status, signal, stderr });
+    });
+  });
+}
+
 const sha = (file) =>
   createHash("sha256").update(readFileSync(file)).digest("hex");
 
@@ -111,13 +135,11 @@ async function run() {
       ...process.env,
       [UPDATE_URL_ENV]: `${server.url}/latest.json`,
     };
-    const update = (expect, what) => {
+    const update = async (expect, what) => {
       say(`step: ${what} (server: ${server.mode()})`);
-      const r = spawnSync(app, ["--update-check-and-install"], {
+      const r = await runAsync(app, ["--update-check-and-install"], {
         env,
         cwd: folder,
-        encoding: "utf8",
-        timeout: 120000,
       });
       say(`  exit ${r.status}${r.signal ? ` (signal ${r.signal})` : ""}`);
       if (r.status !== expect)
@@ -157,17 +179,17 @@ async function run() {
       );
     };
 
-    update(EXIT.failed, "the server fails");
+    await update(EXIT.failed, "the server fails");
     untouched("after a failed check");
     server.setMode("none");
-    update(EXIT.current, "nothing newer");
+    await update(EXIT.current, "nothing newer");
     untouched("when up to date");
     server.setMode("tampered");
-    update(EXIT.failed, `a tampered ${manifest.version}`);
+    await update(EXIT.failed, `a tampered ${manifest.version}`);
     untouched("after the tampered package");
 
     server.setMode("offer");
-    update(EXIT.installed, `${manifest.version} published`);
+    await update(EXIT.installed, `${manifest.version} published`);
     say(`  folder after the swap: ${files()}`);
     if (sha(app) !== sha(pkg)) throw new Error(`${app} is not B's AppImage`);
     if ((statSync(app).mode & 0o777) !== 0o755)
@@ -176,7 +198,10 @@ async function run() {
       );
     say(`  ${app} is B (sha256 ${sha(app)}), mode 755`);
 
-    update(EXIT.current, `B, checking again (${manifest.version} is current)`);
+    await update(
+      EXIT.current,
+      `B, checking again (${manifest.version} is current)`,
+    );
     if (existsSync(`${app}.old`)) throw new Error(`${app}.old is still there`);
     if (existsSync(updateTemp()))
       throw new Error(`${updateTemp()} is still there`);
@@ -188,11 +213,9 @@ async function run() {
     );
 
     say("step: B starts from the same path (--simulate --smoke)");
-    const smoke = spawnSync(app, ["--simulate", "--smoke"], {
+    const smoke = await runAsync(app, ["--simulate", "--smoke"], {
       env,
       cwd: folder,
-      encoding: "utf8",
-      timeout: 120000,
     });
     say(`  exit ${smoke.status}`);
     if (smoke.status !== 0)
