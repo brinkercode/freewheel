@@ -337,8 +337,14 @@ async function main() {
     }, [name]);
   };
   /** One step: the action, then the responsiveness check, then the screenshots. */
+  let stepLine = 0;
   const step = async (title, action, shots = ["settings"]) => {
     say(`step: ${title}`);
+    // Log checks look only at lines numbered after this point: what this
+    // step's actions did, however many lines they add (the window keeps 40).
+    const was = current;
+    stepLine = win.simulator ? await lastLine().catch(() => 0) : 0;
+    if (was) await use(was);
     await action();
     await responsive(title);
     for (const s of shots) await shot(s, title);
@@ -388,7 +394,7 @@ async function main() {
   const basePage = (c) => c.layers.find((l) => l.id === c.base_layer);
   /** One of the newest lines of the Simulator's log contains `text`. */
   const logged = (text, ms = 10000) =>
-    waitFor("simulator", `the log line "${text}"`, `return [...document.querySelectorAll(".fw-sim-log li")].slice(0, 14).some((li) => li.textContent.includes(arguments[0]))`, [text], ms);
+    waitFor("simulator", `the log line "${text}"`, `return [...document.querySelectorAll(".fw-sim-log li[data-n]")].some((li) => Number(li.dataset.n) > arguments[1] && li.textContent.includes(arguments[0]))`, [text, stepLine], ms);
   const shows = (name, text, ms) => waitFor(name, `"${text}"`, `return document.body.innerText.includes(arguments[0])`, [text], ms);
   const gone = (name, css) => waitFor(name, `no ${css}`, `return !document.querySelector(arguments[0])`, [css]);
   /** Types `text` (WebDriver keys: \uE009 Ctrl, \uE008 Shift, \uE000 releases them, \uE007 Enter) into `css`. */
@@ -503,7 +509,7 @@ async function main() {
   };
   const lineWith = (...parts) =>
     waitFor("simulator", `a log line with ${parts.join(" + ")}`, `const parts = arguments[0];
-      return [...document.querySelectorAll(".fw-sim-log li")].slice(0, 14).some((li) => parts.every((p) => li.textContent.includes(p)));`, [parts]);
+      return [...document.querySelectorAll(".fw-sim-log li[data-n]")].some((li) => Number(li.dataset.n) > arguments[1] && parts.every((p) => li.textContent.includes(p)));`, [parts, stepLine]);
   const dialogs = join(out, "dialogs");
   let saved = null;
   let freshWheel = null;
@@ -1055,7 +1061,7 @@ async function main() {
       await configShows("IN opens the chosen exe", (c) => basePage(c).bindings.In.LaunchApp.path.endsWith("E2E Example App.exe"));
       await logged("Chose the app E2E Example App");
       await press("IN");
-      await waitFor("simulator", "would launch the chosen exe", `return [...document.querySelectorAll(".fw-sim-log li")].slice(0, 14).some((li) => li.textContent.includes("would run") && li.textContent.includes("E2E Example App.exe"))`);
+      await waitFor("simulator", "would launch the chosen exe", `return [...document.querySelectorAll(".fw-sim-log li[data-n]")].some((li) => Number(li.dataset.n) > arguments[0] && li.textContent.includes("would run") && li.textContent.includes("E2E Example App.exe"))`, [stepLine]);
     }, ["settings", "simulator"]);
     await step("Keys: IN goes to a new page Music", async () => {
       await allChoices();
