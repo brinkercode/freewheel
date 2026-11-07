@@ -1,10 +1,30 @@
-//! The tray icon and its menu: the On/Off check item, the 'Needs permission'
-//! status line (macOS), Open settings, Start at login, Download logs for
-//! support and Quit.
+//! The tray icon and its menu, as the design handoff maps it (README, "Tray
+//! menu"):
+//!
+//! 1. `freewheel is On` — check item (toggles enabled)
+//! 2. Status line — disabled, except "Needs permission (click to fix)", which
+//!    opens the permission screen
+//! 3. ——
+//! 4. Open settings… · Start at login (check)
+//! 5. ——
+//! 6. Download logs for support… (saves the bundle, opens Help & backup) ·
+//!    Check for updates / Restart to update (drives the settings window's
+//!    update flow, src/updater.js)
+//! 7. ——
+//! 8. Quit freewheel
+//!
+//! The icon shows On · Off/paused · Not connected · Needs attention
+//! (permission missing or battery low). Every `status` event refreshes the
+//! icon, the toggle and the status line ([`emit_status`]).
 
+use std::sync::Mutex;
 use std::sync::mpsc::Sender;
 
 use freewheel_core::config::ConfigStore;
+use freewheel_core::permissions::Grant;
+use freewheel_core::simulator::Bus;
+use freewheel_core::status::{STATUS_EVENT, StatusEvent};
+use serde::{Deserialize, Serialize};
 use tauri::image::Image;
 use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
@@ -12,10 +32,10 @@ use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tauri_plugin_autostart::ManagerExt;
 
 use freewheel_core::battery::{self, Battery, LowBatteryAlert};
-use freewheel_core::permissions::{Permissions, status_line};
-use tauri_plugin_notification::NotificationExt;
+use freewheel_core::connection::ConnectionStatus;
 
 use crate::device::{Command, TrayState, Update};
+use crate::notify::{self, Notifier};
 use crate::resolve_watch::Message;
 
 const TOGGLE: &str = "toggle";
@@ -23,10 +43,27 @@ const STATUS: &str = "status";
 const OPEN_SETTINGS: &str = "open-settings";
 const START_AT_LOGIN: &str = "start-at-login";
 const DOWNLOAD_LOGS: &str = "download-logs";
+const UPDATE: &str = "update";
 const QUIT: &str = "quit";
 /// Sent when the status line is clicked: the settings window shows the
 /// permissions screen with Done (FIX_PERMISSIONS_EVENT in settingsApi.js).
 const FIX_PERMISSIONS_EVENT: &str = "fix-permissions";
+/// To the settings window: run the update flow's "check", "download" or
+/// "restart" (TRAY_UPDATE_EVENT in settingsApi.js).
+pub const TRAY_UPDATE_EVENT: &str = "tray-update";
+/// To the settings window: the tray saved the log bundle (`{ path }`) or
+/// could not (`{ error }`); it opens Help & backup and shows it
+/// (LOGS_SAVED_EVENT in settingsApi.js).
+pub const LOGS_SAVED_EVENT: &str = "logs-saved";
+
+const OPEN_SETTINGS_TEXT: &str = "Open settings…";
+const START_AT_LOGIN_TEXT: &str = "Start at login";
+const DOWNLOAD_LOGS_TEXT: &str = "Download logs for support…";
+const QUIT_TEXT: &str = "Quit freewheel";
+/// The status line before the device loop has said anything.
+const LOOKING: &str = "Looking for your Speed Editor…";
+/// Below this battery level the icon needs attention (src/shell.js LOW_BATTERY).
+pub const LOW_BATTERY: u8 = 15;
 
 /// Applies a Start at login toggle: `os` enables or disables the OS login
 /// item first, then `start_at_login` is saved to the config.
@@ -74,25 +111,41 @@ pub(crate) fn set_autostart<R: Runtime>(app: &AppHandle<R>, on: bool) -> Result<
     result.map_err(|e| e.to_string())
 }
 
+/// The tray icon's four states (screens-and-components 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IconState {
+    On,
+    /// Off or paused for Resolve.
+    Off,
+    /// Not connected.
+    Absent,
+    /// Needs attention: a permission is missing or the battery is low.
+    Attention,
+}
+
 /// The bundled icon for each state (macOS template images, else the
 /// Windows dark-taskbar set).
-pub fn icon(state: TrayState) -> Image<'static> {
+pub fn icon(state: IconState) -> Image<'static> {
     #[cfg(target_os = "macos")]
-    let [on, off, absent] = [
+    let [on, off, absent, attention] = [
         tauri::include_image!("icons/tray/macos/tray-onTemplate@2x.png"),
         tauri::include_image!("icons/tray/macos/tray-offTemplate@2x.png"),
         tauri::include_image!("icons/tray/macos/tray-not-connectedTemplate@2x.png"),
+        tauri::include_image!("icons/tray/macos/tray-attentionTemplate@2x.png"),
     ];
     #[cfg(not(target_os = "macos"))]
-    let [on, off, absent] = [
+    let [on, off, absent, attention] = [
         tauri::include_image!("icons/tray/windows/dark-taskbar/tray-on-32.png"),
         tauri::include_image!("icons/tray/windows/dark-taskbar/tray-off-32.png"),
         tauri::include_image!("icons/tray/windows/dark-taskbar/tray-not-connected-32.png"),
+        tauri::include_image!("icons/tray/windows/dark-taskbar/tray-attention-32.png"),
     ];
     match state {
-        TrayState::On => on,
-        TrayState::Off => off,
-        TrayState::NotConnected => absent,
+        IconState::On => on,
+        IconState::Off => off,
+        IconState::Absent => absent,
+        IconState::Attention => attention,
     }
 }
 
@@ -113,56 +166,137 @@ fn status_text(state: TrayState) -> &'static str {
     }
 }
 
-/// What the status line must do for the permissions now.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum StatusChange {
-    /// Set this text, inserting the line below the toggle if it is hidden.
-    Show(&'static str),
-    Hide,
-    Keep,
+/// What the tray shows for a status: the toggle's check, the status line
+/// (and whether clicking it fixes a permission) and the icon.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrayStatus {
+    pub on: bool,
+    pub line: String,
+    /// The line is "Needs permission (click to fix)": enabled, it opens the
+    /// permission screen.
+    pub fix: bool,
+    pub icon: IconState,
 }
 
-/// Plain-data decision for the status line, so tests need no native menu.
-fn status_change(shown: bool, permissions: &Permissions) -> StatusChange {
-    match status_line(permissions) {
-        Some(text) => StatusChange::Show(text),
-        None if shown => StatusChange::Hide,
-        None => StatusChange::Keep,
+/// The tray's view of a `status` event, first match wins as in the
+/// toolbar (src/shell.js deriveStatus): Off → Needs permission → Looking for
+/// device → Paused (Resolve) → Connected (USB / Bluetooth · N%).
+pub fn tray_status(status: &StatusEvent, low_battery: u8) -> TrayStatus {
+    let paused = status.paused;
+    // Stepped aside for Resolve the device loop is Off, yet freewheel is On.
+    let on = paused || status.connection != ConnectionStatus::Off;
+    let missing = status.permissions.values().any(|g| *g == Grant::Missing);
+    let connected = paused || status.connection == ConnectionStatus::Connected;
+    let level = status.battery.map(|b| b.level);
+    let low = level.is_some_and(|l| l < low_battery);
+    let (line, fix) = if !on {
+        ("Off: Resolve can use it".to_string(), false)
+    } else if missing {
+        ("Needs permission (click to fix)".to_string(), true)
+    } else if !connected {
+        (LOOKING.to_string(), false)
+    } else if paused {
+        ("Paused: DaVinci Resolve is open".to_string(), false)
+    } else {
+        (connected_text(status.bus, level), false)
+    };
+    let icon = if !on || paused {
+        IconState::Off
+    } else if missing || (connected && low) {
+        IconState::Attention
+    } else if !connected {
+        IconState::Absent
+    } else {
+        IconState::On
+    };
+    TrayStatus {
+        on,
+        line,
+        fix,
+        icon,
     }
 }
 
-/// The status line below the toggle, in the menu only while a permission is
-/// missing; clicking it opens the settings window and its Permissions section.
-#[derive(Clone)]
-pub struct StatusLine<R: Runtime> {
-    menu: Menu<R>,
-    item: MenuItem<R>,
+/// "Connected by USB", "Connected by Bluetooth · 64%" (src/shell.js connectedText).
+fn connected_text(bus: Option<Bus>, level: Option<u8>) -> String {
+    let battery = level.map(|l| format!(" · {l}%")).unwrap_or_default();
+    match bus {
+        Some(Bus::Usb) => format!("Connected by USB{battery}"),
+        Some(Bus::Bluetooth) => format!("Connected by Bluetooth{battery}"),
+        None => format!("Connected{battery}"),
+    }
 }
 
-impl<R: Runtime> StatusLine<R> {
-    /// Shows 'Needs permission (click to fix)' while one is missing.
-    pub fn show(&self, permissions: &Permissions) {
-        let shown = self.menu.get(STATUS).is_some();
-        match status_change(shown, permissions) {
-            StatusChange::Show(text) => {
-                let _ = self.item.set_text(text);
-                if !shown {
-                    let _ = self.menu.insert(&self.item, 1);
-                }
-            }
-            StatusChange::Hide => {
-                let _ = self.menu.remove(&self.item);
-            }
-            StatusChange::Keep => {}
+/// The settings window's update state (src/updater.js), as it reports it
+/// through `tray_update_state`; `None` status is idle.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+pub struct UpdateReport {
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub version: Option<String>,
+    #[serde(default)]
+    pub during: Option<String>,
+    #[serde(default, rename = "notConfigured")]
+    pub not_configured: bool,
+}
+
+/// What clicking the update item asks the settings window to do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpdateAction {
+    Check,
+    Download,
+    Restart,
+    /// Disabled: busy, or this build cannot update.
+    Nothing,
+}
+
+impl UpdateAction {
+    /// The TRAY_UPDATE_EVENT payload.
+    fn event(self) -> Option<&'static str> {
+        match self {
+            UpdateAction::Check => Some("check"),
+            UpdateAction::Download => Some("download"),
+            UpdateAction::Restart => Some("restart"),
+            UpdateAction::Nothing => None,
         }
     }
 }
 
-/// The menu, its On/Off toggle, its Start at login item and its status line.
-type MenuParts<R> = (Menu<R>, CheckMenuItem<R>, CheckMenuItem<R>, StatusLine<R>);
+/// The text the General tab shows for a build without an updater
+/// (src/General.jsx updateText); the tray says the same.
+pub const NOT_IN_THIS_BUILD: &str = "This test build can’t update itself";
+
+/// The update item for the update state: its text and what a click does.
+/// `available`: this run has an update source (a release build with the
+/// updater pubkey, or `--simulate`'s simulated source).
+pub fn update_item(available: bool, report: &UpdateReport) -> (String, UpdateAction) {
+    use UpdateAction::*;
+    if !available || report.not_configured {
+        return (NOT_IN_THIS_BUILD.into(), Nothing);
+    }
+    let v = report.version.as_deref().unwrap_or("");
+    match report.status.as_deref() {
+        Some("checking") => ("Checking for updates…".into(), Nothing),
+        Some("current") => ("You’re up to date · Check again".into(), Check),
+        Some("available") => (format!("Download freewheel {v}"), Download),
+        Some("downloading") => ("Downloading update…".into(), Nothing),
+        Some("ready") => ("Restart to update".into(), Restart),
+        Some("restarting") => ("Restarting…".into(), Nothing),
+        Some("error") => match report.during.as_deref() {
+            Some("download") => (
+                format!("freewheel {v} didn’t download · Try again"),
+                Download,
+            ),
+            Some("install") => (format!("freewheel {v} didn’t install · Try again"), Restart),
+            _ => ("Couldn’t check for updates · Try again".into(), Check),
+        },
+        _ => ("Check for updates".into(), Check),
+    }
+}
 
 /// One tray menu entry, as plain data; `menu` turns it into a native item.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Entry {
     Check {
         id: &'static str,
@@ -171,49 +305,63 @@ enum Entry {
     },
     Item {
         id: &'static str,
-        text: &'static str,
+        text: String,
+        enabled: bool,
     },
     Separator,
 }
 
-/// The tray menu as plain data: the On/Off toggle, Open settings, Start at
-/// login (checked as `start_at_login` says), Download logs for support and Quit.
-fn menu_model(start_at_login: bool) -> [Entry; 7] {
-    [
+fn item(id: &'static str, text: impl Into<String>, enabled: bool) -> Entry {
+    Entry::Item {
+        id,
+        text: text.into(),
+        enabled,
+    }
+}
+
+/// The tray menu as plain data, before the device loop has said anything.
+fn menu_model(start_at_login: bool, updates_available: bool) -> Vec<Entry> {
+    let (update_text, update_action) = update_item(updates_available, &UpdateReport::default());
+    vec![
         Entry::Check {
             id: TOGGLE,
             text: toggle_text(true),
             checked: true,
         },
+        item(STATUS, LOOKING, false),
         Entry::Separator,
-        Entry::Item {
-            id: OPEN_SETTINGS,
-            text: "Open settings...",
-        },
+        item(OPEN_SETTINGS, OPEN_SETTINGS_TEXT, true),
         Entry::Check {
             id: START_AT_LOGIN,
-            text: "Start at login",
+            text: START_AT_LOGIN_TEXT,
             checked: start_at_login,
         },
-        Entry::Item {
-            id: DOWNLOAD_LOGS,
-            text: "Download logs for support...",
-        },
         Entry::Separator,
-        Entry::Item {
-            id: QUIT,
-            text: "Quit freewheel",
-        },
+        item(DOWNLOAD_LOGS, DOWNLOAD_LOGS_TEXT, true),
+        item(UPDATE, update_text, update_action != UpdateAction::Nothing),
+        Entry::Separator,
+        item(QUIT, QUIT_TEXT, true),
     ]
 }
 
-/// Builds the native tray menu from `menu_model` (main thread only); the
-/// returned check items are the On/Off toggle and Start at login, then the
-/// permission status line (hidden until `StatusLine::show` needs it).
-pub fn menu<R: Runtime>(app: &AppHandle<R>, start_at_login: bool) -> tauri::Result<MenuParts<R>> {
+/// The native menu and the items that change.
+struct MenuParts<R: Runtime> {
+    menu: Menu<R>,
+    toggle: CheckMenuItem<R>,
+    login: CheckMenuItem<R>,
+    status: MenuItem<R>,
+    update: MenuItem<R>,
+}
+
+/// Builds the native tray menu from `menu_model` (main thread only).
+fn menu<R: Runtime>(
+    app: &AppHandle<R>,
+    start_at_login: bool,
+    updates_available: bool,
+) -> tauri::Result<MenuParts<R>> {
     let mut items: Vec<Box<dyn IsMenuItem<R>>> = Vec::new();
-    let (mut toggle, mut login) = (None, None);
-    for entry in menu_model(start_at_login) {
+    let (mut toggle, mut login, mut status, mut update) = (None, None, None, None);
+    for entry in menu_model(start_at_login, updates_available) {
         match entry {
             Entry::Check { id, text, checked } => {
                 let item = CheckMenuItem::with_id(app, id, text, true, checked, None::<&str>)?;
@@ -224,29 +372,31 @@ pub fn menu<R: Runtime>(app: &AppHandle<R>, start_at_login: bool) -> tauri::Resu
                 }
                 items.push(Box::new(item));
             }
-            Entry::Item { id, text } => {
-                items.push(Box::new(MenuItem::with_id(
-                    app,
-                    id,
-                    text,
-                    true,
-                    None::<&str>,
-                )?));
+            Entry::Item { id, text, enabled } => {
+                let item = MenuItem::with_id(app, id, text, enabled, None::<&str>)?;
+                match id {
+                    STATUS => status = Some(item.clone()),
+                    UPDATE => update = Some(item.clone()),
+                    _ => {}
+                }
+                items.push(Box::new(item));
             }
             Entry::Separator => items.push(Box::new(PredefinedMenuItem::separator(app)?)),
         }
     }
     let refs: Vec<&dyn IsMenuItem<R>> = items.iter().map(|item| item.as_ref()).collect();
     let menu = Menu::with_items(app, &refs)?;
-    let (Some(toggle), Some(login)) = (toggle, login) else {
-        unreachable!("the menu model has both check items");
+    let (Some(toggle), Some(login), Some(status), Some(update)) = (toggle, login, status, update)
+    else {
+        unreachable!("the menu model has every changing item");
     };
-    let item = MenuItem::with_id(app, STATUS, "", true, None::<&str>)?;
-    let status = StatusLine {
-        menu: menu.clone(),
-        item,
-    };
-    Ok((menu, toggle, login, status))
+    Ok(MenuParts {
+        menu,
+        toggle,
+        login,
+        status,
+        update,
+    })
 }
 
 /// Shows and focuses the settings window (Open settings, second launch).
@@ -258,35 +408,100 @@ pub fn show_settings<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+/// What changes in the menu, kept to answer clicks and the Simulator.
+#[derive(Debug, Clone)]
+struct Live {
+    status: TrayStatus,
+    update_action: UpdateAction,
+}
+
 /// The tray menu's live parts, managed by Tauri: what a menu click (or, in
 /// `--simulate`, the Simulator window's Tray menu) acts on.
 pub struct TrayMenu<R: Runtime> {
     toggle: CheckMenuItem<R>,
     login: CheckMenuItem<R>,
-    menu: Menu<R>,
+    status: MenuItem<R>,
+    update: MenuItem<R>,
     commands: Sender<Command>,
     manual: Sender<Message>,
+    updates_available: bool,
+    low_battery: u8,
+    live: Mutex<Live>,
+    notifier: Mutex<Notifier>,
 }
 
 /// The tray menu as the Simulator window shows it.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TrayMenuState {
     /// The On/Off item's check.
     pub on: bool,
     pub start_at_login: bool,
-    /// The 'Needs permission (click to fix)' line, while it is in the menu.
-    pub status_line: Option<String>,
+    /// The status line's text.
+    pub status_line: String,
+    /// Whether the status line is clickable (a missing permission).
+    pub status_fix: bool,
+    /// The update item's text and whether it is enabled.
+    pub update: String,
+    pub update_enabled: bool,
+    pub icon: IconState,
+}
+
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 impl<R: Runtime> TrayMenu<R> {
     pub fn state(&self) -> TrayMenuState {
+        let live = lock(&self.live);
         TrayMenuState {
             on: self.toggle.is_checked().unwrap_or(true),
             start_at_login: self.login.is_checked().unwrap_or(false),
-            status_line: self
-                .menu
-                .get(STATUS)
-                .and_then(|i| i.as_menuitem().and_then(|m| m.text().ok())),
+            status_line: live.status.line.clone(),
+            status_fix: live.status.fix,
+            update: self.update.text().unwrap_or_default(),
+            update_enabled: live.update_action != UpdateAction::Nothing,
+            icon: live.status.icon,
+        }
+    }
+
+    /// Shows `status` on the icon, the toggle and the status line; notifies
+    /// when freewheel stepped aside for Resolve.
+    fn show_status(&self, app: &AppHandle<R>, status: &StatusEvent) {
+        let view = tray_status(status, self.low_battery);
+        let _ = self.toggle.set_checked(view.on);
+        let _ = self.toggle.set_text(toggle_text(view.on));
+        let _ = self.status.set_text(&view.line);
+        let _ = self.status.set_enabled(view.fix);
+        if let Some(tray) = app.tray_by_id("main") {
+            let _ = tray.set_icon(Some(icon(view.icon)));
+            let _ = tray.set_icon_as_template(cfg!(target_os = "macos"));
+        }
+        lock(&self.live).status = view;
+        self.changed(app);
+        let stepped_aside = lock(&self.notifier).paused(status.paused);
+        if let Some(notice) = stepped_aside {
+            notify::show(app, &notice);
+        }
+    }
+
+    /// The settings window's update state: the item's text and action; the
+    /// update-ready notification.
+    fn show_update(&self, app: &AppHandle<R>, report: &UpdateReport) {
+        let (text, action) = update_item(self.updates_available, report);
+        let _ = self.update.set_text(&text);
+        let _ = self.update.set_enabled(action != UpdateAction::Nothing);
+        lock(&self.live).update_action = action;
+        self.changed(app);
+        let in_front = app
+            .get_webview_window("main")
+            .is_some_and(|w| w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false));
+        let decision = lock(&self.notifier).update(
+            report.status.as_deref(),
+            report.version.as_deref(),
+            in_front,
+        );
+        if let Some(decision) = decision {
+            notify::apply(app, decision);
         }
     }
 
@@ -301,7 +516,8 @@ impl<R: Runtime> TrayMenu<R> {
             }
             STATUS => {
                 show_settings(app);
-                if let Err(e) = app.emit(FIX_PERMISSIONS_EVENT, ()) {
+                let fix = lock(&self.live).status.fix;
+                if fix && let Err(e) = app.emit(FIX_PERMISSIONS_EVENT, ()) {
                     tracing::warn!(error = %e, "asking the settings window for the permission fix failed");
                 }
             }
@@ -331,13 +547,26 @@ impl<R: Runtime> TrayMenu<R> {
                 // Off the main thread: it reads up to 10 MB of logs.
                 std::thread::spawn(move || download_logs(&app));
             }
+            UPDATE => {
+                let action = lock(&self.live).update_action;
+                match action.event() {
+                    Some(what) => {
+                        tracing::info!(what, "tray: update");
+                        if let Err(e) = app.emit_to("main", TRAY_UPDATE_EVENT, what) {
+                            tracing::warn!(error = %e, "asking the settings window to update failed");
+                        }
+                    }
+                    None => tracing::info!("tray: the update item is disabled now"),
+                }
+            }
             QUIT => app.exit(0),
             _ => {}
         }
     }
 
     /// `--simulate`: the Simulator window clicks tray item `id`, as the OS
-    /// menu does (a check item flips its check first).
+    /// menu does (a check item flips its check first; a disabled item does
+    /// nothing, as the OS menu does not deliver its clicks).
     pub fn click(&self, app: &AppHandle<R>, id: &str) -> Result<TrayMenuState, String> {
         let text = match id {
             TOGGLE | START_AT_LOGIN => {
@@ -350,11 +579,21 @@ impl<R: Runtime> TrayMenu<R> {
                 item.set_checked(!checked).map_err(|e| e.to_string())?;
                 item.text().unwrap_or_default()
             }
-            OPEN_SETTINGS => "Open settings...".into(),
-            DOWNLOAD_LOGS => "Download logs for support...".into(),
-            QUIT => "Quit freewheel".into(),
-            STATUS if self.menu.get(STATUS).is_some() => {
-                self.state().status_line.unwrap_or_default()
+            OPEN_SETTINGS => OPEN_SETTINGS_TEXT.into(),
+            DOWNLOAD_LOGS => DOWNLOAD_LOGS_TEXT.into(),
+            QUIT => QUIT_TEXT.into(),
+            STATUS | UPDATE => {
+                let state = self.state();
+                let (text, enabled) = if id == STATUS {
+                    (state.status_line, state.status_fix)
+                } else {
+                    (state.update, state.update_enabled)
+                };
+                if !enabled {
+                    crate::simulate::note(app, format!("Tray: {text} (disabled, nothing happens)"));
+                    return Ok(self.state());
+                }
+                text
             }
             other => return Err(format!("the tray menu has no item {other}")),
         };
@@ -364,34 +603,73 @@ impl<R: Runtime> TrayMenu<R> {
     }
 }
 
+/// `--simulate`: tells the Simulator window the tray menu changed (its
+/// Tray menu section redraws; SIM_TRAY_EVENT in src/simulateEvents.js).
+pub const SIM_TRAY_EVENT: &str = "sim-tray";
+
+impl<R: Runtime> TrayMenu<R> {
+    fn changed(&self, app: &AppHandle<R>) {
+        if crate::simulate::simulating(app) {
+            let _ = app.emit_to(
+                crate::simulate::SIMULATOR_WINDOW,
+                SIM_TRAY_EVENT,
+                self.state(),
+            );
+        }
+    }
+}
+
+/// Emits the `status` event to the windows and shows it in the tray.
+pub fn emit_status<R: Runtime>(app: &AppHandle<R>, status: &StatusEvent) {
+    let _ = app.emit(STATUS_EVENT, status);
+    if let Some(menu) = app.try_state::<TrayMenu<R>>() {
+        menu.show_status(app, status);
+    }
+}
+
 /// Builds the tray. The toggle sends On/Off to the device loop and tells the
 /// Resolve watcher (`manual`) the switch was by hand; Quit exits the app,
 /// whose exit hook releases every held key. The menu's parts are managed
-/// as [`TrayMenu`].
+/// as [`TrayMenu`]. `updates_available`: this run has an update source.
 pub fn build<R: Runtime>(
     app: &AppHandle<R>,
     commands: Sender<Command>,
     manual: Sender<Message>,
-) -> tauri::Result<(TrayIcon<R>, CheckMenuItem<R>, StatusLine<R>)> {
+    updates_available: bool,
+    low_battery: u8,
+) -> tauri::Result<TrayIcon<R>> {
     // The checkbox shows the OS login item, not the config, at startup.
-    let (menu, toggle, login, status) = menu(app, autostart_enabled(app))?;
+    let parts = menu(app, autostart_enabled(app), updates_available)?;
+    let (_, update_action) = update_item(updates_available, &UpdateReport::default());
     app.manage(TrayMenu {
-        toggle: toggle.clone(),
-        login,
-        menu: menu.clone(),
+        toggle: parts.toggle,
+        login: parts.login,
+        status: parts.status,
+        update: parts.update,
         commands,
         manual,
+        updates_available,
+        low_battery,
+        live: Mutex::new(Live {
+            status: TrayStatus {
+                on: true,
+                line: LOOKING.into(),
+                fix: false,
+                icon: IconState::Absent,
+            },
+            update_action,
+        }),
+        notifier: Mutex::new(Notifier::default()),
     });
-    let tray = TrayIconBuilder::with_id("main")
-        .icon(icon(TrayState::NotConnected))
+    TrayIconBuilder::with_id("main")
+        .icon(icon(IconState::Absent))
         .icon_as_template(cfg!(target_os = "macos"))
         .tooltip(status_text(TrayState::NotConnected))
-        .menu(&menu)
+        .menu(&parts.menu)
         .on_menu_event(move |app, event| {
             app.state::<TrayMenu<R>>().clicked(app, event.id().as_ref());
         })
-        .build(app)?;
-    Ok((tray, toggle, status))
+        .build(app)
 }
 
 /// `--simulate` only: the Simulator window's Tray menu clicks a tray item
@@ -405,40 +683,45 @@ pub async fn sim_tray(app: AppHandle, item: String) -> Result<TrayMenuState, Str
     menu.click(&app, &item)
 }
 
-/// Saves the log bundle to Downloads and says where, or why it failed.
-fn download_logs<R: Runtime>(app: &AppHandle<R>) {
-    let (title, body) = match crate::settings::save_log_bundle(app) {
-        Ok(path) => {
-            crate::simulate::note(app, format!("Saved the logs to {path}"));
-            ("Logs saved", logs_saved_text(&path))
-        }
-        Err(e) => ("Logs not saved", e),
-    };
-    let shown = app.notification().builder().title(title).body(body).show();
-    if let Err(e) = shown {
-        tracing::warn!(error = %e, "log bundle notification failed");
+/// The settings window reports its update state (src/updater.js states, or
+/// null when idle): the tray's update item follows it.
+#[tauri::command]
+pub fn tray_update_state(app: AppHandle, state: Option<UpdateReport>) {
+    if let Some(menu) = app.try_state::<TrayMenu<tauri::Wry>>() {
+        menu.show_update(&app, &state.unwrap_or_default());
     }
 }
 
-/// The notification body after a bundle was saved to `path`.
-fn logs_saved_text(path: &str) -> String {
-    let name = std::path::Path::new(path)
-        .file_name()
-        .map_or_else(|| path.into(), |n| n.to_string_lossy().into_owned());
-    format!("{name} is in your Downloads folder. Send it with your support request.")
+/// What LOGS_SAVED_EVENT carries.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LogsSaved {
+    Path(String),
+    Error(String),
 }
 
-/// Shows `state` on the tray icon and the toggle.
-pub fn show_state<R: Runtime>(tray: &TrayIcon<R>, toggle: &CheckMenuItem<R>, state: TrayState) {
-    let on = state != TrayState::Off;
-    let _ = tray.set_icon(Some(icon(state)));
-    let _ = tray.set_icon_as_template(cfg!(target_os = "macos"));
-    let _ = toggle.set_checked(on);
-    let _ = toggle.set_text(toggle_text(on));
+/// Saves the log bundle to Downloads, then opens Help & backup, which says
+/// where (or why it failed) and offers Show file.
+fn download_logs<R: Runtime>(app: &AppHandle<R>) {
+    let saved = match crate::settings::save_log_bundle(app) {
+        Ok(path) => {
+            crate::simulate::note(app, format!("Saved the logs to {path}"));
+            LogsSaved::Path(path)
+        }
+        Err(e) => {
+            crate::simulate::note(app, format!("The logs were not saved: {e}"));
+            LogsSaved::Error(e)
+        }
+    };
+    show_settings(app);
+    if let Err(e) = app.emit_to("main", LOGS_SAVED_EVENT, &saved) {
+        tracing::warn!(error = %e, "telling the settings window about the logs failed");
+    }
 }
 
-/// What the tray shows: the state icon, the battery tooltip and the
-/// once-only low-battery notification.
+/// What the tray shows from the device loop: the battery tooltip and the
+/// once-only low-battery notification. (The icon, the toggle and the status
+/// line follow the `status` event: [`emit_status`].)
 pub struct TrayView {
     state: TrayState,
     battery: Option<Battery>,
@@ -462,30 +745,17 @@ impl TrayView {
     }
 
     /// Takes an update from the device loop and shows it.
-    pub fn apply<R: Runtime>(
-        &mut self,
-        tray: &TrayIcon<R>,
-        toggle: &CheckMenuItem<R>,
-        update: Update,
-    ) {
+    pub fn apply<R: Runtime>(&mut self, tray: &TrayIcon<R>, update: Update) {
         match update {
             Update::State(status) => {
-                let state = status.into();
-                self.state = state;
+                self.state = status.into();
                 // A new connection reports its battery afresh.
                 self.battery = None;
-                show_state(tray, toggle, state);
             }
             Update::Battery(b) => {
                 self.battery = Some(b);
                 if self.alert.update(b, self.threshold) {
-                    let _ = tray
-                        .app_handle()
-                        .notification()
-                        .builder()
-                        .title("Speed Editor battery low")
-                        .body(format!("{}% left. Charge it soon.", b.level))
-                        .show();
+                    notify::show(tray.app_handle(), &notify::low_battery(b.level));
                 }
             }
             // Only the settings window shows these.
@@ -502,14 +772,16 @@ impl TrayView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
 
     /// Tray item ids, as the Simulator window names them.
-    const SIM_ITEMS: [&str; 6] = [
+    const SIM_ITEMS: [&str; 7] = [
         TOGGLE,
         STATUS,
         OPEN_SETTINGS,
         START_AT_LOGIN,
         DOWNLOAD_LOGS,
+        UPDATE,
         QUIT,
     ];
 
@@ -522,80 +794,252 @@ mod tests {
     }
 
     #[test]
-    fn each_state_has_its_own_bundled_icon() {
-        let on = icon(TrayState::On);
-        let off = icon(TrayState::Off);
-        let absent = icon(TrayState::NotConnected);
-        assert_ne!(on.rgba(), off.rgba());
-        assert_ne!(on.rgba(), absent.rgba());
-        assert_ne!(off.rgba(), absent.rgba());
+    fn the_simulator_window_hears_the_tray_changes() {
+        let js = include_str!("../../src/simulateEvents.js");
+        assert!(js.contains(&format!("SIM_TRAY_EVENT = \"{SIM_TRAY_EVENT}\"")));
+        assert!(include_str!("../../src/Simulator.jsx").contains("SIM_TRAY_EVENT"));
     }
 
     #[test]
-    fn menu_has_a_checked_toggle_open_settings_start_at_login_logs_and_quit() {
+    fn the_settings_window_hears_the_tray_events() {
+        let js = include_str!("../../src/settingsApi.js");
+        for event in [TRAY_UPDATE_EVENT, LOGS_SAVED_EVENT, FIX_PERMISSIONS_EVENT] {
+            assert!(js.contains(&format!("\"{event}\"")), "{event}");
+        }
+    }
+
+    #[test]
+    fn each_state_has_its_own_bundled_icon() {
+        let all = [
+            IconState::On,
+            IconState::Off,
+            IconState::Absent,
+            IconState::Attention,
+        ]
+        .map(icon);
+        for (i, a) in all.iter().enumerate() {
+            for b in &all[i + 1..] {
+                assert_ne!(a.rgba(), b.rgba());
+            }
+        }
+    }
+
+    fn texts(model: &[Entry]) -> Vec<String> {
+        model
+            .iter()
+            .map(|e| match e {
+                Entry::Check { text, checked, .. } => {
+                    format!("[{}] {text}", if *checked { "x" } else { " " })
+                }
+                Entry::Item { text, enabled, .. } => {
+                    format!("{text}{}", if *enabled { "" } else { " (disabled)" })
+                }
+                Entry::Separator => "——".into(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_menu_is_the_designs_mapping() {
         assert_eq!(
-            menu_model(false),
+            texts(&menu_model(false, true)),
             [
-                Entry::Check {
-                    id: TOGGLE,
-                    text: "freewheel is On",
-                    checked: true,
-                },
-                Entry::Separator,
-                Entry::Item {
-                    id: OPEN_SETTINGS,
-                    text: "Open settings...",
-                },
-                Entry::Check {
-                    id: START_AT_LOGIN,
-                    text: "Start at login",
-                    checked: false,
-                },
-                Entry::Item {
-                    id: DOWNLOAD_LOGS,
-                    text: "Download logs for support...",
-                },
-                Entry::Separator,
-                Entry::Item {
-                    id: QUIT,
-                    text: "Quit freewheel",
-                },
+                "[x] freewheel is On",
+                "Looking for your Speed Editor… (disabled)",
+                "——",
+                "Open settings…",
+                "[ ] Start at login",
+                "——",
+                "Download logs for support…",
+                "Check for updates",
+                "——",
+                "Quit freewheel",
             ]
         );
     }
 
     #[test]
-    fn a_missing_permission_shows_needs_permission_until_granted() {
-        use freewheel_core::permissions::{Permission, check_all};
-        let fix = StatusChange::Show("Needs permission (click to fix)");
-        for shown in [false, true] {
-            let ax = check_all(|p| p != Permission::Accessibility);
-            assert_eq!(status_change(shown, &ax), fix);
-            let input = check_all(|p| p != Permission::InputMonitoring);
-            assert_eq!(status_change(shown, &input), fix);
-        }
-        let granted = check_all(|_| true);
-        assert_eq!(status_change(true, &granted), StatusChange::Hide);
-        assert_eq!(status_change(false, &granted), StatusChange::Keep);
+    fn a_build_without_an_updater_says_so_in_the_menu() {
+        let model = texts(&menu_model(true, false));
+        assert!(model.contains(&"[x] Start at login".to_string()));
+        assert!(model.contains(&format!("{NOT_IN_THIS_BUILD} (disabled)")));
+        // Even a window that thinks it can check gets the same answer.
+        let report = UpdateReport {
+            status: Some("current".into()),
+            ..Default::default()
+        };
         assert_eq!(
-            status_change(false, &Permissions::new()),
-            StatusChange::Keep
+            update_item(false, &report),
+            (NOT_IN_THIS_BUILD.into(), UpdateAction::Nothing)
+        );
+        let not_configured = UpdateReport {
+            status: Some("error".into()),
+            during: Some("check".into()),
+            not_configured: true,
+            ..Default::default()
+        };
+        assert_eq!(update_item(true, &not_configured).1, UpdateAction::Nothing);
+    }
+
+    fn report(status: &str, during: Option<&str>) -> UpdateReport {
+        UpdateReport {
+            status: Some(status.into()),
+            version: Some("0.2.0".into()),
+            during: during.map(Into::into),
+            not_configured: false,
+        }
+    }
+
+    #[test]
+    fn the_update_item_follows_the_update_flow() {
+        use UpdateAction::*;
+        let cases = [
+            (UpdateReport::default(), "Check for updates", Check),
+            (report("checking", None), "Checking for updates…", Nothing),
+            (
+                report("current", None),
+                "You’re up to date · Check again",
+                Check,
+            ),
+            (
+                report("available", None),
+                "Download freewheel 0.2.0",
+                Download,
+            ),
+            (report("downloading", None), "Downloading update…", Nothing),
+            (report("ready", None), "Restart to update", Restart),
+            (report("restarting", None), "Restarting…", Nothing),
+            (
+                report("error", Some("check")),
+                "Couldn’t check for updates · Try again",
+                Check,
+            ),
+            (
+                report("error", Some("download")),
+                "freewheel 0.2.0 didn’t download · Try again",
+                Download,
+            ),
+            (
+                report("error", Some("install")),
+                "freewheel 0.2.0 didn’t install · Try again",
+                Restart,
+            ),
+        ];
+        for (r, text, action) in cases {
+            assert_eq!(update_item(true, &r), (text.to_string(), action), "{r:?}");
+        }
+        assert_eq!(Check.event(), Some("check"));
+        assert_eq!(Download.event(), Some("download"));
+        assert_eq!(Restart.event(), Some("restart"));
+        assert_eq!(Nothing.event(), None);
+    }
+
+    #[test]
+    fn the_window_reports_updater_js_states() {
+        let r: UpdateReport = serde_json::from_str(
+            r#"{"status":"error","during":"check","message":"plugin updater not found","notConfigured":true}"#,
+        )
+        .unwrap();
+        assert!(r.not_configured);
+        let idle: UpdateReport = serde_json::from_str("{}").unwrap();
+        assert_eq!(idle, UpdateReport::default());
+    }
+
+    fn status(connection: ConnectionStatus) -> StatusEvent {
+        let mut s = StatusEvent::new("base");
+        s.set_connection(connection);
+        s
+    }
+
+    fn view(s: &StatusEvent) -> (bool, String, bool, IconState) {
+        let v = tray_status(s, LOW_BATTERY);
+        (v.on, v.line, v.fix, v.icon)
+    }
+
+    #[test]
+    fn the_status_line_and_icon_follow_the_status() {
+        use IconState::*;
+        assert_eq!(
+            view(&status(ConnectionStatus::Absent)),
+            (true, LOOKING.into(), false, Absent)
+        );
+        assert_eq!(
+            view(&status(ConnectionStatus::Off)),
+            (false, "Off: Resolve can use it".into(), false, Off)
+        );
+        let mut usb = status(ConnectionStatus::Connected);
+        usb.bus = Some(Bus::Usb);
+        assert_eq!(view(&usb), (true, "Connected by USB".into(), false, On));
+        let mut bt = status(ConnectionStatus::Connected);
+        bt.bus = Some(Bus::Bluetooth);
+        bt.battery = Some(Battery {
+            level: 64,
+            charging: false,
+        });
+        assert_eq!(
+            view(&bt),
+            (true, "Connected by Bluetooth · 64%".into(), false, On)
+        );
+        bt.battery = Some(Battery {
+            level: 12,
+            charging: false,
+        });
+        assert_eq!(
+            view(&bt),
+            (
+                true,
+                "Connected by Bluetooth · 12%".into(),
+                false,
+                Attention
+            )
+        );
+        let mut paused = status(ConnectionStatus::Off);
+        paused.paused = true;
+        assert_eq!(
+            view(&paused),
+            (true, "Paused: DaVinci Resolve is open".into(), false, Off)
         );
     }
 
-    /// Whether the Start at login entry of the model is checked.
-    fn login_checked(model: [Entry; 7]) -> bool {
-        model
-            .into_iter()
-            .find_map(|entry| match entry {
-                Entry::Check {
-                    id: START_AT_LOGIN,
-                    checked,
-                    ..
-                } => Some(checked),
-                _ => None,
-            })
-            .unwrap()
+    #[test]
+    fn a_missing_permission_makes_the_line_a_fix_and_the_icon_attention() {
+        let mut s = status(ConnectionStatus::Connected);
+        s.permissions = BTreeMap::from([
+            ("Accessibility".to_string(), Grant::Missing),
+            ("InputMonitoring".to_string(), Grant::Granted),
+        ]);
+        assert_eq!(
+            view(&s),
+            (
+                true,
+                "Needs permission (click to fix)".into(),
+                true,
+                IconState::Attention
+            )
+        );
+        // Off wins over the permission, as in the toolbar.
+        s.set_connection(ConnectionStatus::Off);
+        assert_eq!(view(&s).1, "Off: Resolve can use it");
+        s.permissions.insert("Accessibility".into(), Grant::Granted);
+        s.set_connection(ConnectionStatus::Connected);
+        assert!(!view(&s).2);
+    }
+
+    #[test]
+    fn the_status_line_reads_like_the_toolbar() {
+        let shell = include_str!("../../src/shell.js");
+        for text in [
+            "Off: Resolve can use it",
+            "Needs permission (click to fix)",
+            LOOKING,
+            "Paused: DaVinci Resolve is open",
+            "Connected by ${bus}${battery}",
+        ] {
+            assert!(shell.contains(text), "{text}");
+        }
+        assert!(shell.contains(&format!("LOW_BATTERY = {LOW_BATTERY};")));
+        let general = include_str!("../../src/General.jsx");
+        assert!(general.contains(&format!("{NOT_IN_THIS_BUILD}.")));
     }
 
     #[test]
@@ -619,13 +1063,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let config = ConfigStore::new(dir.path()).load().unwrap();
         assert!(!config.settings.start_at_login);
-        assert!(!login_checked(menu_model(config.settings.start_at_login)));
-    }
-
-    #[test]
-    fn start_at_login_shows_the_state_it_is_given() {
-        assert!(login_checked(menu_model(true)));
-        assert!(!login_checked(menu_model(false)));
+        let model = texts(&menu_model(config.settings.start_at_login, true));
+        assert!(model.contains(&"[ ] Start at login".to_string()));
     }
 
     #[test]
@@ -666,11 +1105,14 @@ mod tests {
     }
 
     #[test]
-    fn the_logs_notification_names_the_saved_file() {
+    fn the_logs_event_carries_the_path_or_the_error() {
         assert_eq!(
-            logs_saved_text("/home/a/Downloads/freewheel-logs-20261106-215800.txt"),
-            "freewheel-logs-20261106-215800.txt is in your Downloads folder. \
-             Send it with your support request."
+            serde_json::to_string(&LogsSaved::Path("C:/d/l.txt".into())).unwrap(),
+            r#"{"path":"C:/d/l.txt"}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&LogsSaved::Error("full".into())).unwrap(),
+            r#"{"error":"full"}"#
         );
     }
 

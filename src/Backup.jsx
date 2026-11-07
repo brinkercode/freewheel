@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import DeviceTest from "./DeviceTest.jsx";
 import Icon from "./Icon.jsx";
 import { Switch } from "./ResolveTab.jsx";
@@ -20,11 +20,15 @@ export async function restore(allowApps, importFn = importMappings) {
   return (await importFn(allowApps === true)) ? "Your keys are restored." : null;
 }
 
-/** Download logs: resolves to the confirmation naming the saved file. */
-export async function downloadLogs(exportFn = exportLogs) {
-  const path = await exportFn();
+/** The confirmation naming the saved log file. */
+export function logsSavedText(path) {
   const file = String(path ?? "").split(/[\\/]/).pop() || "freewheel-logs.zip";
   return `Downloaded “${file}” to your Downloads folder.`;
+}
+
+/** Download logs: resolves to the confirmation naming the saved file. */
+export async function downloadLogs(exportFn = exportLogs) {
+  return logsSavedText(await exportFn());
 }
 
 function Done({ text, onShow }) {
@@ -56,6 +60,7 @@ export default function Backup({
   initialLogs = null,
   initialDeviceTest = false,
   version = "",
+  trayLogs = null,
   detailedLogs,
   onDetailedLogs,
   showFile = showLogsFile,
@@ -67,6 +72,13 @@ export default function Backup({
   const [logsError, setLogsError] = useState(null);
   const [more, setMore] = useState(initialMore);
   const [deviceTest, setDeviceTest] = useState(initialDeviceTest);
+  // The tray's 'Download logs for support…' saved them (or could not): say so here.
+  useEffect(() => {
+    if (trayLogs?.path) {
+      setLogsError(null);
+      setLogs(logsSavedText(trayLogs.path));
+    } else if (trayLogs?.error) setLogsError(`The logs could not be saved: ${trayLogs.error}`);
+  }, [trayLogs]);
   const run = (action) => {
     setError(null);
     action().then(

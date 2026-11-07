@@ -155,6 +155,7 @@ html:has(.fw-sim) body { overflow-y: auto; }
 .fw-sim-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
 /* the tray menu: a check item shows its check */
 .fw-sim-tray-menu button[aria-pressed="true"]::before { content: "✓"; font-weight: var(--fw-bold); }
+.fw-sim-tray-menu button[aria-disabled="true"] { opacity: 0.55; }
 
 /* tray icon states: the light swatch of the prototype; the current one ringed */
 .fw-sim-tray {

@@ -24,6 +24,7 @@ const sorted = (set) => [...set].sort();
 test("the settings window may call exactly the commands its UI invokes", () => {
   const settings = invoked(uiSources.filter((f) => f !== "Simulator.jsx"));
   expect(sorted(settings)).toEqual([
+    "app_icons",
     "app_version",
     "choose_app",
     "exit_wheel_override",
@@ -44,6 +45,7 @@ test("the settings window may call exactly the commands its UI invokes", () => {
     "set_enabled",
     "set_start_at_login",
     "show_logs_file",
+    "tray_update_state",
   ]);
   const granted = new Set([...allowed("default.json"), ...allowed("settings.json")]);
   expect(sorted(granted)).toEqual(sorted(settings));

@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod app_icons;
 #[cfg(windows)]
 mod app_volume;
 mod apps;
@@ -20,6 +21,7 @@ mod mac_app_volume;
 #[cfg(target_os = "macos")]
 #[allow(dead_code)] // wired into the override worker by a later card
 mod macos_volume;
+mod notify;
 mod permissions;
 mod resolve_watch;
 mod settings;
@@ -43,9 +45,8 @@ use freewheel_core::inject::{KeyInjector, MockInjector};
 use freewheel_core::logging::Logger;
 use freewheel_core::resolve::{POLL_INTERVAL, ResolveWatcher};
 use freewheel_core::simulator;
-use freewheel_core::status::{KEY_PRESSED_EVENT, STATUS_EVENT};
+use freewheel_core::status::KEY_PRESSED_EVENT;
 use tauri::{Emitter, Manager};
-use tauri_plugin_notification::NotificationExt;
 
 /// How long the quit hook waits for the device loop to release keys.
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
@@ -95,7 +96,6 @@ fn spawn_device(
     app: tauri::AppHandle<tauri::Wry>,
     config: Config,
     tray: tauri::tray::TrayIcon<tauri::Wry>,
-    toggle: tauri::menu::CheckMenuItem<tauri::Wry>,
     commands: mpsc::Receiver<device::Command>,
 ) {
     use freewheel_core::connection::ConnectionStatus;
@@ -152,9 +152,9 @@ fn spawn_device(
                         );
                     }
                     if let Some(status) = settings.apply(&update) {
-                        let _ = app.emit(STATUS_EVENT, status);
+                        tray::emit_status(&app, &status);
                     }
-                    view.apply(&tray, &toggle, update)
+                    view.apply(&tray, update)
                 }
             },
         );
@@ -164,19 +164,18 @@ fn spawn_device(
 /// How often the tray re-checks the macOS permissions.
 const PERMISSION_POLL: Duration = Duration::from_secs(2);
 
-/// Keeps the tray's 'Needs permission' line and the status event's
-/// permissions current, checking every [`PERMISSION_POLL`] (macOS only;
+/// Keeps the status event's permissions (and so the tray's 'Needs
+/// permission' line) current, checking every [`PERMISSION_POLL`] (macOS only;
 /// elsewhere nothing is needed).
-fn spawn_permission_watch(app: tauri::AppHandle<tauri::Wry>, status: tray::StatusLine<tauri::Wry>) {
+fn spawn_permission_watch(app: tauri::AppHandle<tauri::Wry>) {
     if !cfg!(target_os = "macos") {
         return;
     }
     std::thread::spawn(move || {
         loop {
             let current = permissions::current();
-            status.show(&current);
             if let Some(event) = app.state::<settings::Settings>().set_permissions(&current) {
-                let _ = app.emit(STATUS_EVENT, event);
+                tray::emit_status(&app, &event);
             }
             std::thread::sleep(PERMISSION_POLL);
         }
@@ -184,7 +183,8 @@ fn spawn_permission_watch(app: tauri::AppHandle<tauri::Wry>, status: tray::Statu
 }
 
 /// Starts the Resolve hand-off on its own thread: it polls for the
-/// configured process, switches the device loop Off or On and notifies.
+/// configured process and switches the device loop Off or On; the tray
+/// notifies when freewheel stepped aside (notify.rs).
 fn spawn_resolve_watch(
     app: tauri::AppHandle<tauri::Wry>,
     config: &Config,
@@ -194,21 +194,10 @@ fn spawn_resolve_watch(
     let watcher = ResolveWatcher::from_settings(&config.settings);
     std::thread::spawn(move || {
         let pause = |pause: resolve_watch::Pause<'_>| {
-            if let resolve_watch::Pause::Started(text) = pause {
-                let shown = app
-                    .notification()
-                    .builder()
-                    .title(freewheel_core::APP_NAME)
-                    .body(text)
-                    .show();
-                if let Err(e) = shown {
-                    tracing::warn!(error = %e, "replug notification failed");
-                }
-            }
             let paused = pause != resolve_watch::Pause::Ended;
             if let Some(status) = app.state::<settings::Settings>().set_paused(paused) {
                 tracing::info!(paused, "Resolve hand-off");
-                let _ = app.emit(STATUS_EVENT, status);
+                tray::emit_status(&app, &status);
             }
         };
         resolve_watch::run(
@@ -249,6 +238,8 @@ fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::
             simulate::simulate,
             simulate::sim_jump,
             tray::sim_tray,
+            tray::tray_update_state,
+            app_icons::app_icons,
             settings::show_logs_file,
             settings::exit_wheel_override,
             apps::list_apps,
@@ -319,7 +310,8 @@ fn main() {
         ));
     // `--simulate` never updates for real: its settings window uses the
     // simulated update source (src/simUpdate.js) instead.
-    if !simulate && updater_pubkey_set(&context.config().plugins) {
+    let updater = !simulate && updater_pubkey_set(&context.config().plugins);
+    if updater {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
     builder = if simulate {
@@ -345,6 +337,8 @@ fn main() {
             settings::exit_wheel_override,
             apps::list_apps,
             apps::choose_app,
+            app_icons::app_icons,
+            tray::tray_update_state,
             updates::open_release_page
         ])
     };
@@ -368,7 +362,16 @@ fn main() {
                     .with_logger(logger.clone()),
             );
             spawn_resolve_watch(app.handle().clone(), &config, manual_rx, commands.clone());
-            let (tray, toggle, status) = tray::build(app.handle(), commands, manual)?;
+            // The tray's update item works with the updater plugin, or in
+            // --simulate with the simulated update source; else it says this
+            // build can't update itself, as the General tab does.
+            let tray = tray::build(
+                app.handle(),
+                commands,
+                manual,
+                updater || simulate,
+                tray::LOW_BATTERY,
+            )?;
             if simulate {
                 simulate::attach(
                     app.handle().clone(),
@@ -376,14 +379,12 @@ fn main() {
                     config.settings.low_battery_threshold,
                     real_injector,
                     tray,
-                    toggle,
-                    status,
                     receiver,
                 );
                 simulate::open_window(app)?;
             } else {
-                spawn_device(app.handle().clone(), config, tray, toggle, receiver);
-                spawn_permission_watch(app.handle().clone(), status);
+                spawn_device(app.handle().clone(), config, tray, receiver);
+                spawn_permission_watch(app.handle().clone());
             }
             if smoke {
                 smoke::arm_timeout(app.handle().clone());

@@ -42,7 +42,8 @@ test("every user-facing control is clicked and its result checked", () => {
     "Set up the wheel", "Show the ", "aria-label=\"Close\"", "Turn freewheel on or off", "Turn on", "Computer appearance",
     "Bluetooth 12%", "Empty setup", "Several set", "macOS permission", "Record a key", "New version", "Reload settings",
     "Settings window", "First run", "fw-sim-switch", 'tray("toggle")', 'tray("open-settings")', 'tray("start-at-login")',
-    'tray("download-logs")', 'tray("status")', 'tray("quit")',
+    'tray("download-logs")', 'tray("status")', 'tray("update")', 'tray("quit")', "img.app-icon",
+    "Notification: Speed Editor battery low", "Notification: freewheel — DaVinci Resolve started", "Restart to update",
   ])
     expect(script, control).toContain(control);
 });
