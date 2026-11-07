@@ -1562,9 +1562,9 @@ async function main() {
       current = null;
     };
     /** After the window was built again: attach to it, wait for its tabs. */
-    const rebuilt = async () => {
+    const rebuilt = async (css = "nav.toolbar") => {
       await findWindows();
-      await waitFor("settings", "the settings tabs", `return document.querySelector("nav.toolbar")`, [], 30000);
+      await waitFor("settings", `the new window's ${css}`, `return document.querySelector(arguments[0])`, [css], 30000);
     };
     const updateChecked = async () => {
       await trayShows("update", "Checking (disabled)", `(t, off) => t === "Checking for updates…" && off`);
@@ -1578,7 +1578,8 @@ async function main() {
       await trayShows("status", "Needs permission", `(t, off) => t === "Needs permission (click to fix)" && !off`);
       if (closed) await closeSettings();
       await trayClick("status", "Needs permission");
-      if (closed) await rebuilt();
+      // A window built for the fix opens on it (no tabs).
+      if (closed) await rebuilt(".setup");
       await waitFor("settings", "the permission fix", `return document.querySelector(".setup")`, [], 20000);
       await click("simulator", `[role=group][aria-label="macOS permission"] button`, "Allowed");
     };
