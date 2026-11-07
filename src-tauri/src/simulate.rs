@@ -320,10 +320,31 @@ pub const WRY_DEFAULT_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSma
 /// Every window's WebView2 arguments in this run: `None` (wry's defaults)
 /// unless `--simulate` runs with [`E2E_DEVTOOLS_PORT_ENV`] set to a port.
 pub fn browser_args(simulate: bool) -> Option<String> {
-    browser_args_for(
-        simulate,
-        std::env::var(E2E_DEVTOOLS_PORT_ENV).ok().as_deref(),
+    let port = std::env::var(E2E_DEVTOOLS_PORT_ENV)
+        .ok()
+        .or_else(e2e_port_file);
+    browser_args_for(simulate, port.as_deref())
+}
+
+/// Update e2e builds only (the `e2e` feature): the port from
+/// `%LOCALAPPDATA%\freewheel-e2e\devtools-port` when the environment has
+/// none. After an update the NSIS installer starts the new version through
+/// the user's shell, which does not pass this process's environment on, so
+/// the e2e (scripts/e2e-update-windows.mjs) leaves the port in that file too.
+#[cfg(feature = "e2e")]
+fn e2e_port_file() -> Option<String> {
+    let dir = std::env::var_os("LOCALAPPDATA")?;
+    std::fs::read_to_string(
+        std::path::Path::new(&dir)
+            .join("freewheel-e2e")
+            .join("devtools-port"),
     )
+    .ok()
+}
+
+#[cfg(not(feature = "e2e"))]
+fn e2e_port_file() -> Option<String> {
+    None
 }
 
 pub fn browser_args_for(simulate: bool, port: Option<&str>) -> Option<String> {

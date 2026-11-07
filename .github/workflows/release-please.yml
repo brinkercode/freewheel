@@ -37,7 +37,11 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-      # The required checks run on the release PR's head commit.
+      # The required checks run on the release PR's head commit: its own
+      # pull_request runs wait for a maintainer's approval (a bot's PR), so
+      # every workflow with a required check (ci.yml: lint and test, and
+      # e2e-windows.yml: e2e) is dispatched on the branch instead; their check
+      # runs land on that same commit, no approval needed.
       - name: Run CI on the release PR
         if: steps.release.outputs.prs_created == 'true'
         env:
@@ -45,7 +49,9 @@ jobs:
           PR: ${{ steps.release.outputs.pr }}
         run: |
           branch=$(jq -r .headBranchName <<<"$PR")
-          gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"
+          for wf in ci.yml e2e-windows.yml; do
+            gh workflow run "$wf" --repo "$GITHUB_REPOSITORY" --ref "$branch"
+          done
 
       - name: Build the release
         if: steps.release.outputs.release_created == 'true'

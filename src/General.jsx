@@ -1,6 +1,7 @@
 // The General tab: appearance, start at login, the version and updates.
 import Icon from "./Icon.jsx";
 import { Switch } from "./ResolveTab.jsx";
+import { UpdateProgress } from "./UpdateBanner.jsx";
 
 // The prototype's appearance icons (bundled SVGs, never fetched).
 const ICONS = { System: "contrast", Light: "light_mode", Dark: "dark_mode" };
@@ -47,27 +48,46 @@ export async function switchLogin({ on, set, get, setLogin, setConfig, log = con
 
 /** The line under 'freewheel <version>' for each update state (the prototype's updateSub); null is idle. */
 export function updateText(update) {
+  const v = update?.version;
   switch (update?.status) {
     case "checking":
       return "Checking…";
     case "current":
       return "You’re up to date.";
     case "available":
-      return `freewheel ${update.version} is available.`;
+      return `freewheel ${v} is available.`;
     case "downloading":
-      return "Downloading the new version…";
+      return update.progress == null ? "Downloading the new version…" : `Downloading the new version… ${update.progress}%`;
     case "ready":
       return "A new version is ready.";
     case "restarting":
       return "Restarting freewheel…";
+    case "error":
+      if (update.notConfigured) return "This test build can’t update itself. Installed versions of freewheel can.";
+      if (update.during === "download") return `freewheel ${v} didn’t download. Check your internet connection and try again.`;
+      if (update.during === "install") return `freewheel ${v} didn’t install. Try again.`;
+      return "Couldn’t check for updates. Check your internet connection and try again.";
     default:
       return "freewheel checks for updates by itself.";
   }
 }
 
-export default function General({ settings, onSetting, startAtLogin, onStartAtLogin, version, update, onCheck }) {
+/** The version card's button for each update state: what it says, does and whether it spins. */
+export function updateButton(update, { onCheck, onDownload, onRestart } = {}) {
+  const status = update?.status;
+  if (status === "checking") return { label: "Check for updates", spin: true, disabled: true };
+  if (status === "downloading") return { label: "Downloading…", spin: true, disabled: true };
+  if (status === "restarting") return { label: "Restarting…", spin: true, disabled: true };
+  if (status === "available" || (status === "error" && update.during === "download"))
+    return { label: status === "error" ? "Try again" : "Download and install", primary: true, onClick: onDownload, disabled: !onDownload };
+  if (status === "ready" || (status === "error" && update.during === "install"))
+    return { label: status === "error" ? "Try again" : "Restart to update", primary: true, onClick: onRestart, disabled: !onRestart };
+  return { label: status === "error" ? "Try again" : "Check for updates", onClick: onCheck, disabled: !onCheck };
+}
+
+export default function General({ settings, onSetting, startAtLogin, onStartAtLogin, version, update, onCheck, onDownload, onRestart }) {
   const appearance = settings?.appearance ?? "System";
-  const busy = update?.status === "checking" || update?.status === "downloading";
+  const button = updateButton(update, { onCheck, onDownload, onRestart });
   return (
     <div className="tab-page" data-screen-label="General">
       <div className="tab-column">
@@ -106,11 +126,18 @@ export default function General({ settings, onSetting, startAtLogin, onStartAtLo
           <div className="row">
             <div className="grow">
               <div className="card-title">{version ? `freewheel ${version}` : "freewheel"}</div>
-              <div className="card-sub">{updateText(update)}</div>
+              <div className={`card-sub${update?.status === "error" ? " is-error" : ""}`} role="status" data-update={update?.status ?? "idle"}>
+                {updateText(update)}
+              </div>
+              {update?.status === "downloading" && <UpdateProgress progress={update.progress} />}
             </div>
-            <button disabled={busy || !onCheck} onClick={onCheck}>
-              {update?.status === "checking" && <span className="spinner" aria-hidden="true" />}
-              Check for updates
+            <button
+              className={`update-button${button.primary ? " btn-primary" : ""}`}
+              disabled={button.disabled}
+              onClick={button.onClick}
+            >
+              {button.spin && <span className="spinner" aria-hidden="true" />}
+              {button.label}
             </button>
           </div>
           <div className="divider" />

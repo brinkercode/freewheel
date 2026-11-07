@@ -5,6 +5,12 @@ edition = "2024"
 rust-version = "1.99.1"
 license = "MIT"
 
+[features]
+# Windows update e2e builds only (scripts/e2e-update-windows.mjs): the
+# WebView2 DevTools port (FREEWHEEL_E2E_DEVTOOLS_PORT) opens in a normal run
+# too, not just in --simulate. Release builds never enable it.
+e2e = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

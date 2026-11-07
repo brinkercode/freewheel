@@ -99,7 +99,7 @@ pub enum Control {
     Permissions {
         state: Permissions,
     },
-    /// Moves the fake update source to its next [`update_step`].
+    /// Publishes a newer version on the fake update source ([`update_step`]).
     StepUpdate,
     /// Puts the app back in its first-run state.
     ResetFirstRun,
@@ -116,34 +116,21 @@ pub enum Permissions {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub enum UpdateState {
-    Available {
-        version: String,
-    },
-    Downloading {
-        version: String,
-        progress: Option<u8>,
-    },
-    Ready {
-        version: String,
-    },
+    /// A newer version is published (the settings window takes it from there).
+    Available { version: String },
 }
 
 /// The version the simulator's fake update source offers; it never goes online.
 pub const FAKE_UPDATE_VERSION: &str = "99.0.0";
 
-/// The fake update source: no update, available, downloading, ready, and
-/// back to no update.
-pub fn update_step(current: Option<&UpdateState>) -> Option<UpdateState> {
-    let version = FAKE_UPDATE_VERSION.to_string();
-    match current {
-        None => Some(UpdateState::Available { version }),
-        Some(UpdateState::Available { .. }) => Some(UpdateState::Downloading {
-            version,
-            progress: Some(50),
-        }),
-        Some(UpdateState::Downloading { .. }) => Some(UpdateState::Ready { version }),
-        Some(UpdateState::Ready { .. }) => None,
-    }
+/// The fake update source after a 'New version': a newer version is
+/// published. The settings window (src/simUpdate.js) picks the version
+/// number, finds it and runs the download, ready and restart states itself,
+/// exactly as with the real updater.
+pub fn update_step() -> Option<UpdateState> {
+    Some(UpdateState::Available {
+        version: FAKE_UPDATE_VERSION.to_string(),
+    })
 }
 
 /// The layer 'Load sample mappings' adds, pushed by [`SAMPLE_PUSH_KEY`].
@@ -469,7 +456,7 @@ impl Simulator {
                 }
             }
             Control::Permissions { state } => self.permissions = state,
-            Control::StepUpdate => self.update = update_step(self.update.as_ref()),
+            Control::StepUpdate => self.update = update_step(),
             Control::ResetFirstRun => self.first_run.reset(),
         }
         self.status()
@@ -1194,21 +1181,17 @@ mod tests {
     }
 
     #[test]
-    fn update_steps_through_the_updater_states_offline() {
+    fn new_version_publishes_an_update_offline_every_time() {
         let dir = tempfile::tempdir().unwrap();
         let (mut sim, _) = sim_in(dir.path());
         assert_eq!(sim.apply(Control::Status).update, None);
-        // The JSON the update banner (src/UpdateBanner.jsx) reads.
-        for expected in [
-            serde_json::json!({"status": "available", "version": FAKE_UPDATE_VERSION}),
-            serde_json::json!({"status": "downloading", "version": FAKE_UPDATE_VERSION, "progress": 50}),
-            serde_json::json!({"status": "ready", "version": FAKE_UPDATE_VERSION}),
-        ] {
+        // The settings window's simulated update server (src/simUpdate.js)
+        // takes it from there; each press publishes again.
+        let expected = serde_json::json!({"status": "available", "version": FAKE_UPDATE_VERSION});
+        for _ in 0..3 {
             let s = sim.apply(Control::StepUpdate);
-            let json = serde_json::to_value(&s).unwrap();
-            assert_eq!(json["update"], expected);
+            assert_eq!(serde_json::to_value(&s).unwrap()["update"], expected);
         }
-        assert_eq!(sim.apply(Control::StepUpdate).update, None);
     }
 
     #[test]
@@ -1227,7 +1210,7 @@ mod tests {
             sim.apply(control)
         };
         type Check = fn(&SimStatus) -> bool;
-        let states: [(&str, &str, Check); 8] = [
+        let states: [(&str, &str, Check); 6] = [
             ("Resolve open", r#"{"type":"Resolve","open":true}"#, |s| {
                 s.resolve_open && !s.enabled
             }),
@@ -1248,12 +1231,6 @@ mod tests {
             ),
             ("update available", r#"{"type":"StepUpdate"}"#, |s| {
                 matches!(s.update, Some(UpdateState::Available { .. }))
-            }),
-            ("downloading", r#"{"type":"StepUpdate"}"#, |s| {
-                matches!(s.update, Some(UpdateState::Downloading { .. }))
-            }),
-            ("ready", r#"{"type":"StepUpdate"}"#, |s| {
-                matches!(s.update, Some(UpdateState::Ready { .. }))
             }),
             ("first run", r#"{"type":"ResetFirstRun"}"#, |s| s.first_run),
         ];
