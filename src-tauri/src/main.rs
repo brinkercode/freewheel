@@ -305,7 +305,7 @@ fn main() {
     let quit_commands = commands.clone();
     let simulate = simulator::requested(std::env::args());
     if let Some(args) = simulate::browser_args(simulate || cfg!(feature = "e2e")) {
-        // The Windows e2e (scripts/e2e-windows.mjs, and with the e2e-only
+        // The Windows e2e (scripts/e2e.mjs, and with the e2e-only
         // `e2e` feature scripts/e2e-update-windows.mjs) attaches to this port.
         for window in &mut context.config_mut().app.windows {
             window.additional_browser_args = Some(args.clone());

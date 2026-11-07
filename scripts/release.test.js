@@ -287,7 +287,7 @@ test("release-please runs on main, pinned, and dispatches the release PR's CI an
   expect(releasePlease).toMatch(/^permissions:\n {2}contents: read$/m);
   expect(releasePlease).toContain("uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0");
   expect(releasePlease).not.toMatch(/secrets\.|pull_request_target|secrets: inherit/);
-  expect(releasePlease).toContain("for wf in ci.yml e2e-windows.yml; do");
+  expect(releasePlease).toContain("for wf in ci.yml e2e-windows.yml e2e-linux.yml; do");
   expect(releasePlease).toContain('gh workflow run "$wf" --repo "$GITHUB_REPOSITORY" --ref "$branch"');
   expect(releasePlease).toContain('gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"');
   expect(releasePlease).toContain("if: steps.release.outputs.release_created == 'true'");

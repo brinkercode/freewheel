@@ -1,4 +1,4 @@
-//! The Windows e2e's stand-ins for the OS dialogs (scripts/e2e-windows.mjs):
+//! The e2e's stand-ins for the OS dialogs (scripts/e2e.mjs, Windows and Linux):
 //! WebDriver cannot click a native file dialog, so in an e2e build
 //! (`cargo build --features e2e`, only the e2e workflow does) running
 //! `--simulate` with [`DIALOG_DIR_ENV`] set, each dialog answers with a
@@ -31,9 +31,14 @@ pub enum Dialog {
 #[cfg_attr(not(feature = "e2e"), allow(dead_code))]
 pub const NEXT_OPEN_FILE: &str = "next-open.txt";
 
-/// The program 'Choose file…' answers with in the e2e.
+/// The program 'Choose file…' answers with in the e2e: an .exe on
+/// Windows, an AppImage on Linux (both run as they are).
 #[cfg_attr(not(feature = "e2e"), allow(dead_code))]
-pub const CHOSEN_APP: &str = "E2E Example App.exe";
+pub const CHOSEN_APP: &str = if cfg!(target_os = "linux") {
+    "E2E Example App.AppImage"
+} else {
+    "E2E Example App.exe"
+};
 
 /// The stub's answer for `dialog` in `dir`: the file it picks (for the
 /// confirmation, any `Some` is yes).
@@ -129,17 +134,17 @@ mod tests {
     }
 
     /// Shipped builds never stub: the release workflow builds without the
-    /// feature, and only the e2e workflow turns it on.
+    /// feature, and only the e2e workflows (Windows, Linux) turn it on.
     #[test]
     fn only_the_e2e_workflow_builds_the_stubs() {
         let e2e = include_str!("../../.github/workflows/e2e-windows.yml");
         assert!(e2e.contains("--features tauri/custom-protocol,e2e"));
-        assert!(include_str!("../../scripts/e2e-windows.mjs").contains(DIALOG_DIR_ENV));
+        assert!(include_str!("../../scripts/e2e.mjs").contains(DIALOG_DIR_ENV));
         for dir in
             std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../.github/workflows")).unwrap()
         {
             let path = dir.unwrap().path();
-            if path.ends_with("e2e-windows.yml") {
+            if path.ends_with("e2e-windows.yml") || path.ends_with("e2e-linux.yml") {
                 continue;
             }
             let text = std::fs::read_to_string(&path).unwrap();

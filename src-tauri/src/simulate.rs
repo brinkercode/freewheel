@@ -392,7 +392,7 @@ pub fn attach(
 }
 
 /// `--simulate` only: the WebView2 DevTools port the Windows e2e attaches
-/// msedgedriver to (scripts/e2e-windows.mjs). On hosted windows-2025 runners
+/// msedgedriver to (scripts/e2e.mjs, Windows). On hosted windows-2025 runners
 /// WebView2 ignores the port msedgedriver passes through the environment
 /// (actions/runner-images#14738), so the app opens it itself.
 pub const E2E_DEVTOOLS_PORT_ENV: &str = "FREEWHEEL_E2E_DEVTOOLS_PORT";
@@ -1006,7 +1006,7 @@ mod tests {
 
     #[test]
     fn the_e2e_port_matches_the_script() {
-        let js = include_str!("../../scripts/e2e-windows.mjs");
+        let js = include_str!("../../scripts/e2e.mjs");
         assert!(js.contains(E2E_DEVTOOLS_PORT_ENV));
     }
 

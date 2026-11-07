@@ -210,7 +210,7 @@ test("test builds embed the next release's notes and the e2e proves them in What
   expect(e2e).toContain('node scripts/release-notes.mjs preview --version "$TO_VERSION" --out "$RUNNER_TEMP/notes-$TO_VERSION.md"');
   expect(e2e).toContain('--notes-file "$RUNNER_TEMP/notes-$TO_VERSION.md"');
   expect(read("./e2e-update-windows.mjs")).toContain("NOTES_ON_PAGE_JS, [JSON.stringify(expectedNotes)]");
-  const sim = read("./e2e-windows.mjs");
+  const sim = read("./e2e.mjs");
   for (const label of ["Next release (real notes)", "Sample notes", "Paste notes…"]) expect(sim).toContain(label);
   expect(read("../src-tauri/build.rs")).toContain('const NEXT_NOTES_ENV: &str = "FREEWHEEL_NEXT_NOTES_FILE";');
 });

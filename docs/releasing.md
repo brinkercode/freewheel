@@ -59,8 +59,8 @@ test package verified with a test key) and never installs.
 1. Every push to `main` runs `release-please.yml`. It opens (or updates) one
    PR, `chore(main): release X.Y.Z`, that bumps the version in `package.json`,
    `package-lock.json`, `src-tauri/tauri.conf.json`, both `Cargo.toml` files and
-   `Cargo.lock`, and adds the notes to `CHANGELOG.md`. It then starts `ci.yml`
-   and `e2e-windows.yml` on that PR's branch (a PR made with `GITHUB_TOKEN`
+   `Cargo.lock`, and adds the notes to `CHANGELOG.md`. It then starts `ci.yml`,
+   `e2e-windows.yml` and `e2e-linux.yml` on that PR's branch (a PR made with `GITHUB_TOKEN`
    starts no workflow by itself), so the required checks run.
 2. Squash-merge the release PR. On that push release-please tags `vX.Y.Z`,
    publishes the GitHub release with the notes, and starts `release.yml` on the
