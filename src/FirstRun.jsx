@@ -33,17 +33,19 @@ export default function FirstRun({ state, permissions, step: first = 0, initialP
       {step === 0 && (
         <section className="first-run-step">
           <span className="logo-disc logo-welcome" aria-hidden="true" />
-          <h1>Welcome to freewheel</h1>
-          <p>
+          <h1 className="welcome">Welcome to freewheel</h1>
+          <p className="lead-lg">
             Use your Speed Editor for everyday things — copy and paste, volume, opening your favorite apps — whenever
             DaVinci Resolve is closed.
           </p>
-          <button className="btn-primary btn-lg" onClick={next}>Get started</button>
+          <button className="btn-primary btn-lg get-started" onClick={next}>
+            Get started
+          </button>
           <div className="hint">Takes about a minute</div>
         </section>
       )}
       {step === 1 && (
-        <section className="first-run-step">
+        <section className="first-run-step is-wide">
           <h1>Plug in or pair your Speed Editor</h1>
           <p>Connect it with its USB cable. Or switch it on and pair it in your computer’s Bluetooth settings.</p>
           {state.connected ? (
@@ -51,7 +53,7 @@ export default function FirstRun({ state, permissions, step: first = 0, initialP
               <Icon name="check" className="icon found-icon" />
               <div>
                 <strong>Found it!</strong>
-                <div className="card-sub">{connectionText(state.bus)}</div>
+                <div className="card-sub">{connectionText(state.bus, state.battery)}</div>
               </div>
             </div>
           ) : (

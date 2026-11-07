@@ -11,5 +11,10 @@ This product credits the following third-party work:
   challenge-response function bmd_kbd_auth of its bmd.py (Copyright (C) 2021
   Sylvain Munaut) is ported in crates/freewheel-core/src/auth.rs.
 
+- Material Symbols (https://github.com/google/material-design-icons)
+  Licensed under the Apache License, Version 2.0. The UI icons in
+  src/assets/icons (all but wheel.svg) are Material Symbols Rounded glyphs,
+  the icon set the design handoff's prototype uses, bundled as SVG files.
+
 No third-party code is used in freewheel beyond what this NOTICE lists.
 Dependencies fetched by Cargo and npm keep their own licenses.

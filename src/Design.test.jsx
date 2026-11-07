@@ -60,7 +60,7 @@ test("the Keys drawing is the handoff SVG with is-selected, is-pressed and is-li
   expect(svg).toMatch(/<g id="key-CUT" data-key="CUT"[^>]*class="key is-selected"/);
   expect(svg).toMatch(/<g id="key-CAM1" data-key="CAM1"[^>]*class="key is-pressed is-unset"/);
   expect(svg).toMatch(/<g id="key-JOG" data-key="JOG"[^>]*class="key is-lit is-unset"/);
-  expect(svg).toContain(">Ctrl+C</text>");
+  expect(svg).toMatch(/>Ctrl\+C<\/tspan><\/text>/);
   expect(svg.match(/class="key[ "]/g)).toHaveLength(43);
   expect(base).toMatch(/\.key\.is-selected \.key-face \{ fill: var\(--key-dark-sel\); \}/);
   // the ring: 2px of the panel colour between the face and a 2px --accent-device stroke
@@ -80,35 +80,55 @@ test("the key panel is one choices list, one entry per KIND_ROWS kind, with no '
   expect(document.body.textContent).not.toMatch(/What should .* do\?/);
 });
 
-test("picking a kind shows '‹ All choices', the title, the subtitle and one Save; '‹ All choices' goes back", () => {
+test("picking a kind shows 'All choices', the title and the subtitle, and no Save; 'All choices' goes back", () => {
   render(<ActionEditor keyName="Out" initialConfig={config()} />);
-  fireEvent.click(screen.getAllByRole("radio")[KIND_ROWS.indexOf("SetJogMode")]);
-  expect(screen.getByText("‹ All choices")).toBeTruthy();
-  expect(screen.getByText(KIND_TEXT.SetJogMode[0])).toBeTruthy();
-  expect(screen.getByText(KIND_TEXT.SetJogMode[1])).toBeTruthy();
-  expect(screen.getAllByRole("button", { name: "Save" })).toHaveLength(1);
-  expect(screen.queryAllByRole("radio")).toHaveLength(0);
-  fireEvent.click(screen.getByText("‹ All choices"));
-  expect(screen.getAllByRole("radio")).toHaveLength(KIND_ROWS.length);
+  fireEvent.click(screen.getAllByRole("radio")[KIND_ROWS.indexOf("OverrideToggle")]);
+  expect(screen.getByText("All choices")).toBeTruthy();
+  expect(screen.getByText(KIND_TEXT.OverrideToggle[0])).toBeTruthy();
+  expect(screen.getByText("Press OUT and the wheel becomes a knob for:")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+  expect(screen.queryAllByRole("radio")).toHaveLength(0);
+  fireEvent.click(screen.getByText("All choices"));
+  expect(screen.getAllByRole("radio")).toHaveLength(KIND_ROWS.length);
 });
 
-test("Save calls the existing save handlers: save_config with the new binding", async () => {
+test("every pick saves at once through save_config; Do nothing clears the key", async () => {
   const save = vi.fn(() => Promise.resolve(null));
   const onSaved = vi.fn();
   render(<ActionEditor keyName="Out" initialConfig={config()} save={save} onSaved={onSaved} />);
-  fireEvent.click(screen.getAllByRole("radio")[KIND_ROWS.indexOf("SetJogMode")]);
-  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  fireEvent.click(screen.getAllByRole("radio")[KIND_ROWS.indexOf("OverrideToggle")]);
+  fireEvent.click(screen.getByText("Screen brightness"));
   await vi.waitFor(() => expect(onSaved).toHaveBeenCalled());
-  expect(save.mock.calls[0][0].layers[0].bindings.Out).toEqual({ SetJogMode: { mode: "Scroll" } });
+  expect(save.mock.calls[0][0].layers[0].bindings.Out).toEqual({ OverrideToggle: { mode: "Brightness" } });
+  cleanup();
+  render(<ActionEditor keyName="Cut" initialConfig={config()} save={save} />);
+  fireEvent.click(screen.getByText("Do nothing"));
+  await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+  expect(save.mock.calls[1][0].layers[0].bindings).toEqual({});
   cleanup();
   const onSave = vi.fn(() => Promise.resolve({}));
   render(<KeyPanel keyName="Out" config={config()} layerId="base" onSave={onSave} initialMode={null} />);
   fireEvent.click(screen.getAllByRole("radio")[KIND_ROWS.indexOf("Held")]);
   expect(screen.getByText("The key stays held down for as long as you hold OUT.")).toBeTruthy();
   fireEvent.keyDown(screen.getByPlaceholderText("Click here, then press the shortcut"), { key: "k", ctrlKey: true });
-  fireEvent.click(screen.getByRole("button", { name: "Save" }));
   expect(onSave).toHaveBeenCalledWith("Held", { modifiers: ["Ctrl"], key: "K" });
+});
+
+test("a wheel button explains itself and offers 'Set up the wheel'; a way-back key is locked", () => {
+  const onWheel = vi.fn();
+  render(<KeyPanel keyName="Jog" config={config()} layerId="base" onWheel={onWheel} />);
+  expect(screen.getByText("A wheel button")).toBeTruthy();
+  expect(screen.getByText("JOG is one of the three buttons above the wheel. Pressing it changes what the wheel does.")).toBeTruthy();
+  fireEvent.click(screen.getByText("Set up the wheel"));
+  expect(onWheel).toHaveBeenCalled();
+  cleanup();
+  const onShowPage = vi.fn();
+  render(<KeyPanel keyName="Cut" config={config()} layerId="edit" back={{ id: "base", name: "Main" }} onShowPage={onShowPage} />);
+  expect(screen.getByText("This key takes you back to “Main”.")).toBeTruthy();
+  expect(screen.getByText("It stays this way so you can never get stuck on this page.")).toBeTruthy();
+  fireEvent.click(screen.getByText("Show the Main page"));
+  expect(onShowPage).toHaveBeenCalledWith("base");
+  expect(screen.queryAllByRole("radio")).toHaveLength(0);
 });
 
 const CH = [
@@ -118,11 +138,11 @@ const CH = [
   ["LaunchApp", "apps", "Open an app or website", "Spotify, a file, a web page…"],
   ["OverrideToggle", "volume_up", "Turn the wheel into…", "A volume or brightness knob"],
   ["LayerPush", "tab", "Switch to another set of keys", "Pages like Music or Browser"],
+  ["Clear", "block", "Do nothing", "Clear this key"],
 ];
 
 test("each choice row has the prototype's CH icon, title and subtitle; only the current kind has a check", () => {
   render(<ActionEditor keyName="Cut" initialConfig={config()} />);
-  fireEvent.click(screen.getByText("‹ All choices"));
   const rows = screen.getAllByRole("radio").map((r) => r.closest("label"));
   expect(rows).toHaveLength(KIND_ROWS.length);
   for (const [kind, icon, title, sub] of CH) {
@@ -150,7 +170,7 @@ test("the detail view uses the prototype's MT/MS title and subtitle with the key
     fireEvent.click(screen.getAllByRole("radio")[KIND_ROWS.indexOf(kind)]);
     expect(document.querySelector(".mode-title").textContent).toBe(title);
     expect(document.querySelector(".mode-sub").textContent).toBe(sub);
-    fireEvent.click(screen.getByText("‹ All choices"));
+    fireEvent.click(screen.getByText("All choices"));
   }
   fireEvent.click(screen.getAllByRole("radio")[KIND_ROWS.indexOf("LaunchApp")]);
   expect(document.querySelector(".mode-title").textContent).toBe("Open an app or website");
@@ -186,7 +206,7 @@ test("the toolbar has the prototype's tab icons; the status opens the permission
   expect(icons).toEqual(["keyboard", "trip_origin", "movie", "tune", "help"]);
   // each icon is a bundled SVG painted as a mask, never fetched
   for (const i of icons) expect(base).toContain(`.tab[data-icon="${i}"] { --mask: url("../assets/icons/${i}.svg"); }`);
-  fireEvent.click(screen.getByText("Needs permission"));
+  fireEvent.click(screen.getByText("Needs permission (click to fix)"));
   expect(onFix).toHaveBeenCalledTimes(1);
   cleanup();
   render(<Toolbar tab="Keys" onTab={() => {}} state={{ ...state, permissionMissing: false }} onFix={onFix} />);
@@ -201,8 +221,8 @@ test("the key panel header shows the keycap, 'When I press X…', what it does n
   const onClose = vi.fn();
   render(<KeyPanel keyName="Cut" action={config().layers[0].bindings.Cut} config={config()} layerId="base" onClose={onClose} />);
   expect(document.querySelector(".keycap").textContent).toBe("CUT");
-  expect(screen.getByText("When I press Cut…")).toBeTruthy();
-  expect(screen.getByText("Right now: Ctrl+C")).toBeTruthy();
+  expect(screen.getByText("When I press CUT…")).toBeTruthy();
+  expect(screen.getByText("Right now: Copy (Ctrl + C)")).toBeTruthy();
   expect(screen.getByText("Try it: press CUT on your Speed Editor.")).toBeTruthy();
   fireEvent.click(screen.getByTitle("Close"));
   expect(onClose).toHaveBeenCalled();
@@ -223,7 +243,7 @@ test("'Pick a key' shows the prototype's copy, and the wheel tip only on an empt
   expect(screen.queryByText("Your wheel already scrolls, like a mouse wheel. Give it a spin!")).toBeNull();
 });
 
-test("the record box shows Record, then Listening…, then keycaps; a common shortcut fills it and Save sends it", async () => {
+test("the record box shows Record, then Listening…, then keycaps, saving at once; a common shortcut saves too", async () => {
   const onSave = vi.fn(() => Promise.resolve({ config: config() }));
   render(<KeyPanel keyName="Out" config={config()} layerId="base" onSave={onSave} initialMode="Hotkey" />);
   expect(screen.getByText("Record")).toBeTruthy();
@@ -231,19 +251,33 @@ test("the record box shows Record, then Listening…, then keycaps; a common sho
   const input = screen.getByPlaceholderText("Click here, then press the shortcut");
   fireEvent.focus(input);
   expect(screen.getByText("Listening… press your shortcut")).toBeTruthy();
+  expect(screen.getByText("Cancel")).toBeTruthy();
+  // modifiers alone show live, and wait for the key
+  fireEvent.keyDown(input, { key: "Control", ctrlKey: true });
+  expect([...document.querySelectorAll(".keycap-lg")].map((k) => k.textContent)).toEqual(["Ctrl"]);
+  expect(onSave).not.toHaveBeenCalled();
   fireEvent.keyDown(input, { key: "k", ctrlKey: true });
+  expect(onSave).toHaveBeenCalledWith("Hotkey", { modifiers: ["Ctrl"], key: "K" });
+  fireEvent.blur(input);
   expect([...document.querySelectorAll(".keycap-lg")].map((k) => k.textContent)).toEqual(["Ctrl", "K"]);
   expect(screen.getByText("Click to record again")).toBeTruthy();
   expect(screen.getByText("Or pick a common one")).toBeTruthy();
   expect([...document.querySelectorAll(".preset strong")].map((p) => p.textContent)).toEqual(["Copy", "Paste", "Undo", "Redo", "Save"]);
   fireEvent.click(screen.getByText("Paste").closest("button"));
   expect(screen.getByText("Paste").closest("button").className).toContain("is-current");
-  fireEvent.click(screen.getByRole("button", { name: "Save" }));
-  expect(onSave).toHaveBeenCalledWith("Hotkey", { modifiers: ["Ctrl"], key: "V" });
+  expect(onSave).toHaveBeenLastCalledWith("Hotkey", { modifiers: ["Ctrl"], key: "V" });
+  expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
   cleanup();
   render(<KeyPanel keyName="Out" config={config()} layerId="base" initialMode="Held" />);
   expect(screen.getByText("Then press one key, like Shift")).toBeTruthy();
   expect(screen.queryByText("Or pick a common one")).toBeNull();
+});
+
+test("Held records one key, a lone modifier too", () => {
+  const onSave = vi.fn(() => Promise.resolve({}));
+  render(<KeyPanel keyName="Out" config={config()} layerId="base" onSave={onSave} initialMode="Held" />);
+  fireEvent.keyDown(screen.getByPlaceholderText("Click here, then press the shortcut"), { key: "Shift", shiftKey: true });
+  expect(onSave).toHaveBeenCalledWith("Held", { modifiers: ["Shift"], key: "" });
 });
 
 test("Held and Latched show the 'Quick picks' chips Shift, Ctrl/Cmd and Alt; Latched shows the lit-key card", () => {
@@ -256,7 +290,7 @@ test("Held and Latched show the 'Quick picks' chips Shift, Ctrl/Cmd and Alt; Lat
     expect([...document.querySelectorAll(".presets .preset strong")].map((p) => p.textContent)).toEqual(["Shift", "Ctrl", "Alt"]);
     expect(document.querySelectorAll(".preset-combo")).toHaveLength(0);
     expect(screen.queryByText("Or pick a common one")).toBeNull();
-    expect(screen.getAllByRole("button", { name: "Save" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
     const card = document.querySelector(".lit-card");
     if (kind === "Held") expect(card).toBeNull();
     else {
@@ -270,7 +304,7 @@ test("Held and Latched show the 'Quick picks' chips Shift, Ctrl/Cmd and Alt; Lat
   expect(screen.queryByText("Quick picks")).toBeNull();
   expect(document.querySelector(".lit-card")).toBeNull();
   cleanup();
-  for (const kind of ["LaunchApp", "LayerPush", "SetJogMode", "OverrideToggle"]) {
+  for (const kind of ["LaunchApp", "LayerPush", "OverrideToggle"]) {
     render(<KeyPanel keyName="Out" config={config()} layerId="base" initialMode={kind} />);
     expect(screen.queryByText("Quick picks")).toBeNull();
     expect(document.querySelectorAll(".preset")).toHaveLength(0);
