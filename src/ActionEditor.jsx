@@ -166,6 +166,12 @@ export const PRESETS = [
   ["Redo", MOD === "Meta" ? { modifiers: [MOD, "Shift"], key: "Z" } : { modifiers: [MOD], key: "Y" }],
   ["Save", { modifiers: [MOD], key: "S" }],
 ];
+/**
+ * The prototype's Held and Latched "Quick picks": Shift, Ctrl (Meta on a Mac) and Alt alone,
+ * labelled as its kn() does: ⇧ ⌘ ⌥ on a Mac, Shift Ctrl Alt elsewhere.
+ */
+const QUICK_LABELS = MOD === "Meta" ? ["⇧", "⌘", "⌥"] : ["Shift", "Ctrl", "Alt"];
+export const QUICK_PICKS = ["Shift", MOD, "Alt"].map((m, i) => [QUICK_LABELS[i], { modifiers: [m], key: "" }]);
 
 /** The detail view's [title, subtitle] for `kind` (the prototype's MT/MS); `key` is the printed name. */
 export function modeText(kind, key) {
@@ -188,7 +194,7 @@ const comboOf = (action) => (action && Object.values(action)[0]?.combo) || null;
  * Resolves to { config } or { error } (the inline error); an invalid combo is never sent.
  */
 export async function saveKey({ config, pageId, key, kind, combo, save = saveConfig }) {
-  const error = comboError(combo);
+  const error = comboError(combo, kind);
   if (error) return { error };
   const next = setBinding(config, pageId, key, { [kind]: { combo } });
   try {
@@ -306,6 +312,8 @@ export function KeyPanel({ keyName, action, config, layerId, onSave, onSaveActio
       ? onSave?.(mode, combo).then(done).then((r) => setError(r?.error ?? null))
       : onSaveAction?.(draft).then(done).then((r) => setErrors(r?.errors ?? {}));
   const record = (c) => (setCombo(c), setError(null), setJustSaved(false));
+  // A quick pick saves at once, as in the prototype.
+  const quickPick = (c) => (record(c), onSave?.(mode, c).then(done).then((r) => setError(r?.error ?? null)));
   return (
     <section id="action-editor" className="key-panel key-editor" aria-label={`${printed} action`}>
       <header className="panel-head">
@@ -347,14 +355,18 @@ export function KeyPanel({ keyName, action, config, layerId, onSave, onSaveActio
           ) : (
             draft && <ActionForm action={draft} config={config} layerId={layerId} errors={errors} onChange={setDraft} />
           )}
-          {mode === "Hotkey" && (
+          {COMBO_KINDS.includes(mode) && (
             <>
-              <div className="field-label">Or pick a common one</div>
+              <div className="field-label">{mode === "Hotkey" ? "Or pick a common one" : "Quick picks"}</div>
               <div className="presets">
-                {PRESETS.map(([name, c]) => (
-                  <button key={name} className={`preset${sameCombo(c, combo) ? " is-current" : ""}`} onClick={() => record(c)}>
+                {(mode === "Hotkey" ? PRESETS : QUICK_PICKS).map(([name, c]) => (
+                  <button
+                    key={name}
+                    className={`preset${sameCombo(c, combo) ? " is-current" : ""}`}
+                    onClick={() => (mode === "Hotkey" ? record(c) : quickPick(c))}
+                  >
                     <strong>{name}</strong>
-                    <span className="preset-combo">{formatCombo(c)}</span>
+                    {mode === "Hotkey" && <span className="preset-combo">{formatCombo(c)}</span>}
                   </button>
                 ))}
               </div>

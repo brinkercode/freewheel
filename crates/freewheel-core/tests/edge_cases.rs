@@ -348,6 +348,59 @@ fn stuck_keys_none_left_down_after_off_disconnect_or_quit_for_every_action_type(
 }
 
 #[test]
+fn lone_modifier_held_or_latched_is_released_on_off_disconnect_or_quit() {
+    for end in [End::Off, End::Disconnect, End::Quit] {
+        let config = config_with(
+            &[
+                (
+                    Key::In,
+                    Action::Held {
+                        combo: combo("", &[Modifier::Shift]),
+                    },
+                ),
+                (
+                    Key::Snap,
+                    Action::Latched {
+                        combo: combo("", &[Modifier::Alt]),
+                    },
+                ),
+            ],
+            vec![],
+        );
+        let (usb, clock) = (Usb::default(), FakeClock::new());
+        let mut m = usb.manager(&clock);
+        let mut rig = Rig::new(&config);
+        let dev = Device::plugged(&usb, 600);
+        // Snap latched, then In pressed and held.
+        dev.input(keys(&[Key::Snap]))
+            .input(keys(&[]))
+            .input(keys(&[Key::In]));
+        for _ in 0..4 {
+            rig.tick(&mut m);
+        }
+        assert_eq!(
+            rig.mock.keys_down(),
+            [modifier(Modifier::Alt), modifier(Modifier::Shift)],
+            "before {end:?}"
+        );
+        match end {
+            End::Off => {
+                rig.feed(m.set_enabled(false));
+            }
+            End::Disconnect => {
+                rig.tick(&mut m);
+            }
+            End::Quit => rig.engine.release_all(&mut rig.mock).unwrap(),
+        }
+        assert!(
+            rig.mock.keys_down().is_empty(),
+            "after {end:?}: {:?}",
+            rig.mock.keys_down()
+        );
+    }
+}
+
+#[test]
 fn multi_key_report_presses_and_releases_every_bound_key() {
     let held = |k: &str| Action::Held {
         combo: combo(k, &[]),

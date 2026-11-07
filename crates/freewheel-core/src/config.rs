@@ -739,6 +739,36 @@ mod tests {
     }
 
     #[test]
+    fn lone_modifier_held_and_latched_save_load_and_round_trip() {
+        let (_dir, mut s) = store();
+        let mut config = Config::default();
+        for (key, m) in [("In", Modifier::Shift), ("Out", Modifier::Ctrl)] {
+            let combo = KeyCombo {
+                modifiers: vec![m],
+                key: String::new(),
+            };
+            config
+                .layers
+                .first_mut()
+                .unwrap()
+                .bindings
+                .insert(key.into(), Action::Held { combo });
+        }
+        let alt = KeyCombo {
+            modifiers: vec![Modifier::Alt],
+            key: String::new(),
+        };
+        config.layers[0]
+            .bindings
+            .insert("Snap".into(), Action::Latched { combo: alt });
+        let value = serde_json::to_value(&config).unwrap();
+        assert_eq!(parse_for_save(&value).unwrap(), config);
+        s.save(&config).unwrap();
+        assert_eq!(s.load().unwrap(), config);
+        roundtrip(&config);
+    }
+
+    #[test]
     fn load_missing_returns_default() {
         let (_dir, mut s) = store();
         assert_eq!(s.load().unwrap(), Config::default());

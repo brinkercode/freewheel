@@ -154,12 +154,34 @@ test("an invalid combo shows an inline error and is never saved", async () => {
   expect(comboError(combo("CapsLock"))).toBe("freewheel can't send the CapsLock key.");
   expect(comboError(combo("F12", "Shift"))).toBeNull();
   const save = vi.fn(async () => {});
-  const r = await saveKey({ config, pageId: "base", key: "Out", kind: "Latched", combo: combo("", "Ctrl"), save });
+  const r = await saveKey({ config, pageId: "base", key: "Out", kind: "Hotkey", combo: combo("", "Ctrl"), save });
   expect(r.error).toBe("Add a key to go with the modifier, like Ctrl+K.");
   expect(save).not.toHaveBeenCalled();
   const html = renderToString(<KeyEditor keyName="Out" initialError={r.error} initialMode="Latched" />);
   expect(html).toMatch(/aria-invalid="true"/);
   expect(html).toContain('role="alert">Add a key to go with the modifier, like Ctrl+K.</p>');
+});
+
+test("Held and Latched accept one modifier alone: Shift, Ctrl/Cmd or Alt", async () => {
+  for (const kind of ["Held", "Latched"])
+    for (const m of ["Shift", "Ctrl", "Meta", "Alt"]) expect(comboError(combo("", m), kind)).toBeNull();
+  const save = vi.fn(async () => {});
+  const r = await saveKey({ config, pageId: "base", key: "Out", kind: "Held", combo: combo("", "Alt"), save });
+  expect(save).toHaveBeenCalledWith(r.config);
+  expect(r.config.layers[0].bindings.Out).toEqual({ Held: { combo: combo("", "Alt") } });
+});
+
+test("comboError still rejects an empty combo and everything it rejected for Hotkey", () => {
+  for (const kind of ["Hotkey", "Held", "Latched"]) {
+    expect(comboError(null, kind)).toBe("Press the shortcut you want first.");
+    expect(comboError(combo(""), kind)).toBe("Press the shortcut you want first.");
+    expect(comboError(combo("CapsLock", "Shift"), kind)).toBe("freewheel can't send the CapsLock key.");
+    // Two modifiers and no key is not a lone modifier.
+    expect(comboError(combo("", "Ctrl", "Shift"), kind)).toBe("Add a key to go with the modifier, like Ctrl+K.");
+  }
+  for (const m of ["Shift", "Ctrl", "Meta", "Alt"])
+    expect(comboError(combo("", m), "Hotkey")).toBe("Add a key to go with the modifier, like Ctrl+K.");
+  expect(comboError(combo("", "Ctrl"))).toBe("Add a key to go with the modifier, like Ctrl+K.");
 });
 
 test("saving calls save_config with the key's new action", async () => {
