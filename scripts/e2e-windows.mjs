@@ -55,12 +55,16 @@ async function launch(app, port, say) {
   const end = Date.now() + 60000;
   while (Date.now() < end) {
     if (child.exitCode !== null) throw new Error(`the app exited with ${child.exitCode} before opening port ${port}`);
-    const up = await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(2000) }).then((r) => r.ok, () => false);
-    if (up) return child;
+    // Attach only once both windows' pages exist: msedgedriver attached to
+    // a WebView2 still creating them fails with "chrome not reachable".
+    const pages = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(2000) })
+      .then((r) => r.json())
+      .then((list) => list.filter((t) => t.type === "page").length, () => 0);
+    if (pages >= 2) return child;
     await new Promise((r) => setTimeout(r, 300));
   }
   child.kill();
-  throw new Error(`the app's DevTools port ${port} did not open within 60 s`);
+  throw new Error(`the app's two windows did not show up on DevTools port ${port} within 60 s`);
 }
 
 /** A safe, ordered file name for a step's screenshot. */
@@ -90,12 +94,16 @@ class Driver {
     return json.value;
   }
   async start(app, port) {
-    const v = await fetch(`${this.base}/session`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(sessionBody(app, port)),
-      signal: AbortSignal.timeout(120000),
-    }).then((r) => r.json());
+    let v;
+    for (let attempt = 1; attempt <= 3 && !v?.value?.sessionId; attempt++) {
+      if (attempt > 1) await new Promise((r) => setTimeout(r, 2000));
+      v = await fetch(`${this.base}/session`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(sessionBody(app, port)),
+        signal: AbortSignal.timeout(120000),
+      }).then((r) => r.json());
+    }
     if (!v.value?.sessionId) throw new Error(`no session: ${JSON.stringify(v).slice(0, 500)}`);
     this.session = v.value.sessionId;
     await this.call("POST", "/timeouts", { script: RESPONSIVE_MS, pageLoad: 30000, implicit: 0 });
