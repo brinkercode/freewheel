@@ -49,12 +49,19 @@ function usePermissions(initial, poll) {
   return initial ?? polled;
 }
 
-const openPane = (name) =>
-  invoke("open_permission_pane", { permission: name }).catch((error) =>
-    console.error("freewheel: opening the", name, "pane failed:", String(error)),
+/**
+ * Opens the System Settings pane of `name` (macOS). In --simulate nothing
+ * opens: the app answers with what it would have opened, and `onToast` shows it.
+ */
+export const openPane = (name, onToast) =>
+  invoke("open_permission_pane", { permission: name }).then(
+    (said) => {
+      if (said) onToast?.(said);
+    },
+    (error) => console.error("freewheel: opening the", name, "pane failed:", String(error)),
   );
 
-export default function Permissions({ initial = null, poll = 2000 }) {
+export default function Permissions({ initial = null, poll = 2000, onToast }) {
   const permissions = usePermissions(initial, poll);
   const names = Object.keys(permissions ?? {});
   if (names.length === 0) return null;
@@ -82,7 +89,7 @@ export default function Permissions({ initial = null, poll = 2000 }) {
               <Icon name="check_circle" /> <span>Allowed</span>
             </span>
           ) : (
-            <button className="btn-primary" onClick={() => invoke("open_permission_pane", { permission: name })}>
+            <button className="btn-primary" onClick={() => openPane(name, onToast)}>
               Open System Settings
             </button>
           )}
@@ -99,7 +106,7 @@ export const rowState = (grant, asked) => (grant === "Granted" ? "granted" : ask
  * The first run's permissions screen, reused by the permission fix with
  * `button="Done"`; `onDone` is enabled only when every permission is allowed.
  */
-export function PermissionsScreen({ initial = null, initialAsked = [], poll = 2000, button, onDone }) {
+export function PermissionsScreen({ initial = null, initialAsked = [], poll = 2000, button, onDone, onToast }) {
   const permissions = usePermissions(initial, poll);
   const [asked, setAsked] = useState(initialAsked);
   const names = Object.keys(permissions ?? {});
@@ -137,7 +144,7 @@ export function PermissionsScreen({ initial = null, initialAsked = [], poll = 20
                 className="btn-primary"
                 onClick={() => {
                   setAsked((a) => [...a, name]);
-                  openPane(name);
+                  openPane(name, onToast);
                 }}
               >
                 Open System Settings

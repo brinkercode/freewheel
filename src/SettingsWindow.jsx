@@ -1,4 +1,5 @@
 import Icon from "./Icon.jsx";
+import { WindowControls } from "./TitleBar.jsx";
 import { TABS, deriveNotice, deriveStatus } from "./shell.js";
 
 // The prototype's tab icons.
@@ -6,12 +7,17 @@ const TAB_ICON = { Keys: "keyboard", Wheel: "trip_origin", "DaVinci Resolve": "m
 // The notice bar's icon per notice; warn notices are tinted, the rest muted.
 const NOTICE_ICON = { permission: "lock", off: "power_settings_new", looking: "usb", paused: "pause_circle", battery: "battery_alert" };
 
-/** Tabs, the status dot and text (opens the permission fix when one is missing), and the On/Off switch. */
+/**
+ * The window's header (the OS title bar is gone, TitleBar.jsx): tabs, the
+ * status dot and text (opens the permission fix when one is missing), the
+ * On/Off switch and the window controls. Dragging anywhere but a control
+ * moves the window; a double-click maximises.
+ */
 export function Toolbar({ tab, onTab, state, onToggle, onFix }) {
   const status = deriveStatus(state);
   const fix = state.enabled && state.permissionMissing ? onFix : undefined;
   return (
-    <nav className="toolbar">
+    <nav className="toolbar" data-tauri-drag-region="deep">
       <div className="tabs">
         {TABS.map((t) => (
           <button key={t} className="tab" data-icon={TAB_ICON[t]} aria-pressed={t === tab} onClick={() => onTab(t)}>
@@ -38,6 +44,7 @@ export function Toolbar({ tab, onTab, state, onToggle, onFix }) {
           <span className="switch-knob" />
         </button>
       </div>
+      <WindowControls />
     </nav>
   );
 }

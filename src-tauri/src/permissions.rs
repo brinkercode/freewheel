@@ -5,7 +5,8 @@
 //! P5, macOS 15: with Accessibility and Input Monitoring revoked the tray
 //! shows 'Needs permission (click to fix)' (CI's macOS job, through
 //! `--probe-permissions` inside freewheel.app), and open_permission_pane
-//! passes the Accessibility and Input Monitoring pane URLs to its opener.
+//! passes the Accessibility and Input Monitoring pane URLs to its opener
+//! (the opener plugin). In `--simulate` it opens nothing and names the pane.
 
 use std::collections::BTreeMap;
 
@@ -75,19 +76,19 @@ pub trait PaneOpener {
     fn open(&self, url: &str) -> Result<(), String>;
 }
 
-/// Opens the URL with /usr/bin/open (no shell); macOS only.
-pub struct SystemOpener;
+/// Opens the URL through the opener plugin (no shell); macOS only.
+pub struct AppOpener<'a, R: tauri::Runtime>(pub &'a tauri::AppHandle<R>);
 
-impl PaneOpener for SystemOpener {
+impl<R: tauri::Runtime> PaneOpener for AppOpener<'_, R> {
     fn open(&self, url: &str) -> Result<(), String> {
         if !cfg!(target_os = "macos") {
             return Err("permissions are only needed on macOS".into());
         }
-        std::process::Command::new("/usr/bin/open")
-            .arg(url)
-            .spawn()
-            .map(drop)
-            .map_err(|e| e.to_string())
+        use tauri_plugin_opener::OpenerExt;
+        self.0
+            .opener()
+            .open_url(url, None::<&str>)
+            .map_err(|e| format!("{url}: {e}"))
     }
 }
 
@@ -96,10 +97,52 @@ pub fn open_pane_with(opener: &dyn PaneOpener, permission: &str) -> Result<(), S
     opener.open(pane_for(permission)?)
 }
 
-/// Opens the System Settings pane of `permission` (no shell).
+/// The pane's name as System Settings shows it.
+fn pane_label(permission: Permission) -> &'static str {
+    match permission {
+        Permission::Accessibility => "Accessibility",
+        Permission::InputMonitoring => "Input Monitoring",
+    }
+}
+
+/// What `--simulate` says instead of opening the pane: it fakes the macOS
+/// permissions on any OS, and the Simulator's "macOS permission" grants them.
+pub fn simulated_pane(permission: &str) -> Result<String, String> {
+    let p = Permission::from_name(permission)
+        .ok_or_else(|| format!("unknown permission: {permission}"))?;
+    Ok(format!(
+        "Simulated: this would open System Settings › Privacy & Security › {}. \
+         Allow it in the Simulator (macOS permission: Allowed).",
+        pane_label(p)
+    ))
+}
+
+/// What `open_permission_pane` does for `app`: in `--simulate` (the
+/// simulator session is managed) nothing opens and the UI gets the
+/// [`simulated_pane`] line to show; else macOS opens the pane (`None`).
+pub fn open_pane_for<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    permission: &str,
+) -> Result<Option<String>, String> {
+    use tauri::Manager;
+    if app.try_state::<crate::simulate::SimHandle>().is_some() {
+        return simulated_pane(permission).map(Some);
+    }
+    open_pane_with(&AppOpener(app), permission).map(|()| None)
+}
+
+/// Opens the System Settings pane of `permission` (no shell); in
+/// `--simulate` returns the line the UI shows instead.
 #[tauri::command]
-pub fn open_permission_pane(permission: String) -> Result<(), String> {
-    open_pane_with(&SystemOpener, &permission)
+pub fn open_permission_pane(
+    app: tauri::AppHandle,
+    permission: String,
+) -> Result<Option<String>, String> {
+    let result = open_pane_for(&app, &permission);
+    if let Err(error) = &result {
+        tracing::warn!(%error, permission, "opening the permission pane failed");
+    }
+    result
 }
 
 /// The program and URL that open the OS Bluetooth settings, with no shell:
@@ -309,6 +352,29 @@ mod tests {
     #[test]
     fn only_macos_needs_permissions() {
         assert!(current().is_empty());
-        assert!(open_permission_pane("Accessibility".into()).is_err());
+        let app = tauri::test::mock_app();
+        assert!(open_pane_for(app.handle(), "Accessibility").is_err());
+    }
+
+    #[test]
+    fn simulate_names_the_pane_it_would_open_and_how_to_grant_it() {
+        use tauri::Manager;
+        let app = tauri::test::mock_app();
+        app.manage(crate::simulate::SimHandle::new());
+        let said = open_pane_for(app.handle(), "InputMonitoring")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            said,
+            "Simulated: this would open System Settings › Privacy & Security › Input Monitoring. \
+             Allow it in the Simulator (macOS permission: Allowed)."
+        );
+        assert!(said.contains("Allowed"));
+        assert!(
+            simulated_pane("Accessibility")
+                .unwrap()
+                .contains("Privacy & Security › Accessibility.")
+        );
+        assert!(open_pane_for(app.handle(), "Camera").is_err());
     }
 }

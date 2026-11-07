@@ -20,12 +20,13 @@ function Dots({ step, steps }) {
 
 /**
  * The first run, in place of the window's content: Welcome, then Plug in or
- * pair (live from `state`, the shell's view of the StatusEvent), then on
- * macOS (where `permissions` is not empty) the permissions screen.
+ * pair (live from `state`, the shell's view of the StatusEvent), then, only
+ * when a permission is missing (macOS, or the Simulator's "macOS permission:
+ * Missing"; Windows has none), the permissions screen.
  */
-export default function FirstRun({ state, permissions, step: first = 0, initialPermissions, onBluetooth = openBluetooth, onFinish }) {
+export default function FirstRun({ state, permissions, step: first = 0, initialPermissions, onBluetooth = openBluetooth, onFinish, onToast }) {
   const [step, setStep] = useState(first);
-  const asksPermissions = Object.keys(permissions ?? {}).length > 0;
+  const asksPermissions = Object.values(permissions ?? {}).includes("Missing");
   const next = () => (step === 1 && !asksPermissions ? onFinish() : setStep(step + 1));
   return (
     <main className="first-run">
@@ -77,7 +78,7 @@ export default function FirstRun({ state, permissions, step: first = 0, initialP
       )}
       {/* The screen shows the same permissions that decided to ask for them (the
           status event's; --simulate fakes them on any OS, where get_permissions is empty). */}
-      {step === 2 && <PermissionsScreen initial={initialPermissions ?? permissions} button="Start using freewheel" onDone={onFinish} />}
+      {step === 2 && <PermissionsScreen initial={initialPermissions ?? permissions} button="Start using freewheel" onDone={onFinish} onToast={onToast} />}
     </main>
   );
 }

@@ -6,8 +6,8 @@
 //   NODE_PATH=<dir with playwright-core> CHROME=<chromium binary> \
 //     node scripts/shots.mjs [out-dir] [base-url]
 //
-// The viewport is the prototype window's content: 1000x640 minus its 1px
-// border and 36px title bar (Tauri draws the native one).
+// The viewport is the whole 1000x640 window: there is no OS title bar, the
+// toolbar is the header (src/TitleBar.jsx).
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -80,7 +80,7 @@ const browser = await chromium.launch({ executablePath, headless: true });
 for (const scheme of ["light", "dark"]) {
   for (const [name, query, act] of STATES) {
     if (only && !only.test(name)) continue;
-    const page = await browser.newPage({ viewport: { width: 998, height: 602 }, colorScheme: scheme });
+    const page = await browser.newPage({ viewport: { width: 1000, height: 640 }, colorScheme: scheme });
     page.on("pageerror", (e) => console.error(name, "pageerror:", e.message));
     await page.goto(base + query);
     await page.waitForTimeout(600);

@@ -344,6 +344,19 @@ pub fn open_window(app: &tauri::App) -> tauri::Result<()> {
         .title(simulator::title(freewheel_core::APP_NAME, true))
         .inner_size(WIDTH, 860.0)
         .min_inner_size(280.0, 480.0);
+    // Like the settings window (tauri.conf.json, tauri.macos.conf.json): the
+    // app draws its own header; macOS keeps its traffic lights over it.
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder
+            .title_bar_style(tauri::TitleBarStyle::Overlay)
+            .hidden_title(true)
+            .traffic_light_position(tauri::LogicalPosition::new(16.0, 18.0));
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        builder = builder.decorations(false).shadow(true);
+    }
     // Both windows share one WebView2 environment, so the same arguments.
     if let Some(args) = browser_args(true) {
         builder = builder.additional_browser_args(&args);

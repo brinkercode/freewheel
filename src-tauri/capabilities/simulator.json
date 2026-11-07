@@ -1,7 +1,20 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "simulator",
-  "description": "The --simulate window drives the simulated Speed Editor and jumps the settings window to a screen.",
+  "description": "The --simulate window drives the simulated Speed Editor, jumps the settings window to a screen and draws its own title bar (minimise, maximise, close, drag).",
   "windows": ["simulator"],
-  "permissions": ["allow-simulate", "allow-sim-jump"]
+  "permissions": [
+    "allow-simulate",
+    "allow-sim-jump",
+    "core:event:default",
+    "core:window:allow-minimize",
+    "core:window:allow-unminimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-is-minimized",
+    "core:window:allow-is-decorated",
+    "core:window:allow-start-dragging",
+    "core:window:allow-close"
+  ]
 }
