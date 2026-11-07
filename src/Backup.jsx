@@ -115,7 +115,7 @@ export default function Backup({
           </div>
           <div className="privacy-line">
             <Icon name="lock" />
-            Logs never include what you type, your shortcuts, or the apps you open.
+            Logs never include what you type or your passwords.
           </div>
           {logs && (
             <Done
