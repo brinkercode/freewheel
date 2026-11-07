@@ -217,17 +217,14 @@ fn real_injector() -> Box<dyn KeyInjector> {
     Box::new(MockInjector::new())
 }
 
-/// `--simulate`: the simulator session on its own config.
+/// `--simulate`: the simulator session stands in for the device loop; it
+/// starts in `setup` ([`simulate::attach`]).
 fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
-    let real = ConfigStore::from_project_dirs()
-        .unwrap_or_else(|| ConfigStore::new(std::env::temp_dir().join(freewheel_core::APP_NAME)));
     builder
-        .manage(simulate::spawn(
-            simulator::simulator_store(&real),
-            real_injector,
-        ))
+        .manage(simulate::SimHandle::new())
         .invoke_handler(tauri::generate_handler![
             simulate::simulate,
+            simulate::sim_jump,
             settings::get_config,
             settings::save_config,
             settings::get_status,
@@ -243,20 +240,6 @@ fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::
             settings::export_logs,
             settings::set_detailed_logs
         ])
-}
-
-/// `--simulate`: the simulator window. Called from the one `setup` hook,
-/// since a second `Builder::setup` would replace the tray's.
-fn open_simulator(app: &tauri::App) -> tauri::Result<()> {
-    if let Some(settings) = app.get_webview_window("main") {
-        settings.set_title(&simulator::title("freewheel settings", true))?;
-    }
-    let url = tauri::WebviewUrl::App("index.html#simulator".into());
-    tauri::WebviewWindowBuilder::new(app, "simulator", url)
-        .title(simulator::title(freewheel_core::APP_NAME, true))
-        .inner_size(520.0, 720.0)
-        .build()?;
-    Ok(())
 }
 
 fn main() {
@@ -316,6 +299,11 @@ fn main() {
             let mut store = ConfigStore::from_project_dirs().unwrap_or_else(|| {
                 ConfigStore::new(std::env::temp_dir().join(freewheel_core::APP_NAME))
             });
+            if simulate {
+                // The settings window edits the simulator's config, never the real one.
+                store = simulator::simulator_store(&store);
+            }
+            let sim_store = ConfigStore::new(store.dir());
             let (config, error) = store.load_or_default();
             if let Some(e) = error {
                 tracing::warn!(error = %e, "config not loaded, running with defaults");
@@ -327,10 +315,21 @@ fn main() {
             );
             spawn_resolve_watch(app.handle().clone(), &config, manual_rx, commands.clone());
             let (tray, toggle, status) = tray::build(app.handle(), commands, manual)?;
-            spawn_device(app.handle().clone(), config, tray, toggle, receiver);
-            spawn_permission_watch(app.handle().clone(), status);
             if simulate {
-                open_simulator(app)?;
+                simulate::attach(
+                    app.handle().clone(),
+                    sim_store,
+                    config.settings.low_battery_threshold,
+                    real_injector,
+                    tray,
+                    toggle,
+                    status,
+                    receiver,
+                );
+                simulate::open_window(app)?;
+            } else {
+                spawn_device(app.handle().clone(), config, tray, toggle, receiver);
+                spawn_permission_watch(app.handle().clone(), status);
             }
             if smoke {
                 smoke::arm_timeout(app.handle().clone());

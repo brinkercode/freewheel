@@ -16,6 +16,7 @@ const COMMANDS: &[&str] = &[
     "export_logs",
     "set_detailed_logs",
     "simulate",
+    "sim_jump",
 ];
 
 fn main() {
