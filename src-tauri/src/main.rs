@@ -265,11 +265,15 @@ fn main() {
     let quit_commands = commands.clone();
     let simulate = simulator::requested(std::env::args());
     let smoke = smoke::requested(std::env::args());
-    // Registered first, so a second launch only focuses this one.
-    let mut builder = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+    // Registered first, so a second launch only focuses this one. `--simulate` always runs its own instance:
+    // handing off would show an already-running (often older, installed) freewheel instead of this build.
+    let mut builder = tauri::Builder::default();
+    if !simulate {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             tray::show_settings(app)
-        }))
+        }));
+    }
+    let mut builder = builder
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
