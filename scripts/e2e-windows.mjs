@@ -469,6 +469,7 @@ async function main() {
   const README_DIR = join(out, "readme");
   const still = async (name, file) => {
     await use(name);
+    await d.exec("document.querySelectorAll('*').forEach((e) => { if (e.scrollTop) e.scrollTop = 0; })");
     await d.call("POST", "/actions", { actions: [{ type: "pointer", id: "mouse", parameters: { pointerType: "mouse" }, actions: [{ type: "pointerMove", x: 2, y: 2, origin: "viewport" }] }] }).catch(() => {});
     await d.call("DELETE", "/actions").catch(() => {});
     await sleep(2500); // the "You pressed" line and toasts fade, transitions end
@@ -1008,7 +1009,6 @@ async function main() {
       await gone("settings", ".override-notice");
       await click("settings", "nav.toolbar button.tab", "Keys");
     }, ["simulator", "settings"]);
-    await readmeShots();
     await step("LEDs: the wheel button and a latched TRANS light in the drawing and the Simulator", async () => {
       // As the device: the drawing's lit LEDs (status.lit) and the Simulator's lit quick keys.
       const drawingLit = (keys) =>
@@ -1434,6 +1434,8 @@ async function main() {
         await waitFor("settings", "both pages", `return [...document.querySelectorAll(".pills .pill")].map((p) => p.textContent).join("|").includes("Edit Bay")`);
         await drawingShows({ In: "Ctrl+Shift+S", Cut: "Opens Round Trip", Cam5: "→ Edit Bay" });
       }, ["settings", "simulator"]);
+      // A fresh start (no battery warning, nothing held): the README stills.
+      await readmeShots();
       say("step: tray: Quit freewheel (after the restart)");
       await tray("quit").catch((e) => say(`  the Quit click: ${e.message}`));
       const end = Date.now() + 20000;
