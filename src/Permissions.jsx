@@ -32,7 +32,7 @@ export function watch(check, target, poll) {
 }
 
 /**
- * Polls freewheel-m5-5's checks (get_permissions) unless `initial` is given;
+ * Polls the permission checks (get_permissions) unless `initial` is given;
  * a given `initial` is followed as it changes (the status event's live view).
  */
 function usePermissions(initial, poll) {

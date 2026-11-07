@@ -27,7 +27,7 @@ export const KINDS = {
 export const JOG_MODES = { Jog: "Jog", Shuttle: "Shuttle", Scroll: "Scroll" };
 
 // Windows and macOS (the only supported OSes) both ship all three controls:
-// ISimpleAudioVolume on Windows, the process tap on macOS (freewheel-m4-9).
+// ISimpleAudioVolume on Windows, the process tap on macOS.
 export const OVERRIDE_MODES = { SystemVolume: "System volume", AppVolume: "App volume", Brightness: "Brightness" };
 
 const MAC = /Mac/.test(globalThis.navigator?.userAgent ?? "");

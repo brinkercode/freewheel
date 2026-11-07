@@ -14,7 +14,9 @@ This product credits the following third-party work:
 - Material Symbols (https://github.com/google/material-design-icons)
   Licensed under the Apache License, Version 2.0. The UI icons in
   src/assets/icons (all but wheel.svg) are Material Symbols Rounded glyphs,
-  the icon set the design handoff's prototype uses, bundled as SVG files.
+  bundled as SVG files.
+
+The Apache License 2.0 text is in LICENSES/Apache-2.0.txt.
 
 No third-party code is used in freewheel beyond what this NOTICE lists.
 Dependencies fetched by Cargo and npm keep their own licenses.

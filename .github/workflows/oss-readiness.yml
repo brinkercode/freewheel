@@ -1,0 +1,116 @@
+# Open-source readiness, on every PR and push to main (a required check): no
+# secrets in the full history (gitleaks), nothing private in the tree, the new
+# commits or the PR text (scripts/oss-denylist.txt), no design handoff,
+# dependency licences (cargo-deny, package-lock.json), and the community files
+# and workflow pins present. No secrets are used; nothing private is printed.
+name: oss-readiness
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "41 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oss-readiness-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GITLEAKS_VERSION: "8.30.1"
+  GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+  CARGO_DENY_VERSION: "0.20.2"
+  CARGO_DENY_SHA256: "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f"
+
+jobs:
+  oss-readiness:
+    name: oss-readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+
+      - name: Tools (pinned versions, checked sha256)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin"
+          cd "$RUNNER_TEMP"
+          curl -fsSLo gitleaks.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum -c -
+          tar -xzf gitleaks.tgz -C bin gitleaks
+          deny="cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl"
+          curl -fsSLo deny.tgz "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/${deny}.tar.gz"
+          echo "${CARGO_DENY_SHA256}  deny.tgz" | sha256sum -c -
+          tar -xzf deny.tgz
+          mv "${deny}/cargo-deny" bin/
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: No secrets in any commit of any ref (gitleaks)
+        run: gitleaks git --log-opts="--all" --config .gitleaks.toml --redact --no-banner --exit-code 1 .
+
+      - name: No design handoff tracked
+        shell: bash
+        run: |
+          if git ls-files | grep -E '^design/|freewheel\.dc\.html|screens-and-components\.md'; then
+            echo "::error::the private design handoff is tracked"; exit 1
+          fi
+
+      - name: Nothing private in the tree
+        run: node scripts/oss-readiness.mjs tree
+
+      - name: Nothing private in the new commits
+        shell: bash
+        env:
+          OSS_STRICT_IDENTITY: ${{ vars.OSS_STRICT_IDENTITY }}
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = pull_request ]; then
+            node scripts/oss-readiness.mjs range "$PR_BASE" "$PR_HEAD"
+          elif [ "$EVENT" = push ] && [ -n "$PUSH_BEFORE" ] && git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+            node scripts/oss-readiness.mjs range "$PUSH_BEFORE" "$PUSH_AFTER"
+          else
+            echo "no commit range for $EVENT"
+          fi
+
+      # The squash-merge commit message is the PR title and body.
+      - name: Nothing private in the PR title and body
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node scripts/oss-readiness.mjs text PR_TITLE PR_BODY
+
+      - name: Community files, LICENSE metadata, workflow pins
+        run: node scripts/oss-readiness.mjs community
+
+      - name: npm dependency licences
+        run: node scripts/oss-readiness.mjs npm-licenses
+
+      - name: Rust dependency licences (cargo-deny)
+        run: cargo-deny check licenses
+
+      # Turned on (repository variable OSS_FULL_HISTORY=1) once the history has
+      # been rewritten: from then on every blob, path and message of every ref.
+      - name: Nothing private in any ref
+        if: vars.OSS_FULL_HISTORY == '1'
+        env:
+          OSS_STRICT_IDENTITY: ${{ vars.OSS_STRICT_IDENTITY }}
+        run: node scripts/oss-readiness.mjs history

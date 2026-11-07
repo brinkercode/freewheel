@@ -37,6 +37,8 @@ jobs:
   # What's new gets the user-facing ones: developer-only bullets dropped,
   # commit hashes stripped (scripts/release-notes.mjs filter, the same
   # script the Simulator's "Next release" notes and the update e2e use).
+  # Hand-written notes win: with release-notes/v<version>.md in the tag, that
+  # file becomes both the release body and What's new.
   notes:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
@@ -64,8 +66,11 @@ jobs:
               --title "freewheel $GITHUB_REF_NAME" --generate-notes
           fi
           test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = false
+          if node scripts/release-notes.mjs curated --version "${GITHUB_REF_NAME#v}" --out "$RUNNER_TEMP/curated.md"; then
+            gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/curated.md"
+          fi
           gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$RUNNER_TEMP/release-notes.md"
-          node scripts/release-notes.mjs filter --in "$RUNNER_TEMP/release-notes.md" --out "$RUNNER_TEMP/user-notes.md"
+          node scripts/release-notes.mjs filter --version "${GITHUB_REF_NAME#v}" --in "$RUNNER_TEMP/release-notes.md" --out "$RUNNER_TEMP/user-notes.md"
           echo "What's new will show:"
           cat "$RUNNER_TEMP/user-notes.md"
           {

@@ -1,4 +1,4 @@
-/* freewheel design tokens — lifted from prototype/freewheel.dc.html */
+/* freewheel design tokens — lifted from the reference design */
 :root{
   /* type: native system font only */
   --font-win: "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;

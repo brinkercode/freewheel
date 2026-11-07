@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
+import { DENYLIST, parseRules, textHits } from "./oss-readiness.mjs";
 
 const read = (name) => readFileSync(new URL(`../.github/ISSUE_TEMPLATE/${name}`, import.meta.url), "utf8");
 const bug = read("bug_report.yml");
@@ -62,5 +63,9 @@ test("config.yml turns blank issues off and sends security reports to private re
 });
 
 test("no template mentions internal tooling", () => {
-  for (const text of [bug, feature, config]) expect(text).not.toMatch(/factory|opal|tracker|inception/i);
+  const rules = parseRules(readFileSync(new URL(`../${DENYLIST}`, import.meta.url), "utf8"));
+  for (const text of [bug, feature, config]) {
+    expect(text).not.toMatch(/factory|opal|tracker/i);
+    expect(textHits(text, rules)).toEqual([]);
+  }
 });

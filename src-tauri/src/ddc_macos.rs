@@ -9,8 +9,8 @@
 //! fail, so the path reports unavailable instead of crashing. OS errors end up
 //! in the display's error, which the core logs.
 //!
-//! [manual] macOS 15 on arm64 and on x86_64 (release checklist
-//! freewheel-m7-3): with one or more DDC monitors plugged in and the dial on
+//! [manual] macOS 15 on arm64 and on x86_64 (the release
+//! checklist in README.md): with one or more DDC monitors plugged in and the dial on
 //! the brightness override, turning the jog wheel steps every monitor;
 //! unplugging the DDC cable of one monitor gives that monitor its own error
 //! while the others still step.

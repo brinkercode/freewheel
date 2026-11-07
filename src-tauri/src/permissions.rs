@@ -316,7 +316,7 @@ mod tests {
         }
         // Launched through LaunchServices so the app, not this test, is the
         // process TCC checks.
-        let dir = std::env::temp_dir().join(format!("freewheel-p5-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("freewheel-permcheck-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let (stdout, stderr) = (dir.join("probe.out"), dir.join("probe.err"));
         std::fs::write(&stdout, "").unwrap();
