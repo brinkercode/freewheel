@@ -102,6 +102,11 @@ unchanged and no `.old` or temp download left.
   `**freewheel-…:**` ticket labels (`unlabelled_scopes`) and keeps PR links.
   Write commit subjects for users when the change is user-visible; give
   developer-only fixes one of the hidden scopes.
+- Hand-written notes: put them in `release-notes/v<version>.md` (plain
+  Markdown, one line per paragraph or bullet, written for users). When that
+  file is in the tag, the `notes` job makes it the GitHub release body and
+  What's new shows it as is, in place of the generated notes
+  (`release-notes.mjs curated` / `filter --version`). `preview` uses it too.
 - Preview what the next release's What's new will say:
   `node scripts/release-notes.mjs preview` (`--raw` for release-please's
   version). It groups `git log <last v* tag>..HEAD` as release-please does and

@@ -1,8 +1,8 @@
 # CI for freewheel: a fast Linux lint job that needs no system packages (fmt,
 # workflow lint, npm test, UI build), then npm test, the UI build, clippy and
 # cargo test on hosted Windows and macOS runners. Reusable via workflow_call (the release workflow
-# gates on it). Tests use fakes only; no secrets, no real input. the build pipeline's
-# .opal/checks.toml runs the same Linux checks in its sandbox before it pushes.
+# gates on it). Tests use fakes only; no secrets, no real input.
+# .opal/checks.toml lists the same Linux checks for local pre-push runs.
 name: ci
 
 # No paths-ignore: these jobs are required checks, so a docs-only PR must

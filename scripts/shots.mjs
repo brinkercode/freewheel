@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Screenshots of the settings window in a plain browser, for comparing with
-// the design handoff's prototype. Needs `npm run dev` running (the dev-only
+// the reference design. Needs `npm run dev` running (the dev-only
 // Tauri mock, src/dev/mockTauri.js, fakes the backend) and playwright-core:
 //
 //   NODE_PATH=<dir with playwright-core> CHROME=<chromium binary> \
@@ -17,7 +17,8 @@ const { chromium } = require("playwright-core");
 
 const out = process.argv[2] ?? "shots";
 const base = process.argv[3] ?? "http://127.0.0.1:5173/";
-const executablePath = process.env.CHROME ?? `chromium`;
+const executablePath = process.env.CHROME;
+if (!executablePath) throw new Error("set CHROME to a Chromium binary");
 fs.mkdirSync(out, { recursive: true });
 
 const tab = (name) => async (p) => {

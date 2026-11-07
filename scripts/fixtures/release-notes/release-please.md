@@ -9,7 +9,7 @@
 
 * **device:** Speed Editor key and wheel LEDs driven from the engine ([#141](https://github.com/brinkercode/freewheel/issues/141)) ([4025bcd](https://github.com/brinkercode/freewheel/commit/4025bcdf254e648917541da5428e7c5bb5918652))
 * **e2e:** the Windows e2e clicks every control ([#138](https://github.com/brinkercode/freewheel/issues/138)) ([1b2c3d4](https://github.com/brinkercode/freewheel/commit/1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e))
-* Start at login ([#99](https://github.com/brinkercode/freewheel/issues/99)) ([4bb4735](https://github.com/brinkercode/freewheel/commit/4bb4735a2a6f895acf3d4a10021ace24368d1791))
+* **freewheel-ab1:** Start at login ([#99](https://github.com/brinkercode/freewheel/issues/99)) ([4bb4735](https://github.com/brinkercode/freewheel/commit/4bb4735a2a6f895acf3d4a10021ace24368d1791))
 * **updates:** portable releases and a portable self-update ([#145](https://github.com/brinkercode/freewheel/issues/145)) ([6895323](https://github.com/brinkercode/freewheel/commit/68953235d8a1c2b4e6f7a8b9c0d1e2f3a4b5c6d7))
 * the wheel can step the volume, with a `Shift` held
   for finer steps ([7a8b9c0](https://github.com/brinkercode/freewheel/commit/7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b))
