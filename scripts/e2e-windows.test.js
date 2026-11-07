@@ -1,7 +1,8 @@
+import { join } from "node:path";
 import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import { checkWorkflow } from "./check-workflow.mjs";
-import { DEVTOOLS_PORT_ENV, DIALOG_DIR_ENV, RESPONSIVE_MS, parseArgs, sessionBody, shotName } from "./e2e-windows.mjs";
+import { DEVTOOLS_PORT_ENV, DIALOG_DIR_ENV, RESPONSIVE_MS, appLog, flowLines, parseArgs, sessionBody, shotName, traceLines } from "./e2e-windows.mjs";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const wf = read("../.github/workflows/e2e-windows.yml");
@@ -103,4 +104,26 @@ test("the e2e checks the header never overlaps at 820px and that the tray and th
   // Only the --simulate window may resize the settings window.
   expect(read("../src-tauri/capabilities/simulator.json")).toContain('"core:window:allow-set-size"');
   expect(read("../src-tauri/capabilities/settings.json")).not.toContain("set-size");
+});
+
+test("a failed step dumps the update flow: the settings page's trace and the app's log lines about updates, windows, the tray and freezes", () => {
+  expect(appLog("L")).toBe(join("L", "freewheel", "data", "logs", "freewheel.log"));
+  const log = [
+    "t1 INFO freewheel_core::connection: Speed Editor opened",
+    "t2 INFO freewheel::tray: tray: update what=\"restart\"",
+    "t3 INFO freewheel::app_windows: settings window: delivered event=\"tray-update\"",
+    "t4 WARN freewheel::simulate: main thread blocked: no answer ms=2000",
+    "t5 INFO freewheel::selfupdate: update: installing version=0.5.0",
+  ].join("\r\n");
+  expect(flowLines(log)).toEqual(log.split("\r\n").slice(1));
+  expect(flowLines(log, 1)).toEqual([log.split("\r\n")[4]]);
+  expect(traceLines([{ at: "A", what: "update", status: "ready" }])).toEqual(['A update {"status":"ready"}']);
+  expect(traceLines(undefined)).toEqual([]);
+  const script = read("./e2e-windows.mjs");
+  expect(script).toContain('ask("settings", "return window.__freewheelTrace ?? []")');
+  // The names the dump keys on are the ones the app logs.
+  expect(read("../src-tauri/src/simulate.rs")).toContain('"main thread blocked: no answer"');
+  expect(read("../src-tauri/src/app_windows.rs")).toContain('"settings window: delivered"');
+  expect(read("../src-tauri/src/selfupdate.rs")).toContain('"update: installing"');
+  expect(read("../src-tauri/src/main.rs")).toContain("simulate::watch_main_thread(app.handle().clone());");
 });

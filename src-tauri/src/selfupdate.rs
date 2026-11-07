@@ -930,6 +930,12 @@ impl Updater {
                     })
             }
         };
+        tracing::info!(
+            current = %current,
+            offered = ?offer.as_ref().map(|o| &o.version),
+            simulated = self.is_simulated(),
+            "update: checked"
+        );
         let info = offer.as_ref().map(|o| UpdateInfo {
             version: o.version.clone(),
             current_version: current,
@@ -978,6 +984,7 @@ impl Updater {
                     let _ = remove_path(&self.temp);
                     return Err(e);
                 }
+                tracing::info!(version = %offer.version, "update: downloaded and verified, ready");
                 *lock(&self.phase) = Phase::Ready(offer, file);
             }
             Source::Simulated { .. } => {
@@ -992,6 +999,7 @@ impl Updater {
                 }
                 on(DownloadEvent::Finished);
                 verify(SIM_PUBKEY, SIM_PACKAGE, &offer.platform.signature, None)?;
+                tracing::info!(version = %offer.version, "update: simulated download verified, ready");
                 *lock(&self.phase) = Phase::Ready(offer, PathBuf::new());
             }
         }
@@ -1002,8 +1010,10 @@ impl Updater {
     /// the temp dir is removed. In `--simulate` only the version changes.
     pub fn install(&self) -> Result<Installed, UpdateError> {
         let Phase::Ready(offer, file) = lock(&self.phase).clone() else {
+            tracing::warn!("update: install asked with nothing downloaded");
             return Err(UpdateError::Nothing);
         };
+        tracing::info!(version = %offer.version, simulated = self.is_simulated(), "update: installing");
         if self.is_simulated() {
             *lock(&self.current) = offer.version.clone();
             *lock(&self.phase) = Phase::Idle;

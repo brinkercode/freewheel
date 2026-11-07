@@ -21,6 +21,20 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { notesText } from "../src/notesMarkdown.js";
 
+/** The app's log file on Windows (src-tauri logging: the data dir's logs). */
+export const appLog = (localAppData = process.env.LOCALAPPDATA ?? "") => join(localAppData, "freewheel", "data", "logs", "freewheel.log");
+
+/** The log lines that tell the update flow, the settings page's readiness, the tray and freezes apart: the last `n`. */
+export function flowLines(text, n = 60) {
+  const keep = /update|settings window|tray|main thread|simulator log line=Tray|panicked|ERROR|WARN/;
+  return text.split(/\r?\n/).filter((l) => keep.test(l)).slice(-n);
+}
+
+/** The settings page's trace (src/trace.js), one line per entry. */
+export function traceLines(trace) {
+  return (Array.isArray(trace) ? trace : []).map(({ at, what, ...rest }) => `${at} ${what} ${JSON.stringify(rest)}`);
+}
+
 /** The env var that opens the app's DevTools port (src-tauri/src/simulate.rs). */
 export const DEVTOOLS_PORT_ENV = "FREEWHEEL_E2E_DEVTOOLS_PORT";
 
@@ -1929,6 +1943,16 @@ async function main() {
       () => say("  the app still answers IPC from both windows"),
       (err) => say(`  the app is frozen: ${err.message}`),
     );
+    // What the update flow and the windows did: the page's trace and the app's log.
+    if (win.settings) {
+      const t = await ask("settings", "return window.__freewheelTrace ?? []").catch((err) => say(`  no trace from the settings page: ${err.message}`));
+      say("  settings page trace (src/trace.js):");
+      for (const line of traceLines(t).slice(-40)) say(`    ${line}`);
+    }
+    const logFile = appLog();
+    say(`  the app's log, update flow / windows / tray / freezes (${logFile}):`);
+    if (existsSync(logFile)) for (const line of flowLines(readFileSync(logFile, "utf8"))) say(`    ${line}`);
+    else say("    (no log file)");
     for (const name of ["settings", "simulator"])
       if (win[name]) await shot(name, "failure").catch((err) => say(`  no failure screenshot of ${name}: ${err.message}`));
     writeFileSync(join(out, "e2e-log.txt"), log.join("\n") + "\n");
