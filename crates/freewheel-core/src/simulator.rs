@@ -89,6 +89,8 @@ pub enum Control {
     },
     /// Binds [`sample_mappings`] through the same path as `SetBinding`.
     LoadSampleMappings,
+    /// The empty setup: every binding on every page cleared, extra pages removed.
+    ClearMappings,
     /// Starts or quits the Resolve process the Resolve watcher polls for.
     Resolve {
         open: bool,
@@ -200,6 +202,8 @@ pub struct SimStatus {
     pub permissions: Permissions,
     pub update: Option<UpdateState>,
     pub first_run: bool,
+    /// How many keys are set, over every page (0 = the empty setup).
+    pub mapped_keys: usize,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -437,6 +441,16 @@ impl Simulator {
                 info!("simulator: sample mappings loaded");
                 self.toasts.push("sample mappings loaded".into());
             }
+            Control::ClearMappings => {
+                let base = self.config.base_layer.clone();
+                self.config.layers.retain(|l| l.id == base);
+                for layer in &mut self.config.layers {
+                    layer.bindings.clear();
+                }
+                self.reload();
+                info!("simulator: mappings cleared");
+                self.toasts.push("empty setup loaded".into());
+            }
             Control::Resolve { open } => {
                 let name = self.resolve.process_name().to_owned();
                 if open {
@@ -501,7 +515,30 @@ impl Simulator {
             permissions: self.permissions,
             update: self.update.clone(),
             first_run: self.first_run.is_first_run(),
+            mapped_keys: self.config.layers.iter().map(|l| l.bindings.len()).sum(),
         }
+    }
+
+    /// The config the session runs.
+    pub fn config(&self) -> &Config {
+        &self.config
+    }
+
+    /// Runs `config` (already saved by the settings window) when it differs
+    /// from the running one; returns whether it did.
+    pub fn sync_config(&mut self, config: Config) -> bool {
+        if config == self.config {
+            return false;
+        }
+        self.run(|engine, injector, _| engine.release_all(injector));
+        self.resolve = ResolveWatcher::from_settings(&config.settings);
+        self.config = config;
+        let mode = self.engine.jog_mode();
+        self.engine = Engine::new(&self.config);
+        self.engine.set_jog_mode(mode);
+        self.engine.take_reports();
+        info!("simulator: config from the settings window applied");
+        true
     }
 
     fn key(&mut self, name: &str, down: bool) {
@@ -818,6 +855,37 @@ mod tests {
         assert_eq!(key(&mut sim, "Cut", true).toasts, ["would press X"]);
         key(&mut sim, "Cut", false);
         assert_eq!(key(&mut sim, "Cam1", true).page, "base");
+    }
+
+    #[test]
+    fn clear_mappings_leaves_one_empty_page() {
+        let (dir, mut sim, _) = connected(Bus::Usb);
+        assert!(sim.apply(Control::LoadSampleMappings).mapped_keys >= 5);
+        let s = sim.apply(Control::ClearMappings);
+        assert_eq!(s.mapped_keys, 0);
+        assert_eq!(s.toasts, ["empty setup loaded"]);
+        let saved = ConfigStore::new(dir.path()).load_or_default().0;
+        assert_eq!(saved.layers.len(), 1);
+        assert_eq!(saved.layers[0].id, saved.base_layer);
+        assert!(key(&mut sim, "Cut", true).toasts.is_empty());
+        let c: Control = serde_json::from_str(r#"{"type":"ClearMappings"}"#).unwrap();
+        assert_eq!(c, Control::ClearMappings);
+    }
+
+    #[test]
+    fn sync_config_runs_a_changed_config_only() {
+        let (_dir, mut sim, _) = connected(Bus::Usb);
+        let same = sim.config().clone();
+        assert!(!sim.sync_config(same));
+        let mut changed = sim.config().clone();
+        let base = changed.base_layer.clone();
+        let layer = changed.layers.iter_mut().find(|l| l.id == base).unwrap();
+        layer
+            .bindings
+            .insert("Cut".into(), hotkey(&[Modifier::Ctrl], "S"));
+        assert!(sim.sync_config(changed));
+        assert_eq!(sim.apply(Control::Status).mapped_keys, 1);
+        assert_eq!(key(&mut sim, "Cut", true).toasts, ["would press Ctrl+S"]);
     }
 
     #[test]

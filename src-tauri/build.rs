@@ -14,6 +14,7 @@ const COMMANDS: &[&str] = &[
     "open_permission_pane",
     "open_bluetooth_settings",
     "simulate",
+    "sim_jump",
 ];
 
 fn main() {
