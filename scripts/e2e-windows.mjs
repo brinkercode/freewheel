@@ -902,9 +902,12 @@ async function main() {
     await step("LEDs: the wheel button and a latched TRANS light in the drawing and the Simulator", async () => {
       // As the device: the drawing's lit LEDs (status.lit) and the Simulator's lit quick keys.
       const drawingLit = (keys) =>
-        waitFor("settings", `the drawing lights ${keys}`, `const want = arguments[0];
-          const lit = [...document.querySelectorAll(".device .key.is-lit")].map((k) => k.dataset.binding).sort().join();
-          return lit === [...want].sort().join() && getComputedStyle(document.querySelector(".device .key.is-lit .key-led")).fill.replace(/\s/g, "") === "rgb(255,181,71)";`, [keys]);
+        waitFor("settings", `the drawing lights ${keys}`, `const want = [...arguments[0]].sort().join();
+          const lit = [...document.querySelectorAll(".keys-tab .device .key.is-lit")];
+          const got = [...new Set(lit.map((k) => k.dataset.binding))].sort().join();
+          const fills = [...new Set(lit.map((k) => getComputedStyle(k.querySelector(".key-led")).fill.replace(/\s/g, "")))].join();
+          if (got === want && fills === "rgb(255,181,71)") return true;
+          throw new Error("lit " + got + " fill " + fills);`, [keys]);
       const simLit = (labels) =>
         waitFor("simulator", `the Simulator lights ${labels}`, `return [...document.querySelectorAll(".fw-sim-quick button.is-lit")].map((b) => b.textContent).join() === arguments[0].join()`, [labels]);
       await press("SCRL");
