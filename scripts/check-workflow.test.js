@@ -95,7 +95,15 @@ test("ci.yml uses the pinned toolchain, caches, and runs every check", () => {
   }
   expect(job("test")).toMatch(/uses: Swatinem\/rust-cache@[0-9a-f]{40} # v2\r?\n\s+with:\r?\n\s+workspaces: "\. -> target"/);
   for (const j of ["lint", "test"]) {
-    expect(job(j)).toMatch(/uses: actions\/setup-node@[0-9a-f]{40}[^\r\n]*\r?\n[ \t]+with:\r?\n(?:[ \t]+[^\r\n]*\r?\n)*?[ \t]+cache: npm/);
+    // Line-based (no backtracking regex): the setup-node step's `with:` block sets `cache: npm`.
+    const lines = job(j).split(/\r?\n/);
+    const at = lines.findIndex((l) => /uses: actions\/setup-node@[0-9a-f]{40}/.test(l));
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(lines[at + 1]?.trim()).toBe("with:");
+    const indent = (l) => l.length - l.trimStart().length;
+    const block = [];
+    for (let i = at + 2; i < lines.length && indent(lines[i]) > indent(lines[at + 1]); i++) block.push(lines[i].trim());
+    expect(block).toContain("cache: npm");
   }
   const toolchain = readFileSync(new URL("../rust-toolchain.toml", import.meta.url), "utf8");
   expect(toolchain).toMatch(/channel = "1\.99\.1"/);
