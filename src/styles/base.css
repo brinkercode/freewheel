@@ -557,6 +557,7 @@ td.row-chevron .icon { vertical-align: middle; }
 .app-row:first-child { border-top-color: transparent; }
 .app-row.is-current,
 .app-row.is-current:hover:not(:disabled) { background: var(--accent-soft); }
+.app-icon { flex: none; width: 28px; height: 28px; object-fit: contain; }
 .app-initial { display: flex; align-items: center; justify-content: center; flex: none; width: 28px; height: 28px; border-radius: 7px; color: #fff; font-weight: 700; font-size: 13px; }
 .app-initial[data-hue="0"] { background: oklch(0.62 0.13 0); }
 .app-initial[data-hue="1"] { background: oklch(0.62 0.13 30); }

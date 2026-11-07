@@ -24,6 +24,8 @@ const COMMANDS: &[&str] = &[
     "exit_wheel_override",
     "list_apps",
     "choose_app",
+    "app_icons",
+    "tray_update_state",
 ];
 
 fn main() {

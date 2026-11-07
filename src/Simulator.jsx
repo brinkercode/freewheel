@@ -27,8 +27,9 @@ export function deviceOption(s) {
   return null;
 }
 
-/** The tray icon the app shows now: on, off, absent or attention. */
-export function trayState(s) {
+/** The tray icon the app shows now: on, off, absent or attention (the tray's own, `menu.icon`, when known). */
+export function trayState(s, menu = null) {
+  if (menu?.icon) return menu.icon;
   if (!s) return "absent";
   if (!s.enabled) return "off";
   if (s.connection !== "Connected") return "absent";
@@ -50,15 +51,22 @@ const TRAY = [
   ["attention", "Needs attention"],
 ];
 
-/** The tray menu's items, by id (src-tauri tray.rs), as the menu words them. */
+/**
+ * The tray menu's items, by id (src-tauri tray.rs), in its order and as it
+ * words them: [id, text, checked?, enabled?]. A disabled item is still
+ * clickable here, and the app logs that nothing happened, as the OS menu
+ * ignores the click.
+ */
 export const TRAY_ITEMS = [
   ["toggle", (m) => (m?.on === false ? "freewheel is Off" : "freewheel is On"), (m) => m?.on !== false],
+  ["status", (m) => m?.status_line || "Looking for your Speed Editor…", null, (m) => m?.status_fix === true],
   ["open-settings", () => "Open settings…"],
   ["start-at-login", () => "Start at login", (m) => m?.start_at_login === true],
   ["download-logs", () => "Download logs for support…"],
+  ["update", (m) => m?.update || "Check for updates", null, (m) => m?.update_enabled !== false],
   ["quit", () => "Quit freewheel"],
 ];
-/** The permission line, in the menu only while one is missing. */
+/** The status line: 'Needs permission (click to fix)' is the only clickable one. */
 export const TRAY_STATUS = "status";
 
 // "New version" publishes a newer version on the simulated update server;
@@ -164,7 +172,7 @@ export default function Simulator({ initial = null }) {
   const held = status?.held_keys ?? [];
   const lit = status?.lit_leds ?? [];
   const update = status?.update;
-  const trayIcon = trayState(status);
+  const trayIcon = trayState(status, trayMenu);
 
   return (
     <main className={`fw-sim${isMac() ? " is-mac" : ""}`}>
@@ -314,16 +322,17 @@ export default function Simulator({ initial = null }) {
       <section className="fw-sim-group">
         <h2 className="fw-sim-label">Tray menu</h2>
         <div className="fw-sim-grid fw-sim-tray-menu" role="group" aria-label="Tray menu">
-          {TRAY_ITEMS.map(([id, text, checked]) => (
-            <button key={id} data-tray={id} aria-pressed={checked ? checked(trayMenu) : undefined} onClick={() => tray(id)}>
+          {TRAY_ITEMS.map(([id, text, checked, enabled]) => (
+            <button
+              key={id}
+              data-tray={id}
+              aria-pressed={checked ? checked(trayMenu) : undefined}
+              aria-disabled={enabled ? !enabled(trayMenu) : undefined}
+              onClick={() => tray(id)}
+            >
               {text(trayMenu)}
             </button>
           ))}
-          {trayMenu?.status_line && (
-            <button data-tray={TRAY_STATUS} onClick={() => tray(TRAY_STATUS)}>
-              {trayMenu.status_line}
-            </button>
-          )}
         </div>
       </section>
 

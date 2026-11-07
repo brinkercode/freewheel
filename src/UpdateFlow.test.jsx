@@ -122,3 +122,49 @@ test("--simulate: New version, Download, progress, ready, Restart, then the new 
   // Never the real updater.
   expect(invoke.mock.calls.filter(([cmd]) => String(cmd).startsWith("plugin:updater"))).toEqual([]);
 }, 30000);
+
+const reported = (invoke) => invoke.mock.calls.filter(([cmd]) => cmd === "tray_update_state").map(([, a]) => a.state?.status ?? null);
+
+test("the tray's update item drives the flow: the window reports each state and runs check / restart from the tray", async () => {
+  const invoke = fakeTauri({ simulate: true, autoUpdate: true });
+  render(<App storage={memoryStorage({ "freewheel.first-run-done": "1" })} />);
+  await openGeneral();
+  await waitFor(() => expect(listeners["tray-update"]).toBeTruthy());
+  // Idle is reported, so the tray says Check for updates.
+  await waitFor(() => expect(reported(invoke)).toContain(null));
+  // Tray: Check for updates (nothing published): checking, then up to date.
+  listeners["tray-update"].forEach((f) => f({ payload: "check" }));
+  await waitFor(() => expect(sub().dataset.update).toBe("checking"));
+  await waitFor(() => expect(sub().dataset.update).toBe("current"));
+  // A new version: auto update downloads it; the tray hears ready.
+  listeners[SIM_UPDATE_EVENT].forEach((f) => f({ payload: null }));
+  await waitFor(() => expect(reported(invoke)).toContain("ready"), { timeout: 10000 });
+  expect(reported(invoke)).toEqual(expect.arrayContaining(["checking", "current", "downloading", "ready"]));
+  // Tray: Restart to update.
+  listeners["tray-update"].forEach((f) => f({ payload: "restart" }));
+  await waitFor(() => expect(reported(invoke)).toContain("restarting"));
+  await waitFor(() => expect(screen.getByText("freewheel is updated to 0.2.0")).toBeTruthy(), { timeout: 8000 });
+}, 30000);
+
+test("a build without the updater reports notConfigured to the tray", async () => {
+  const invoke = fakeTauri({ check: async () => Promise.reject("plugin updater not found") });
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  render(<App storage={memoryStorage({ "freewheel.first-run-done": "1" })} />);
+  await openGeneral();
+  await waitFor(() => expect(listeners["tray-update"]).toBeTruthy());
+  listeners["tray-update"].forEach((f) => f({ payload: "check" }));
+  await waitFor(() =>
+    expect(invoke.mock.calls.some(([cmd, a]) => cmd === "tray_update_state" && a.state?.notConfigured === true)).toBe(true),
+  );
+});
+
+test("the tray's Download logs opens Help & backup with the saved file (or why not)", async () => {
+  fakeTauri();
+  render(<App storage={memoryStorage({ "freewheel.first-run-done": "1" })} />);
+  await waitFor(() => expect(listeners["logs-saved"]).toBeTruthy());
+  listeners["logs-saved"].forEach((f) => f({ payload: { path: "C:\\Users\\a\\Downloads\\freewheel-logs-1.txt" } }));
+  await waitFor(() => expect(screen.getByText("Downloaded “freewheel-logs-1.txt” to your Downloads folder.")).toBeTruthy());
+  expect(screen.getByText("Show file")).toBeTruthy();
+  listeners["logs-saved"].forEach((f) => f({ payload: { error: "the disk is full" } }));
+  await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("The logs could not be saved: the disk is full"));
+});

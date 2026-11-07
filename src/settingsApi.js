@@ -28,6 +28,21 @@ export const FIX_PERMISSIONS_EVENT = "fix-permissions";
 // Calls `onFix` when the tray asks for the permission fix; resolves to the unlisten function.
 export const onFixPermissions = (onFix) => tauri().event.listen(FIX_PERMISSIONS_EVENT, () => onFix());
 
+// The tray's 'Check for updates' / 'Restart to update' item asks the window's update flow (src/updater.js).
+export const TRAY_UPDATE_EVENT = "tray-update";
+
+/** Calls `onAction("check" | "download" | "restart")` when the tray's update item is clicked; resolves to the unlisten function. */
+export const onTrayUpdate = (onAction) => tauri().event.listen(TRAY_UPDATE_EVENT, (event) => onAction(event.payload));
+
+/** Tells the tray the update state (src/updater.js; null is idle), so its item says Check for updates, Restart to update… */
+export const reportUpdateState = (state) => invoke("tray_update_state", { state: state ?? null });
+
+// The tray's 'Download logs for support…' saved the bundle: { path } or { error }.
+export const LOGS_SAVED_EVENT = "logs-saved";
+
+/** Calls `onSaved({ path } | { error })` when the tray saved the logs; resolves to the unlisten function. */
+export const onLogsSaved = (onSaved) => tauri().event.listen(LOGS_SAVED_EVENT, (event) => onSaved(event.payload));
+
 /**
  * Switches freewheel On or Off in the running app, as the tray toggle does;
  * the next StatusEvent shows it. Rejects with a string when it cannot.
@@ -95,6 +110,13 @@ export const listApps = () => invoke("list_apps");
  * { name, path, args } or null when cancelled.
  */
 export const chooseApp = () => invoke("choose_app");
+
+/**
+ * The installed apps' real icons (src-tauri app_icons.rs): `paths` (each
+ * app's .lnk / .exe / .app) → PNG data URL; apps without one are left out.
+ * @returns {Promise<Record<string, string>>}
+ */
+export const appIcons = (paths) => invoke("app_icons", { paths });
 
 /** What the UI says about a rejected import. */
 export function importErrorText(error) {

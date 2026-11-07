@@ -787,6 +787,23 @@ async function main() {
       await logged("the wheel is back to normal");
       await click("settings", "nav.toolbar button.tab", "Keys");
     }, ["settings", "simulator"]);
+    await step("Keys: the app picker shows real app icons (Notepad)", async () => {
+      await keyIn("In");
+      await toChoices();
+      await choice("Open an app or website");
+      // Each row's icon is the shell's own (src-tauri app_icons.rs): a PNG data URL in an <img>.
+      const found = await waitFor("settings", "a real app icon for a known app", `const rows = [...document.querySelectorAll(".side-panel .app-row")];
+        const real = (r) => r.querySelector("img.app-icon")?.getAttribute("src")?.startsWith("data:image/png;base64,iVBORw0KGgo");
+        const withIcon = rows.filter(real);
+        const known = withIcon.find((r) => /notepad/i.test(r.textContent)) ??
+          withIcon.find((r) => /powershell|paint|command prompt|edge|remote desktop|task manager|file explorer/i.test(r.textContent));
+        if (!known) return null;
+        known.scrollIntoView({ block: "center" });
+        return JSON.stringify({ known: known.textContent.trim(), withIcon: withIcon.length, rows: rows.length, letters: rows.length - withIcon.length });`, [], 40000);
+      say(`  app icons: ${found}`);
+      const { withIcon, rows } = JSON.parse(found);
+      if (withIcon * 2 < rows) throw new Error(`only ${withIcon} of ${rows} apps have a real icon`);
+    });
     await step("Keys: IN opens an installed app (search, pick)", async () => {
       await keyIn("In");
       await toChoices();
@@ -989,10 +1006,63 @@ async function main() {
       await logged("would turn start at login off");
       await configShows("start_at_login off (tray)", (c) => c.settings.start_at_login === false);
     }, ["simulator", "settings"]);
-    await step("tray: Download logs for support", async () => {
+    await step("tray: Download logs for support opens Help & backup with the file", async () => {
+      await click("settings", "nav.toolbar button.tab", "Keys");
       await tray("download-logs");
       await logged("Tray: Download logs");
       await logged("Saved the logs to", 20000);
+      await waitFor("settings", "Help & backup's Downloaded line", `return document.querySelector('nav.toolbar button.tab[aria-pressed="true"]')?.textContent.includes("Help") && document.querySelector("#logs .success-line")?.textContent.includes("to your Downloads folder")`, [], 20000);
+    }, ["simulator", "settings"]);
+    const trayItem = async (id) => (await use("simulator"), d.exec(`const b = document.querySelector('[data-tray="' + arguments[0] + '"]'); return b && { text: b.textContent, disabled: b.getAttribute("aria-disabled") === "true" };`, [id]));
+    const trayShows = (id, what, check) =>
+      waitFor("simulator", `the tray's ${id} item ${what}`, `const b = document.querySelector('[data-tray="' + arguments[0] + '"]');
+        return b && (${check})(b.textContent, b.getAttribute("aria-disabled") === "true") ? b.textContent : null;`, [id], 20000);
+    const trayIconIs = (text) =>
+      waitFor("simulator", `the tray icon ${text}`, `return document.querySelector('.fw-sim-tray-item[aria-current="true"]')?.textContent.includes(arguments[0])`, [text]);
+    await step("tray: the status line follows the device; a disabled line does nothing", async () => {
+      await click("simulator", `[role=group][aria-label="Speed Editor"] button`, "USB");
+      await trayShows("status", "Connected by USB (disabled)", `(t, off) => t === "Connected by USB" && off`);
+      await trayIconIs("On");
+      await tray("status");
+      await logged("Tray: Connected by USB (disabled, nothing happens)");
+    }, ["simulator"]);
+    await step("tray: Bluetooth 12% needs attention and notifies low battery", async () => {
+      await click("simulator", `[role=group][aria-label="Speed Editor"] button`, "Bluetooth 64%");
+      await trayShows("status", "Bluetooth · 64%", `(t) => t === "Connected by Bluetooth · 64%"`);
+      await click("simulator", `[role=group][aria-label="Speed Editor"] button`, "Bluetooth 12%");
+      await trayShows("status", "Bluetooth · 12%", `(t) => t === "Connected by Bluetooth · 12%"`);
+      await trayIconIs("Needs attention");
+      await logged("Notification: Speed Editor battery low — 12% left.");
+      await click("simulator", `[role=group][aria-label="Speed Editor"] button`, "USB");
+    }, ["simulator"]);
+    await step("tray: Resolve opens, Paused, stepped-aside notification", async () => {
+      await click("simulator", `[role=group][aria-label="DaVinci Resolve"] button`, "Open");
+      await trayShows("status", "Paused", `(t) => t === "Paused: DaVinci Resolve is open"`);
+      await trayIconIs("Off / paused");
+      await logged("Notification: freewheel — DaVinci Resolve started, so freewheel switched Off.");
+      await click("simulator", `[role=group][aria-label="DaVinci Resolve"] button`, "Closed");
+      await trayShows("status", "connected again", `(t) => t.startsWith("Connected")`);
+    }, ["simulator", "settings"]);
+    await step("tray: Check for updates, up to date", async () => {
+      await trayShows("update", "Check for updates", `(t, off) => !off && /Check/.test(t)`);
+      await tray("update");
+      await logged("Tray: ");
+      await trayShows("update", "Checking (disabled)", `(t, off) => t === "Checking for updates…" && off`);
+      await shows("settings", "You’re up to date.");
+      await trayShows("update", "up to date", `(t, off) => t === "You’re up to date · Check again" && !off`);
+    }, ["simulator", "settings"]);
+    await step("tray: a new version downloads by itself, the tray says Restart to update and notifies", async () => {
+      await click("simulator", ".fw-sim-grid button", "New version");
+      await trayShows("update", "Downloading (disabled)", `(t, off) => t === "Downloading update…" && off`);
+      await trayShows("update", "Restart to update", `(t, off) => t === "Restart to update" && !off`);
+      await lineWith("Notification", "is ready");
+    }, ["simulator", "settings"]);
+    await step("tray: Restart to update installs it", async () => {
+      await tray("update");
+      await logged("Tray: Restart to update");
+      await waitFor("settings", "the restart to the new version", `return /Updated to freewheel|freewheel is updated to/.test(document.body.innerText)`, [], 20000);
+      await trayShows("update", "Check for updates again", `(t, off) => t === "Check for updates" && !off`);
+      say(`  tray after the update: ${JSON.stringify(await trayItem("update"))}`);
     }, ["simulator", "settings"]);
 
     // ---- Backups, restores and imports prove the data ------------------

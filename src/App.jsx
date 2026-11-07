@@ -22,7 +22,10 @@ import {
   getStatus,
   getVersion,
   onFixPermissions,
+  onLogsSaved,
   onStatus,
+  onTrayUpdate,
+  reportUpdateState,
   saveConfig,
   setDetailedLogs,
   setEnabled,
@@ -58,6 +61,9 @@ function Settings({ autoUpdate, storage }) {
   const [record, setRecord] = useState(null);
   const [news, setNews] = useState(null);
   const [newsOpen, setNewsOpen] = useState(false);
+  const [trayLogs, setTrayLogs] = useState(null);
+  // The tray's update item runs these (set each render, so it acts on the current state).
+  const trayActions = useRef({});
   const pending = useRef(null);
   const toastTimer = useRef(null);
   // --simulate only: the simulated update server and the version a simulated update "installed".
@@ -87,9 +93,25 @@ function Settings({ autoUpdate, storage }) {
     getStartAtLogin().then(setLogin, () => {});
     getVersion().then(setVersion, () => {});
     getStatus().then(setStatus, () => {});
-    const unlisten = [onStatus(setStatus), onFixPermissions(() => setFixing(true))];
+    const unlisten = [
+      onStatus(setStatus),
+      onFixPermissions(() => setFixing(true)),
+      // The tray's 'Check for updates' / 'Restart to update' item.
+      onTrayUpdate((action) => trayActions.current[action]?.()),
+      // The tray's 'Download logs for support…' opens Help & backup, which says where they went.
+      onLogsSaved((saved) => {
+        setFixing(false);
+        setNewsOpen(false);
+        setTab("Help & backup");
+        setTrayLogs({ ...saved });
+      }),
+    ];
     return () => unlisten.forEach((u) => u.then((stop) => stop(), () => {}));
   }, []);
+  // The tray's update item follows the update flow (src-tauri tray.rs update_item).
+  useEffect(() => {
+    if (globalThis.window?.__TAURI__) reportUpdateState(update).catch(() => {});
+  }, [update]);
   // --simulate only (src/simulateEvents.js): the Simulator's "Record a key" and "New version".
   useEffect(
     () =>
@@ -155,6 +177,7 @@ function Settings({ autoUpdate, storage }) {
     const { relaunch: again } = source();
     restart(u, () => again(u), setUpdate, (up) => rememberNotes(storage, up));
   };
+  trayActions.current = { check: onCheck, download: onDownload, restart: onRestart };
   const state = fromStatusEvent(status ?? { connection: "Absent" });
   // A failed switch is an error that needs action: it is logged, never toasted.
   const turn = (on) =>
@@ -242,7 +265,7 @@ function Settings({ autoUpdate, storage }) {
               onRestart={onRestart}
             />
           )}
-          {!newsOpen && tab === "Help & backup" && <Backup version={shownVersion} detailedLogs={config?.settings?.detailed_logs} onDetailedLogs={onDetailedLogs} />}
+          {!newsOpen && tab === "Help & backup" && <Backup version={shownVersion} detailedLogs={config?.settings?.detailed_logs} onDetailedLogs={onDetailedLogs} trayLogs={trayLogs} />}
         </div>
       </>
     );
