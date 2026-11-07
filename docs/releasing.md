@@ -8,7 +8,7 @@ freewheel ships portable packages only: no installer.
 
 | Asset | What it is |
 | --- | --- |
-| `freewheel-X.Y.Z-windows-x64.zip` | `freewheel.exe` + `freewheel-simulate.cmd` |
+| `freewheel-X.Y.Z-windows-x64.zip` | `freewheel.exe` only (the simulator `.cmd` is in test builds, not releases) |
 | `freewheel-X.Y.Z-macos-universal.zip` | `freewheel.app` (universal; ad-hoc signed until the `APPLE_*` secrets exist, then signed and notarized) |
 | `<zip>.sig` | minisign signature of the zip by the updater key, bound to the version (`tauri signer sign --app-version`) |
 | `latest.json` | the manifest the app reads: `version`, `notes` (release-please's), `pub_date`, and `platforms.{windows-x86_64,darwin-aarch64,darwin-x86_64}.{url,signature}` |

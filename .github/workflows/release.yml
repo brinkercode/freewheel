@@ -2,7 +2,7 @@
 # with workflow_dispatch on the tag it made, or by a pushed v* tag), runs
 # the full ci.yml test matrix, then builds the portable packages and
 # uploads them to the tag's PUBLISHED GitHub Release (no installer):
-#   freewheel-<ver>-windows-x64.zip      freewheel.exe + freewheel-simulate.cmd
+#   freewheel-<ver>-windows-x64.zip      freewheel.exe only
 #   freewheel-<ver>-macos-universal.zip  freewheel.app (universal; signed and
 #                                         notarized once the APPLE_* secrets
 #                                         exist, ad-hoc signed until then)

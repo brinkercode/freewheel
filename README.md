@@ -64,20 +64,6 @@ the old copy and the download. Your settings are kept. If any step fails,
 the version you have keeps running. Turn **Update automatically** off to be
 asked before the download.
 
-## Try it without a Speed Editor
-
-Start the simulator: double-click `freewheel-simulate.cmd` next to
-`freewheel.exe` on Windows, or run `open freewheel.app --args --simulate` on
-macOS (any build takes `--simulate`). A second window fakes the device:
-connect it over USB or Bluetooth, press keys, turn the wheel, set the
-battery, open DaVinci Resolve. The simulator keeps its own settings, and the
-keys it would press only show in its log until you tick **Send for real**.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/dark-simulator.png">
-  <img alt="The Simulator window: the simulated Speed Editor's connection, keys, wheel and a log of what freewheel would do" src="docs/images/light-simulator.png" width="600">
-</picture>
-
 ## Screens
 
 | Wheel | DaVinci Resolve |
@@ -111,15 +97,7 @@ someone sent you.
 
 ## Building from source
 
-You need Node 22 and the Rust version in [rust-toolchain.toml](rust-toolchain.toml)
-(`rustup` installs it for you).
-
-```sh
-npm ci
-npx tauri dev -- -- --simulate   # the app with the simulator, no device needed
-npm test                         # UI and script tests
-cargo test --workspace           # Rust tests
-```
+See [docs/development.md](docs/development.md).
 
 ## Releasing
 

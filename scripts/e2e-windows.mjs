@@ -511,6 +511,12 @@ async function main() {
         await still("simulator", `${f}-simulator.png`);
       }, []);
     }
+    await step("README: back to Match my computer", async () => {
+      await readmeTab("General");
+      await click("settings", "button.appearance-option", "Match my computer");
+      await sim("Computer appearance", "Light");
+      await readmeTab("Keys");
+    }, []);
   };
 
   try {
@@ -1002,6 +1008,7 @@ async function main() {
       await gone("settings", ".override-notice");
       await click("settings", "nav.toolbar button.tab", "Keys");
     }, ["simulator", "settings"]);
+    await readmeShots();
     await step("LEDs: the wheel button and a latched TRANS light in the drawing and the Simulator", async () => {
       // As the device: the drawing's lit LEDs (status.lit) and the Simulator's lit quick keys.
       const drawingLit = (keys) =>
@@ -1427,7 +1434,6 @@ async function main() {
         await waitFor("settings", "both pages", `return [...document.querySelectorAll(".pills .pill")].map((p) => p.textContent).join("|").includes("Edit Bay")`);
         await drawingShows({ In: "Ctrl+Shift+S", Cut: "Opens Round Trip", Cam5: "→ Edit Bay" });
       }, ["settings", "simulator"]);
-      await readmeShots();
       say("step: tray: Quit freewheel (after the restart)");
       await tray("quit").catch((e) => say(`  the Quit click: ${e.message}`));
       const end = Date.now() + 20000;
