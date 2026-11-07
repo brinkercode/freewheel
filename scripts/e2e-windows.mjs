@@ -16,6 +16,7 @@
 // Plain fetch and the W3C WebDriver protocol: no npm dependencies.
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { notesText } from "../src/notesMarkdown.js";
@@ -583,6 +584,23 @@ async function main() {
     await findWindows();
     say(`windows: ${JSON.stringify(win)}`);
 
+    // --simulate does what a key is set to on this PC unless the Simulator's
+    // 'Do actions for real' is off: on at first; off for the walk-through
+    // below (its keys would type into these windows), on again where a
+    // press must really run something.
+    const realSwitch = `[role=switch][aria-label="Do actions for real"]`;
+    const setReal = async (on) => {
+      await use("simulator");
+      if ((await d.exec(`return document.querySelector(arguments[0]).checked`, [realSwitch])) !== on) await click("simulator", realSwitch);
+      await waitFor("simulator", `Do actions for real ${on ? "on" : "off"}`, `return document.querySelector(arguments[0]).checked === arguments[1]`, [realSwitch, on]);
+      await shows("simulator", on ? "On: a press does what its key is set to on this PC" : "Off: nothing happens on this PC");
+    };
+    await step("simulator: Do actions for real is on at first, then off for the walk-through", async () => {
+      const on = await waitFor("simulator", "the Do actions for real switch", `const s = document.querySelector(arguments[0]); return s && String(s.checked)`, [realSwitch]);
+      if (on !== "true") throw new Error(`Do actions for real is ${on} at first, not on`);
+      await setReal(false);
+      await logged("Do actions for real is off");
+    }, ["simulator"]);
     await step("first run: welcome", () => waitFor("settings", "the welcome screen", `return document.querySelector("button.get-started")`), ["settings", "simulator"]);
     await step("first run: get started", async () => {
       await click("settings", "button.get-started");
@@ -909,14 +927,14 @@ async function main() {
       await configShows("SHTL: Volume", (c) => basePage(c).bindings.Shtl.SetJogMode.mode === "Volume");
       await press("SHTL");
       await turn("right");
-      await logged("would turn the volume up");
+      await logged("would turn volume up");
     }, ["settings", "simulator"]);
     await step("Wheel: SHTL changes the brightness", async () => {
       await wheelKind("Change screen brightness");
       await configShows("SHTL: Brightness", (c) => basePage(c).bindings.Shtl.SetJogMode.mode === "Brightness");
       await press("SHTL");
       await turn("left");
-      await logged("would turn the brightness down");
+      await logged("would turn brightness down");
     }, ["settings", "simulator"]);
     await step("Wheel: SHTL does nothing", async () => {
       await wheelKind("Nothing");
@@ -991,7 +1009,7 @@ async function main() {
       await click("settings", "nav.toolbar button.tab", "Wheel");
       await waitFor("settings", "the override notice", `return document.querySelector(".override-notice")?.textContent.includes("IN has turned the wheel into a volume knob")`);
       await turn("right");
-      await logged("would turn the volume up");
+      await logged("would turn volume up");
       await click("settings", ".override-notice button", "Back to normal");
       await gone("settings", ".override-notice");
       await logged("the wheel is back to normal");
@@ -1030,14 +1048,14 @@ async function main() {
       await click("settings", ".side-panel .app-row", first);
       await configShows("IN opens a Start Menu app", (c) => basePage(c).bindings.In.LaunchApp.path === "explorer.exe" && /\.lnk$/i.test(basePage(c).bindings.In.LaunchApp.args[0]));
       await press("IN");
-      await logged("would launch explorer.exe");
+      await logged("would run explorer.exe");
     }, ["settings", "simulator"]);
     await step("Keys: IN opens a chosen file (Choose file…)", async () => {
       await click("settings", ".side-panel button.choose-file", "Choose file");
       await configShows("IN opens the chosen exe", (c) => basePage(c).bindings.In.LaunchApp.path.endsWith("E2E Example App.exe"));
       await logged("Chose the app E2E Example App");
       await press("IN");
-      await waitFor("simulator", "would launch the chosen exe", `return [...document.querySelectorAll(".fw-sim-log li")].slice(0, 14).some((li) => li.textContent.includes("would launch") && li.textContent.includes("E2E Example App.exe"))`);
+      await waitFor("simulator", "would launch the chosen exe", `return [...document.querySelectorAll(".fw-sim-log li")].slice(0, 14).some((li) => li.textContent.includes("would run") && li.textContent.includes("E2E Example App.exe"))`);
     }, ["settings", "simulator"]);
     await step("Keys: IN goes to a new page Music", async () => {
       await allChoices();
@@ -1189,11 +1207,9 @@ async function main() {
       if (!(await d.exec(`return !!document.querySelector("nav.toolbar")`))) await click("settings", "button", "Start using freewheel");
       await waitFor("settings", "the settings tabs", `return document.querySelector("nav.toolbar")`);
     }, ["simulator", "settings"]);
-    await step("simulator: send keys for real on, then off", async () => {
-      await click("simulator", ".fw-sim-switch input");
-      await shows("simulator", "Shortcuts reach the apps you have open.");
-      await click("simulator", ".fw-sim-switch input");
-      await shows("simulator", "Off: shortcuts only show up in the log.");
+    await step("simulator: Do actions for real on, then off", async () => {
+      await setReal(true);
+      await setReal(false);
     }, ["simulator"]);
     /** The window's switch, the tray's check (the Simulator's Tray menu) and get_status all read `on`. */
     const allRead = async (on, by) => {
@@ -1416,6 +1432,82 @@ async function main() {
       say(`  tray after the update: ${JSON.stringify(await trayItem("update"))}`);
     }, ["simulator", "settings"]);
 
+    // ---- Do actions for real: a press really runs what CUT is set to ----
+    // A program in the dialogs folder leaves a marker file named after its
+    // argument; a website goes to a local server that records the hit.
+    const marker = (name) => join(dialogs, `marker-${name}.txt`);
+    const markCmd = join(dialogs, "fw-mark.cmd");
+    writeFileSync(markCmd, `@echo off\r\necho ran> "${dialogs}\\marker-%~1.txt"\r\n`);
+    const markApp = (arg) => ({ LaunchApp: { path: markCmd, args: [arg], enabled: true } });
+    const setCut = async (action) => {
+      const cur = await readConfig();
+      await saveConfig({ ...cur, layers: cur.layers.map((l) => (l.id === cur.base_layer ? { ...l, bindings: { ...l.bindings, Cut: action } } : l)) });
+      await configShows("CUT set", (c) => JSON.stringify(basePage(c).bindings.Cut) === JSON.stringify(action));
+    };
+    const waitFile = async (file, ms) => {
+      const end = Date.now() + ms;
+      while (Date.now() < end) {
+        if (existsSync(file)) return true;
+        await sleep(200);
+      }
+      return false;
+    };
+    await step("Do actions for real on: pressing CUT runs its program for real", async () => {
+      await setCut(markApp("on"));
+      await setReal(true);
+      await press("CUT");
+      if (!(await waitFile(marker("on"), 15000))) throw new Error(`CUT did not run ${markCmd}: no ${marker("on")}`);
+      await lineWith("launched \"fw-mark\" ok", "fw-mark.cmd");
+      say(`  ${marker("on")}: written by the press`);
+    }, ["simulator", "settings"]);
+    await step("Do actions for real off: pressing CUT runs nothing and says so", async () => {
+      await setReal(false);
+      await setCut(markApp("off"));
+      await press("CUT");
+      await lineWith("not done: Do actions for real is off", "would run", "fw-mark.cmd");
+      if (await waitFile(marker("off"), 3000)) throw new Error(`CUT ran ${markCmd} although Do actions for real is off`);
+    }, ["simulator", "settings"]);
+    // A website opens through explorer.exe with the address, as the key
+    // panel saves it. A hosted runner may have no default browser set up,
+    // so the hit is reported, not required; the launch line is.
+    const hits = [];
+    const server = createServer((req, res) => (hits.push(req.url), res.end("freewheel e2e")));
+    await new Promise((r) => server.listen(0, "127.0.0.1", r));
+    const site = `http://127.0.0.1:${server.address().port}/fw-e2e-hit`;
+    await step("Do actions for real on: a website key opens it through explorer.exe", async () => {
+      await setCut({ LaunchApp: { path: "explorer.exe", args: [site], enabled: true } });
+      await setReal(true);
+      await press("CUT");
+      await lineWith("launched 127.0.0.1", "explorer.exe");
+      const end = Date.now() + 20000;
+      while (!hits.length && Date.now() < end) await sleep(250);
+      say(`  website hit: ${hits.length ? hits.join(", ") : "none within 20 s (no default browser on the runner?)"}`);
+      await setReal(false);
+    }, ["simulator", "settings"]);
+    server.close();
+    await step("Download logs: the bundle has each press, mapping, result and the per-key config", async () => {
+      const path = await ask("settings", `return await window.__TAURI__.core.invoke("export_logs");`);
+      if (typeof path !== "string" || path.startsWith("error")) throw new Error(`export_logs: ${path}`);
+      const text = readFileSync(path, "utf8");
+      writeFileSync(join(out, "log-bundle.txt"), text);
+      const want = [
+        `simulated device: key CUT pressed on page "${basePage(await readConfig()).name}" -> Open app "fw-mark" (`,
+        `launched "fw-mark" ok: ${markCmd} "on"`,
+        `not done: Do actions for real is off (would run ${markCmd} "off")`,
+        "simulator: Do actions for real is on: presses send keys, open apps and change the volume on this PC",
+        `config saved: CUT: Open app "fw-mark" -> Open website 127.0.0.1`,
+        "-> Open website 127.0.0.1",
+        `launched 127.0.0.1:${new URL(site).port} ok: explorer.exe "http://127.0.0.1:${new URL(site).port}/…"`,
+        "simulated device: wheel turned",
+        "== config ==",
+        "  CUT -> Open website 127.0.0.1",
+      ];
+      const missing = want.filter((w) => !text.includes(w));
+      if (missing.length) throw new Error(`the log bundle lacks: ${JSON.stringify(missing)}`);
+      for (const line of text.split(/\r?\n/).filter((l) => /simulated device: |launched |not done: |config saved: |^ {2}[A-Z0-9 /]+ -> /.test(l)).slice(-40)) say(`  bundle: ${line}`);
+    }, ["settings"]);
+    await setCut({ Hotkey: { combo: { modifiers: ["Ctrl"], key: "C" } } });
+
     // ---- Backups, restores and imports prove the data ------------------
     let backedUp;
     // A version-2 backup names programs by path, and a restore keeps a path
@@ -1501,7 +1593,7 @@ async function main() {
       await pressKey("Cam5");
       await activePill(basePage(backedUp).name);
       await press("CUT");
-      await lineWith("would launch", "Round Trip.exe");
+      await lineWith("would run", "Round Trip.exe");
     }, ["settings", "simulator"]);
     await step("data: someone else's file, apps not allowed: its app key comes in off", async () => {
       const theirs = join(dialogs, "someone-else.json");
@@ -1527,7 +1619,7 @@ async function main() {
       await click("settings", "nav.toolbar button.tab", "Keys");
       await drawingShows({ Cam1: "Opens Tool" });
       await press("CAM 1");
-      await lineWith("would launch", "Tool.exe");
+      await lineWith("would run", "Tool.exe");
     }, ["settings", "simulator"]);
     // ---- Hand-written short files (SCHEMA.md) ---------------------------
     const restoredWith = async (text) => {

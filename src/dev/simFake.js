@@ -21,10 +21,12 @@ export const SIM_SAMPLE = "### Features\n\n* **wheel:** smoother scrolling when 
 export function createSimFake({ next = SIM_NEXT } = {}) {
   const s = {
     connection: "Absent", bus: null, battery: null, charging: false, low_battery: false, page: "base",
-    jog_mode: "Scroll", lit_leds: [], held_keys: [], enabled: true, send_for_real: false, toasts: [],
+    jog_mode: "Scroll", lit_leds: [], held_keys: [], enabled: true, send_for_real: true, toasts: [],
     keys: KEYS, resolve_open: false, permissions: "Granted", update: null, first_run: false, mapped_keys: 0,
     wheel_override: null,
   };
+  /** A result line as the engine says it: done, or not done with 'Do actions for real' off. */
+  const done = (would, did) => (s.send_for_real ? did : `not done: Do actions for real is off (would ${would})`);
   const trayMenu = { on: true, start_at_login: false, status_line: "", status_fix: false, update: "Check for updates", update_enabled: true, icon: null };
   const trayClicks = [];
   let map = {};
@@ -58,11 +60,11 @@ export function createSimFake({ next = SIM_NEXT } = {}) {
         if (MODES[c.key]) s.jog_mode = MODES[c.key];
         const action = map[s.page]?.[c.key];
         if (action?.startsWith("page ")) s.page = action.slice(5);
-        else if (action) toast(`would press ${action}`);
+        else if (action) toast(done(`press ${action}`, `sent ${action}`));
         break;
       }
       case "Wheel":
-        if (connected()) toast(s.jog_mode === "Scroll" ? `would scroll ${c.value}` : `would turn ${s.jog_mode} ${c.value}`);
+        if (connected()) toast(s.jog_mode === "Scroll" ? done(`scroll ${c.value}`, `scrolled ${c.value}`) : done(`turn ${s.jog_mode} ${c.value}`, `turned ${s.jog_mode} ${c.value}`));
         break;
       case "SetEnabled":
         s.enabled = c.on;
@@ -70,6 +72,7 @@ export function createSimFake({ next = SIM_NEXT } = {}) {
         break;
       case "SendForReal":
         s.send_for_real = c.on;
+        toast(c.on ? "Do actions for real is on: presses send keys, open apps and change the volume on this PC" : "Do actions for real is off: presses only show what they would do");
         break;
       case "LoadSampleMappings":
         map = structuredClone(SAMPLE);

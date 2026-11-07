@@ -215,13 +215,13 @@ fn spawn_resolve_watch(
     });
 }
 
-/// The injector "send for real" uses in simulator mode.
+/// The injector 'Do actions for real' uses in simulator mode.
 #[cfg(not(test))]
 fn real_injector() -> Box<dyn KeyInjector> {
     match inject::EnigoInjector::new() {
         Ok(i) => Box::new(i),
         Err(e) => {
-            tracing::warn!(error = %e, "no key injector, send for real records only");
+            tracing::warn!(error = %e, "no key injector: Do actions for real sends no keys");
             Box::new(MockInjector::new())
         }
     }

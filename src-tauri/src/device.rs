@@ -17,7 +17,7 @@ use freewheel_core::launch::Launcher;
 use freewheel_core::overrides::OverrideWorker;
 use freewheel_core::report::DeviceEvent;
 use freewheel_core::status::KeyPressed;
-use tracing::{info, warn};
+use tracing::warn;
 
 /// How long one loop turn waits for an input report or a command.
 const POLL: Duration = Duration::from_millis(20);
@@ -196,6 +196,10 @@ pub fn run<T, O, C, F>(
         if let Err(e) = engine.tick(clock, injector) {
             warn!(error = %e, "shuttle repeat failed");
         }
+        // A wheel turn that rested is written as its one line; the engine
+        // logged every result already.
+        engine.end_idle_wheel_gesture(std::time::Instant::now());
+        engine.take_outcomes();
         // Only queues: a slow control never delays the next key.
         for (mode, ticks) in engine.take_override_ticks() {
             overrides.push(mode, ticks);
@@ -307,7 +311,7 @@ impl DeviceOutput {
 /// Switches the dial override controls when the engine's mode changes:
 /// leaving app volume drops its tap, entering it asks for the permission.
 fn dial_changed(from: Option<OverrideMode>, to: Option<OverrideMode>, overrides: &OverrideWorker) {
-    info!(?from, ?to, "dial override changed");
+    tracing::debug!(?from, ?to, "dial override changed");
     if from == Some(OverrideMode::AppVolume) {
         overrides.release();
     }
@@ -559,6 +563,61 @@ mod tests {
             assert!(std::time::Instant::now() < end, "timed out");
             thread::sleep(Duration::from_millis(1));
         }
+    }
+
+    #[test]
+    fn a_press_logs_key_page_and_mapping_runs_it_and_logs_the_result() {
+        let site = Action::LaunchApp {
+            path: "explorer.exe".into(),
+            args: vec!["https://example.com".into()],
+            enabled: true,
+            cwd: None,
+        };
+        let config = with_binding(Key::Cut, site);
+        let manager = connected_manager(vec![key_report(Key::Cut), jog_report(3)]);
+        let (tx, rx) = mpsc::channel();
+        let mut injector = MockInjector::new();
+        let mut launcher = MockLauncher::new();
+        let log = thread::scope(|s| {
+            let (injector, launcher) = (&mut injector, &mut launcher);
+            let config = &config;
+            let looped = s.spawn(move || {
+                freewheel_core::logging::capture(tracing::Level::INFO, || {
+                    run(
+                        manager,
+                        Engine::new(config),
+                        &SystemClock,
+                        Outputs {
+                            injector,
+                            launcher,
+                            overrides: &idle_overrides(),
+                        },
+                        rx,
+                        |_| {},
+                    );
+                })
+            });
+            // The inputs run out, so the device goes and the wheel turn ends.
+            thread::sleep(Duration::from_millis(300));
+            assert!(shutdown(&tx, WAIT));
+            looped.join().unwrap()
+        });
+        for line in [
+            r#"key CUT pressed on page "Base" -> Open website example.com"#,
+            r#"launched example.com ok: explorer.exe "https://example.com""#,
+            "wheel turned +3 in Scroll mode (1 report) -> scroll 1 ×3",
+        ] {
+            assert!(log.contains(line), "{line} missing:\n{log}");
+        }
+        // The real device's lines name no simulator.
+        assert!(!log.contains("simulated device"), "{log}");
+        assert_eq!(
+            launcher.calls(),
+            [(
+                "explorer.exe".to_string(),
+                vec!["https://example.com".to_string()]
+            )]
+        );
     }
 
     #[test]
