@@ -2,21 +2,21 @@
 export default function UpdateBanner({ update, onInstall, onLater, onRestart }) {
   // Checking and up to date show only on the General tab.
   if (!update || update.status === "checking" || update.status === "current") return null;
-  const { status, version, progress } = update;
+  const { status, progress } = update;
   const busy = status === "downloading" || status === "restarting";
   return (
     <div role="status" className="update-banner">
       <span className={`logo-disc${busy ? " is-spinning" : ""}`} aria-hidden="true" />
       <div className="update-text">
-        {status === "available" && <span className="update-title">freewheel {version} is available.</span>}
+        {status === "available" && <span className="update-title">A new version is available</span>}
         {status === "downloading" && (
           <>
-            <span className="update-title">Downloading freewheel {version}…</span>
+            <span className="update-title">Downloading the new version…</span>
             <progress max="100" value={progress ?? undefined} />
           </>
         )}
-        {status === "ready" && <span className="update-title">freewheel {version} is ready.</span>}
-        {status === "restarting" && <span className="update-title">Restarting…</span>}
+        {status === "ready" && <span className="update-title">A new version is ready</span>}
+        {status === "restarting" && <span className="update-title">Restarting freewheel…</span>}
       </div>
       {status === "available" && (
         <button className="btn-sm btn-primary" onClick={onInstall}>

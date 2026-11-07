@@ -44,11 +44,11 @@ test("Plug in or pair looks until a device connects, then live Found it! with th
   expect(screen.getByText("Continue").disabled).toBe(true);
   rerender(<FirstRun {...props} state={bluetooth} />);
   expect(screen.getByText("Found it!")).toBeTruthy();
-  expect(screen.getByText("Connected over Bluetooth")).toBeTruthy();
+  expect(screen.getByText(/^Connected by Bluetooth/)).toBeTruthy();
   expect(screen.queryByText("Looking for your Speed Editor…")).toBeNull();
   expect(screen.getByText("Continue").disabled).toBe(false);
   rerender(<FirstRun {...props} state={usb} />);
-  expect(screen.getByText("Connected over USB")).toBeTruthy();
+  expect(screen.getByText("Connected by USB")).toBeTruthy();
 });
 
 test("Open Bluetooth settings calls open_bluetooth_settings", () => {

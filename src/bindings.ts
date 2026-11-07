@@ -3,7 +3,7 @@
 
 export type Config = { version: number, settings: Settings, layers: Array<Layer>, base_layer: string, jog: JogSettings, overrides: OverrideSettings, };
 
-export type Settings = { enabled: boolean, start_at_login: boolean, resolve_process_name: string, low_battery_threshold: number, appearance: Appearance, auto_update: boolean, };
+export type Settings = { enabled: boolean, start_at_login: boolean, resolve_process_name: string, low_battery_threshold: number, appearance: Appearance, auto_update: boolean, step_aside_for_resolve: boolean, detailed_logs: boolean, };
 
 export type Appearance = "System" | "Light" | "Dark";
 
@@ -15,7 +15,7 @@ export type KeyCombo = { modifiers: Array<Modifier>, key: string, };
 
 export type Modifier = "Ctrl" | "Shift" | "Alt" | "Meta";
 
-export type JogMode = "Jog" | "Scroll" | "Shuttle";
+export type JogMode = "Jog" | "Scroll" | "Shuttle" | "Volume" | "Brightness";
 
 export type OverrideMode = "SystemVolume" | "AppVolume" | "Brightness";
 
@@ -40,6 +40,7 @@ permissions: { [key in string]?: Grant },
 bus: Bus | null, 
 /**
  * freewheel stepped aside (switched Off) because DaVinci Resolve is open.
+ * Never set while `settings.step_aside_for_resolve` is off.
  */
 paused: boolean, };
 
