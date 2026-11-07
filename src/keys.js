@@ -64,9 +64,10 @@ export function comboFromEvent(e) {
 /** "Ctrl+Shift+K". */
 export const formatCombo = (combo) => [...combo.modifiers, combo.key].filter(Boolean).join("+");
 
-/** Why a combo cannot be saved, or null. */
-export function comboError(combo) {
+/** Why a combo cannot be saved for `kind`, or null. Held and Latched may hold one modifier alone. */
+export function comboError(combo, kind = "Hotkey") {
   if (!combo || (!combo.key && combo.modifiers.length === 0)) return "Press the shortcut you want first.";
+  if (!combo.key && kind !== "Hotkey" && combo.modifiers.length === 1) return null;
   if (!combo.key) return "Add a key to go with the modifier, like Ctrl+K.";
   if (combo.key.length !== 1 && !SENDABLE.has(combo.key)) return `freewheel can't send the ${combo.key} key.`;
   return null;

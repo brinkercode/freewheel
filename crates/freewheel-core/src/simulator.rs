@@ -966,6 +966,35 @@ mod tests {
     }
 
     #[test]
+    fn simulator_holds_and_toggles_a_lone_modifier() {
+        let (_dir, mut sim, mock) = connected(Bus::Usb);
+        let shift = KeyCombo {
+            modifiers: vec![Modifier::Shift],
+            key: String::new(),
+        };
+        for (name, action) in [
+            (
+                "In",
+                Action::Held {
+                    combo: shift.clone(),
+                },
+            ),
+            ("Snap", Action::Latched { combo: shift }),
+        ] {
+            sim.apply(Control::SetBinding {
+                key: name.into(),
+                action: Some(action),
+            });
+        }
+        assert_eq!(key(&mut sim, "In", true).toasts, ["would hold Shift"]);
+        assert_eq!(key(&mut sim, "In", false).toasts, ["would release Shift"]);
+        assert_eq!(key(&mut sim, "Snap", true).toasts, ["would hold Shift"]);
+        assert!(key(&mut sim, "Snap", false).toasts.is_empty());
+        assert_eq!(key(&mut sim, "Snap", true).toasts, ["would release Shift"]);
+        assert!(mock.calls().is_empty());
+    }
+
+    #[test]
     fn session_uses_its_own_config_and_never_touches_the_real_one() {
         let dir = tempfile::tempdir().unwrap();
         let mut real = ConfigStore::new(dir.path());

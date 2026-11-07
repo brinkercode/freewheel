@@ -246,11 +246,16 @@ test("the record box shows Record, then Listening…, then keycaps; a common sho
   expect(screen.queryByText("Or pick a common one")).toBeNull();
 });
 
-test("Held and Latched show no 'Quick picks' chips; Latched shows the lit-key card", () => {
+test("Held and Latched show the 'Quick picks' chips Shift, Ctrl/Cmd and Alt; Latched shows the lit-key card", () => {
   for (const kind of ["Held", "Latched"]) {
     render(<KeyPanel keyName="Out" config={config()} layerId="base" initialMode={kind} />);
-    expect(screen.queryByText("Quick picks")).toBeNull();
-    expect(document.querySelectorAll(".preset")).toHaveLength(0);
+    const title = screen.getByText("Quick picks");
+    expect(title.className).toBe("field-label");
+    expect(title.nextElementSibling.className).toBe("presets");
+    // Not a Mac in jsdom: the platform modifier is Ctrl.
+    expect([...document.querySelectorAll(".presets .preset strong")].map((p) => p.textContent)).toEqual(["Shift", "Ctrl", "Alt"]);
+    expect(document.querySelectorAll(".preset-combo")).toHaveLength(0);
+    expect(screen.queryByText("Or pick a common one")).toBeNull();
     expect(screen.getAllByRole("button", { name: "Save" })).toHaveLength(1);
     const card = document.querySelector(".lit-card");
     if (kind === "Held") expect(card).toBeNull();
@@ -264,8 +269,60 @@ test("Held and Latched show no 'Quick picks' chips; Latched shows the lit-key ca
   render(<KeyPanel keyName="Out" config={config()} layerId="base" initialMode="Hotkey" />);
   expect(screen.queryByText("Quick picks")).toBeNull();
   expect(document.querySelector(".lit-card")).toBeNull();
+  cleanup();
+  for (const kind of ["LaunchApp", "LayerPush", "SetJogMode", "OverrideToggle"]) {
+    render(<KeyPanel keyName="Out" config={config()} layerId="base" initialMode={kind} />);
+    expect(screen.queryByText("Quick picks")).toBeNull();
+    expect(document.querySelectorAll(".preset")).toHaveLength(0);
+    cleanup();
+  }
   expect(base).toMatch(/\.lit-card \{[^}]*background: var\(--sunk\)/);
   expect(base).toMatch(/\.mini-key-led \{[^}]*background: var\(--led-lit\)/);
+});
+
+test("a Quick pick sets the combo to that modifier alone, saves it and shows as active", async () => {
+  for (const kind of ["Held", "Latched"]) {
+    const onSave = vi.fn(() => Promise.resolve({ config: config() }));
+    render(<KeyPanel keyName="Out" config={config()} layerId="base" onSave={onSave} initialMode={kind} />);
+    for (const [name, modifier] of [["Shift", "Shift"], ["Ctrl", "Ctrl"], ["Alt", "Alt"]]) {
+      fireEvent.click(screen.getByText(name).closest("button"));
+      expect(onSave).toHaveBeenLastCalledWith(kind, { modifiers: [modifier], key: "" });
+      const active = [...document.querySelectorAll(".preset.is-current")].map((b) => b.textContent);
+      expect(active).toEqual([name]);
+    }
+    expect(onSave).toHaveBeenCalledTimes(3);
+    cleanup();
+  }
+  // Through the editor: pick Held, tap Shift, and save_config gets the lone modifier.
+  const save = vi.fn(() => Promise.resolve());
+  render(<ActionEditor keyName="Out" initialConfig={config()} save={save} />);
+  fireEvent.click(screen.getByText(KIND_TEXT.Held[0]));
+  fireEvent.click(screen.getByText("Shift").closest("button"));
+  await vi.waitFor(() => expect(save).toHaveBeenCalled());
+  expect(save.mock.calls[0][0].layers[0].bindings.Out).toEqual({ Held: { combo: { modifiers: ["Shift"], key: "" } } });
+  expect(await screen.findByText("Saved. Press OUT on your Speed Editor to try it.")).toBeTruthy();
+});
+
+test("the Ctrl/Cmd quick pick is Cmd (Meta) on a Mac and Ctrl elsewhere", async () => {
+  vi.resetModules();
+  vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)" });
+  try {
+    const { QUICK_PICKS, KeyPanel: MacPanel } = await import("./ActionEditor.jsx");
+    expect(QUICK_PICKS.map(([, c]) => c.modifiers)).toEqual([["Shift"], ["Meta"], ["Alt"]]);
+    // The chips read as the prototype's kn() on a Mac: ⇧ ⌘ ⌥.
+    expect(QUICK_PICKS.map(([label]) => label)).toEqual(["⇧", "⌘", "⌥"]);
+    const onSave = vi.fn(() => Promise.resolve({ config: config() }));
+    render(<MacPanel keyName="Out" config={config()} layerId="base" onSave={onSave} initialMode="Held" />);
+    expect([...document.querySelectorAll(".presets .preset strong")].map((p) => p.textContent)).toEqual(["⇧", "⌘", "⌥"]);
+    fireEvent.click(screen.getByText("⌘").closest("button"));
+    expect(onSave).toHaveBeenLastCalledWith("Held", { modifiers: ["Meta"], key: "" });
+    cleanup();
+  } finally {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  }
+  const { QUICK_PICKS } = await import("./ActionEditor.jsx");
+  expect(QUICK_PICKS.map(([, c]) => c.modifiers)).toEqual([["Shift"], ["Ctrl"], ["Alt"]]);
 });
 
 test("the in-settings Permissions section shows one .card per permission with the PermissionsScreen copy and a .btn-primary", () => {
