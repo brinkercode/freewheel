@@ -16,9 +16,13 @@ import { fileURLToPath } from "node:url";
 export const RESPONSIVE_MS = 5000;
 
 export function parseArgs(argv) {
-  const opts = { driver: "http://127.0.0.1:4444", app: null, out: "e2e-shots" };
+  const opts = { driver: "http://127.0.0.1:4444", app: null, out: "e2e-shots", native: false };
   for (let i = 0; i < argv.length; i++) {
     const name = argv[i].replace(/^--/, "");
+    if (name === "native") {
+      opts.native = true;
+      continue;
+    }
     if (!(name in opts)) throw new Error(`unknown option ${argv[i]}`);
     opts[name] = argv[++i];
   }
@@ -26,9 +30,16 @@ export function parseArgs(argv) {
   return opts;
 }
 
-/** The tauri-driver new-session body: the app, started with --simulate. */
-export function sessionBody(app) {
-  return { capabilities: { alwaysMatch: { "tauri:options": { application: app, args: ["--simulate"] } } } };
+/**
+ * The new-session body: the app, started with --simulate. `native` gives
+ * msedgedriver's own capabilities, exactly what tauri-driver maps
+ * `tauri:options` to on Windows (WebView2 mode, the exe as the binary).
+ */
+export function sessionBody(app, native = false) {
+  const options = native
+    ? { "ms:edgeChromium": true, browserName: "webview2", "ms:edgeOptions": { binary: app, args: ["--simulate"] } }
+    : { "tauri:options": { application: app, args: ["--simulate"] } };
+  return { capabilities: { alwaysMatch: options } };
 }
 
 /** A safe, ordered file name for a step's screenshot. */
@@ -57,11 +68,11 @@ class Driver {
     if (!res.ok) throw new Error(`${method} ${path}: ${res.status} ${json.value?.error ?? ""} ${json.value?.message?.split("\n")[0] ?? ""}`);
     return json.value;
   }
-  async start(app) {
+  async start(app, native) {
     const v = await fetch(`${this.base}/session`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(sessionBody(app)),
+      body: JSON.stringify(sessionBody(app, native)),
       signal: AbortSignal.timeout(120000),
     }).then((r) => r.json());
     if (!v.value?.sessionId) throw new Error(`no session: ${JSON.stringify(v).slice(0, 500)}`);
@@ -111,7 +122,8 @@ async function main() {
   let n = 0;
   let current = null;
   const win = {};
-  const say = (line) => (console.log(line), log.push(line));
+  const t0 = Date.now();
+  const say = (line) => (console.log(`[${((Date.now() - t0) / 1000).toFixed(1)}s] ${line}`), log.push(line));
 
   const use = async (name) => {
     if (current !== name) await d.switchTo(win[name]);
@@ -193,7 +205,7 @@ async function main() {
 
   try {
     say(`starting ${opts.app} --simulate`);
-    await d.start(resolve(opts.app));
+    await d.start(resolve(opts.app), opts.native);
     // Both windows: the settings window ("main") and the Simulator (#simulator).
     const end = Date.now() + 30000;
     while (!(win.settings && win.simulator)) {

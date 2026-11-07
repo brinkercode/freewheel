@@ -58,10 +58,6 @@ jobs:
       - name: Build freewheel.exe
         run: cargo build --release --locked -p freewheel --features tauri/custom-protocol
 
-      - name: Install tauri-driver
-        shell: bash
-        run: command -v tauri-driver || cargo install tauri-driver --locked
-
       # msedgedriver must match the WebView2 runtime the app runs in.
       - name: Install the msedgedriver matching WebView2
         shell: pwsh
@@ -77,13 +73,18 @@ jobs:
       - name: Click through freewheel --simulate
         shell: pwsh
         run: |
-          $driver = Start-Process -FilePath tauri-driver -ArgumentList '--port','4444','--native-driver',"$env:RUNNER_TEMP\edgedriver\msedgedriver.exe" -PassThru -NoNewWindow
+          New-Item -ItemType Directory -Force e2e-shots | Out-Null
+          Get-ChildItem env: | Where-Object Name -like 'WEBVIEW2*' | Format-Table -AutoSize
+          # msedgedriver in WebView2 mode, the capabilities tauri-driver would
+          # send (scripts/e2e-windows.mjs --native), with its verbose log kept.
+          $driver = Start-Process -FilePath "$env:RUNNER_TEMP\edgedriver\msedgedriver.exe" -ArgumentList '--port=4444','--verbose',"--log-path=$PWD\e2e-shots\msedgedriver.log" -PassThru -NoNewWindow
           $deadline = (Get-Date).AddSeconds(30)
           do { Start-Sleep -Milliseconds 300; $up = Test-NetConnection 127.0.0.1 -Port 4444 -InformationLevel Quiet -WarningAction SilentlyContinue } until ($up -or (Get-Date) -gt $deadline)
-          if (-not $up) { throw "tauri-driver did not start" }
-          node scripts/e2e-windows.mjs --app target/release/freewheel.exe --out e2e-shots
+          if (-not $up) { throw "msedgedriver did not start" }
+          node scripts/e2e-windows.mjs --native --app target/release/freewheel.exe --out e2e-shots
           $code = $LASTEXITCODE
           Stop-Process -Id $driver.Id -Force -ErrorAction SilentlyContinue
+          Get-Process freewheel -ErrorAction SilentlyContinue | Stop-Process -Force
           exit $code
 
       - name: Upload screenshots
