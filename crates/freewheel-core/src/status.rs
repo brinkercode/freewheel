@@ -51,6 +51,7 @@ pub struct StatusEvent {
     /// when the OS does not say.
     pub bus: Option<Bus>,
     /// freewheel stepped aside (switched Off) because DaVinci Resolve is open.
+    /// Never set while `settings.step_aside_for_resolve` is off.
     pub paused: bool,
 }
 

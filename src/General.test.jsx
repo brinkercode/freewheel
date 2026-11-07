@@ -9,7 +9,8 @@ const general = (props) => renderToString(<General settings={settings} onSetting
 
 test("Appearance offers Match my computer, Light and Dark as preview cards, the choice pressed", () => {
   const html = general({ settings: { ...settings, appearance: "Dark" } });
-  for (const label of ["Match my computer", "Light", "Dark"]) expect(html).toMatch(new RegExp(`<svg[^>]*>.*?</svg>${label}</span></button>`));
+  for (const [label, icon] of [["Match my computer", "contrast"], ["Light", "light_mode"], ["Dark", "dark_mode"]])
+    expect(html).toMatch(new RegExp(`data-icon="${icon}"[^>]*><svg[^>]*>.*?</svg></span>${label}</span></button>`));
   expect(html.match(/class="preview"/g)).toHaveLength(3);
   expect(html).toMatch(/aria-pressed="true"[^>]*>.*?Dark<\/span><\/button>/);
   expect(html.match(/aria-pressed="true"/g)).toHaveLength(1);
@@ -71,11 +72,12 @@ test("'Check for updates' shows idle, checking, up to date, downloading and read
   const sub = (update) => general({ update, onCheck: () => {} });
   expect(sub(null)).toContain(updateText(null));
   const checking = sub({ status: "checking" });
-  expect(checking).toContain("Checking for updates…");
+  expect(checking).toContain("Checking…");
   expect(checking).toContain('class="spinner"');
-  expect(sub({ status: "current" })).toContain("You&#x27;re up to date.");
-  expect(sub({ status: "downloading", version: "0.2.0", progress: 40 })).toContain("Downloading freewheel 0.2.0… 40%");
-  expect(sub({ status: "ready", version: "0.2.0" })).toContain("freewheel 0.2.0 is ready. Restart to update.");
+  expect(sub({ status: "current" })).toContain("You’re up to date.");
+  expect(sub({ status: "downloading", version: "0.2.0", progress: 40 })).toContain("Downloading the new version…");
+  expect(sub({ status: "ready", version: "0.2.0" })).toContain("A new version is ready.");
+  expect(sub(null)).toContain("freewheel checks for updates by itself.");
   expect(sub(null)).not.toContain("spinner");
 });
 

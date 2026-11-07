@@ -471,6 +471,11 @@ impl<C: Clock> OverrideRunner<C> {
         self.controls.app_volume.release();
     }
 
+    /// Uses `steps` for the ticks run from now on (a saved config).
+    pub fn set_steps(&mut self, steps: OverrideSettings) {
+        self.steps = steps;
+    }
+
     fn step(&mut self, mode: OverrideMode, ticks: i32) -> Result<(), ControlError> {
         let n = ticks.unsigned_abs();
         let up = ticks > 0;
@@ -510,6 +515,7 @@ struct Queue {
     steps: Vec<(OverrideMode, i32)>,
     release: bool,
     activated: Vec<OverrideMode>,
+    settings: Option<OverrideSettings>,
     stop: bool,
 }
 
@@ -535,9 +541,14 @@ impl OverrideWorker {
         let thread = std::thread::spawn(move || {
             let mut wait = None;
             loop {
-                let (activated, steps, release) = {
+                let (settings, activated, steps, release) = {
                     let mut q = s.queue.lock().unwrap();
-                    while q.steps.is_empty() && q.activated.is_empty() && !q.release && !q.stop {
+                    while q.steps.is_empty()
+                        && q.activated.is_empty()
+                        && q.settings.is_none()
+                        && !q.release
+                        && !q.stop
+                    {
                         let Some(d) = wait else {
                             q = s.wake.wait(q).unwrap();
                             continue;
@@ -552,11 +563,15 @@ impl OverrideWorker {
                         return;
                     }
                     (
+                        q.settings.take(),
                         std::mem::take(&mut q.activated),
                         std::mem::take(&mut q.steps),
                         std::mem::take(&mut q.release),
                     )
                 };
+                if let Some(settings) = settings {
+                    runner.set_steps(settings);
+                }
                 for mode in activated {
                     runner.activate(mode);
                 }
@@ -600,6 +615,12 @@ impl OverrideWorker {
     /// Releases what the controls hold, after the ticks already queued.
     pub fn release(&self) {
         self.shared.queue.lock().unwrap().release = true;
+        self.shared.wake.notify_one();
+    }
+
+    /// Uses `steps` for the ticks queued from now on (a saved config).
+    pub fn set_steps(&self, steps: OverrideSettings) {
+        self.shared.queue.lock().unwrap().settings = Some(steps);
         self.shared.wake.notify_one();
     }
 }
@@ -1292,5 +1313,19 @@ mod tests {
             !errors.is_empty()
         });
         assert_eq!(errors[0].mode, OverrideMode::Brightness);
+    }
+
+    #[test]
+    fn worker_steps_by_a_saved_config_from_then_on() {
+        let (v, _, _, controls) = fakes(FakeControl::new());
+        let worker = OverrideWorker::spawn(OverrideRunner::new(controls, steps(), SystemClock));
+        worker.push(OverrideMode::SystemVolume, 1);
+        wait_for(|| v.calls() == [Up(0.5)]);
+        worker.set_steps(OverrideSettings {
+            system_volume_step: 0.25,
+            ..steps()
+        });
+        worker.push(OverrideMode::SystemVolume, -1);
+        wait_for(|| v.calls() == [Up(0.5), Down(0.25)]);
     }
 }

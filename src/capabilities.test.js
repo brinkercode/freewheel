@@ -25,6 +25,7 @@ test("the settings window may call exactly the commands its UI invokes", () => {
   const settings = invoked(uiSources.filter((f) => f !== "Simulator.jsx"));
   expect(sorted(settings)).toEqual([
     "app_version",
+    "export_logs",
     "export_mappings",
     "get_config",
     "get_permissions",
@@ -34,6 +35,7 @@ test("the settings window may call exactly the commands its UI invokes", () => {
     "open_bluetooth_settings",
     "open_permission_pane",
     "save_config",
+    "set_detailed_logs",
     "set_enabled",
     "set_start_at_login",
   ]);

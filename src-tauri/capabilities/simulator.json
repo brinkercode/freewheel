@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "simulator",
-  "description": "The --simulate window drives the simulated Speed Editor.",
+  "description": "The --simulate window drives the simulated Speed Editor and jumps the settings window to a screen.",
   "windows": ["simulator"],
-  "permissions": ["allow-simulate"]
+  "permissions": ["allow-simulate", "allow-sim-jump"]
 }

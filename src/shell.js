@@ -24,15 +24,22 @@ export function fromStatusEvent(event) {
   };
 }
 
-/** The toolbar status, first match wins. */
-export function deriveStatus(s) {
-  if (!s.enabled) return { text: "Off", dot: "gray" };
-  if (s.permissionMissing) return { text: "Needs permission", dot: "orange" };
-  if (!s.connected) return { text: "Looking for device", dot: "orange" };
-  if (s.paused) return { text: "Paused (Resolve)", dot: "gray" };
+const lowBattery = (s) => s.battery != null && s.battery < LOW_BATTERY;
+
+/** How the device is connected, in the prototype's words: "Connected by USB", "Connected by Bluetooth · 64%". */
+export function connectedText(s) {
   const battery = s.battery == null ? "" : ` · ${s.battery}%`;
   const bus = BUS[s.bus];
-  return { text: bus ? `Connected (${bus}${battery})` : `Connected${battery}`, dot: "green" };
+  return bus ? `Connected by ${bus}${battery}` : `Connected${battery}`;
+}
+
+/** The toolbar status, first match wins (the prototype's statusText). */
+export function deriveStatus(s) {
+  if (!s.enabled) return { text: "Off: Resolve can use it", dot: "gray" };
+  if (s.permissionMissing) return { text: "Needs permission (click to fix)", dot: "orange" };
+  if (!s.connected) return { text: "Looking for your Speed Editor…", dot: "gray" };
+  if (s.paused) return { text: "Paused: DaVinci Resolve is open", dot: "gray" };
+  return { text: connectedText(s), dot: lowBattery(s) ? "orange" : "green" };
 }
 
 /** The one notice to show, or null; `action` names the button, if any. */
@@ -40,22 +47,26 @@ export function deriveNotice(s) {
   if (s.permissionMissing)
     return {
       id: "permission",
-      title: "freewheel needs permission.",
-      text: "Until you allow it, your keys can't do anything.",
+      title: "freewheel needs your permission.",
+      text: "Without it, your Speed Editor can’t press keys for you.",
       action: "Fix this",
     };
   if (!s.enabled)
-    return { id: "off", title: "freewheel is Off.", text: "Your keys do nothing until you turn it on.", action: "Turn on" };
+    return { id: "off", title: "freewheel is Off.", text: "Your Speed Editor is free for DaVinci Resolve.", action: "Turn on" };
   if (!s.connected)
     return {
       id: "looking",
-      title: "Looking for your Speed Editor.",
-      text: "Plug it in with a USB cable, or switch it on to use Bluetooth.",
+      title: "Looking for your Speed Editor…",
+      text: "Plug it in, or switch it on to connect by Bluetooth. You can still set up keys.",
     };
   if (s.paused)
-    return { id: "paused", title: "Paused for DaVinci Resolve.", text: "Resolve uses the Speed Editor while it's open." };
-  if (s.battery != null && s.battery < LOW_BATTERY)
-    return { id: "battery", title: "Battery low.", text: `${s.battery}% left. Plug in your Speed Editor to charge it.` };
+    return { id: "paused", title: "Paused while DaVinci Resolve is open.", text: "Your shortcuts come back when you close Resolve." };
+  if (lowBattery(s))
+    return {
+      id: "battery",
+      title: `Battery is low (${s.battery}%).`,
+      text: "Plug in the USB cable to charge. It keeps working while it charges.",
+    };
   return null;
 }
 
@@ -65,12 +76,12 @@ export function deriveNotice(s) {
  */
 export async function switchOn(setEnabled, on) {
   await setEnabled(on);
-  return on ? "freewheel is On." : "freewheel is Off.";
+  return on ? "freewheel is On. Your Speed Editor runs your shortcuts." : "freewheel is Off. DaVinci Resolve can use your Speed Editor.";
 }
 
 // How the found device is attached, for the first run's 'Found it!'.
-export function connectionText(bus) {
-  return BUS[bus] ? `Connected over ${BUS[bus]}` : "Connected";
+export function connectionText(bus, battery = null) {
+  return connectedText({ bus, battery });
 }
 
 // The first run shows until finished; the webview's storage keeps the flag.

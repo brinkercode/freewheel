@@ -17,6 +17,7 @@ pub mod permissions;
 pub mod resolve;
 pub mod simulator;
 pub mod status;
+pub mod support;
 #[cfg(test)]
 mod ts_bindings;
 

@@ -1,5 +1,6 @@
 //! The tray icon and its menu: the On/Off check item, the 'Needs permission'
-//! status line (macOS), Open settings, Start at login and Quit.
+//! status line (macOS), Open settings, Start at login, Download logs for
+//! support and Quit.
 
 use std::sync::mpsc::Sender;
 
@@ -15,11 +16,13 @@ use freewheel_core::permissions::{Permissions, status_line};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::device::{Command, TrayState, Update};
+use crate::resolve_watch::Message;
 
 const TOGGLE: &str = "toggle";
 const STATUS: &str = "status";
 const OPEN_SETTINGS: &str = "open-settings";
 const START_AT_LOGIN: &str = "start-at-login";
+const DOWNLOAD_LOGS: &str = "download-logs";
 const QUIT: &str = "quit";
 /// Sent when the status line is clicked: the settings window shows the
 /// permissions screen with Done (FIX_PERMISSIONS_EVENT in settingsApi.js).
@@ -159,8 +162,8 @@ enum Entry {
 }
 
 /// The tray menu as plain data: the On/Off toggle, Open settings, Start at
-/// login (checked as `start_at_login` says) and Quit.
-fn menu_model(start_at_login: bool) -> [Entry; 6] {
+/// login (checked as `start_at_login` says), Download logs for support and Quit.
+fn menu_model(start_at_login: bool) -> [Entry; 7] {
     [
         Entry::Check {
             id: TOGGLE,
@@ -176,6 +179,10 @@ fn menu_model(start_at_login: bool) -> [Entry; 6] {
             id: START_AT_LOGIN,
             text: "Start at login",
             checked: start_at_login,
+        },
+        Entry::Item {
+            id: DOWNLOAD_LOGS,
+            text: "Download logs for support...",
         },
         Entry::Separator,
         Entry::Item {
@@ -242,7 +249,7 @@ pub fn show_settings<R: Runtime>(app: &AppHandle<R>) {
 pub fn build<R: Runtime>(
     app: &AppHandle<R>,
     commands: Sender<Command>,
-    manual: Sender<bool>,
+    manual: Sender<Message>,
 ) -> tauri::Result<(TrayIcon<R>, CheckMenuItem<R>, StatusLine<R>)> {
     // The checkbox shows the OS login item, not the config, at startup.
     let (menu, toggle, login, status) = menu(app, autostart_enabled(app))?;
@@ -257,7 +264,7 @@ pub fn build<R: Runtime>(
                 let on = check.is_checked().unwrap_or(true);
                 let _ = check.set_text(toggle_text(on));
                 let _ = commands.send(Command::SetEnabled(on));
-                let _ = manual.send(on);
+                let _ = manual.send(Message::Manual(on));
             }
             STATUS => {
                 show_settings(app);
@@ -285,11 +292,36 @@ pub fn build<R: Runtime>(
                 // Show what the OS really has, whether or not the change took.
                 let _ = login.set_checked(autostart_enabled(app));
             }
+            DOWNLOAD_LOGS => {
+                let app = app.clone();
+                // Off the main thread: it reads up to 10 MB of logs.
+                std::thread::spawn(move || download_logs(&app));
+            }
             QUIT => app.exit(0),
             _ => {}
         })
         .build(app)?;
     Ok((tray, toggle, status))
+}
+
+/// Saves the log bundle to Downloads and says where, or why it failed.
+fn download_logs<R: Runtime>(app: &AppHandle<R>) {
+    let (title, body) = match crate::settings::save_log_bundle(app) {
+        Ok(path) => ("Logs saved", logs_saved_text(&path)),
+        Err(e) => ("Logs not saved", e),
+    };
+    let shown = app.notification().builder().title(title).body(body).show();
+    if let Err(e) = shown {
+        tracing::warn!(error = %e, "log bundle notification failed");
+    }
+}
+
+/// The notification body after a bundle was saved to `path`.
+fn logs_saved_text(path: &str) -> String {
+    let name = std::path::Path::new(path)
+        .file_name()
+        .map_or_else(|| path.into(), |n| n.to_string_lossy().into_owned());
+    format!("{name} is in your Downloads folder. Send it with your support request.")
 }
 
 /// Shows `state` on the tray icon and the toggle.
@@ -374,7 +406,7 @@ mod tests {
     }
 
     #[test]
-    fn menu_has_a_checked_toggle_open_settings_start_at_login_and_quit() {
+    fn menu_has_a_checked_toggle_open_settings_start_at_login_logs_and_quit() {
         assert_eq!(
             menu_model(false),
             [
@@ -392,6 +424,10 @@ mod tests {
                     id: START_AT_LOGIN,
                     text: "Start at login",
                     checked: false,
+                },
+                Entry::Item {
+                    id: DOWNLOAD_LOGS,
+                    text: "Download logs for support...",
                 },
                 Entry::Separator,
                 Entry::Item {
@@ -422,7 +458,7 @@ mod tests {
     }
 
     /// Whether the Start at login entry of the model is checked.
-    fn login_checked(model: [Entry; 6]) -> bool {
+    fn login_checked(model: [Entry; 7]) -> bool {
         model
             .into_iter()
             .find_map(|entry| match entry {
@@ -501,6 +537,15 @@ mod tests {
         let err = set_start_at_login(|_| Err("denied".into()), &mut store, true).unwrap_err();
         assert_eq!(err, "denied");
         assert!(!store.path().exists());
+    }
+
+    #[test]
+    fn the_logs_notification_names_the_saved_file() {
+        assert_eq!(
+            logs_saved_text("/home/a/Downloads/freewheel-logs-20261106-215800.txt"),
+            "freewheel-logs-20261106-215800.txt is in your Downloads folder. \
+             Send it with your support request."
+        );
     }
 
     #[test]

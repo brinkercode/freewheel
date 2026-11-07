@@ -1,0 +1,187 @@
+/* freewheel --simulate: the Simulator window, the prototype's dark
+   "Prototype controls" column (the reference design). Always dark, whatever the
+   app's appearance; every rule is scoped to .fw-sim so the settings window
+   (same bundle) is untouched. Raw values are the prototype's. */
+
+html:has(.fw-sim),
+html:has(.fw-sim) body { background: #151618; color-scheme: dark; }
+
+.fw-sim {
+  min-height: 100%;
+  box-sizing: border-box;
+  padding: var(--sp-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-7);
+  background: #151618;
+  color: #e6e6e4;
+  font-family: var(--font-win);
+  font-size: var(--fs-small);
+  line-height: 1.35;
+  border-left: 1px solid #000;
+}
+@supports (font: -apple-system-body) {
+  .fw-sim { font-family: var(--font-mac); }
+}
+
+.fw-sim h1 { margin: 0; font-size: var(--fs-body); font-weight: var(--fw-bold); line-height: 1.35; }
+.fw-sim h2 { margin: 0; }
+.fw-sim-head p { margin-top: 3px; color: #8d8d93; line-height: 1.4; }
+
+.fw-sim-group { display: flex; flex-direction: column; gap: 5px; }
+.fw-sim-press { gap: var(--sp-3); }
+.fw-sim-label { color: #8d8d93; font-size: var(--fs-small); font-weight: var(--fw-semibold); }
+
+/* every control: flat dark chips, no app button chrome */
+.fw-sim button {
+  height: var(--h-chip);
+  padding: 0 var(--sp-6);
+  border: none;
+  border-radius: var(--r-key);
+  background: #2c2d31;
+  color: #eee;
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-regular);
+  gap: var(--sp-2);
+}
+.fw-sim button:hover:not(:disabled) { background: #36373c; }
+.fw-sim button:active:not(:disabled) { background: #404147; }
+.fw-sim button:focus-visible,
+.fw-sim select:focus-visible,
+.fw-sim input:focus-visible { outline: 2px solid #9fb6ff; outline-offset: 1px; }
+
+.fw-sim-quick { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.fw-sim-quick button {
+  height: 28px;
+  padding: 0 9px;
+  font-size: 11px;
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.03em;
+  touch-action: none;
+  user-select: none;
+}
+.fw-sim-quick button[aria-pressed="true"] { background: #e8e8e6; color: #151618; }
+
+.fw-sim-line { display: flex; gap: var(--sp-2); }
+.fw-sim-line > button { flex: 1; font-size: var(--fs-small); touch-action: none; user-select: none; }
+.fw-sim-line > select {
+  flex: 1;
+  min-width: 0;
+  height: var(--h-chip);
+  padding: 0 var(--sp-3);
+  border: none;
+  border-radius: var(--r-key);
+  background: #2c2d31;
+  color: #eee;
+  font: inherit;
+}
+.fw-sim .fw-sim-line > .fw-sim-primary {
+  flex: none;
+  padding: 0 var(--sp-6);
+  background: #e8e8e6;
+  color: #151618;
+  font-size: var(--fs-small);
+  font-weight: var(--fw-bold);
+}
+.fw-sim .fw-sim-line > .fw-sim-primary:hover { background: #ffffff; }
+
+.fw-sim-log {
+  list-style: none;
+  margin: 0;
+  padding: var(--sp-4) var(--sp-5);
+  min-height: 76px;
+  max-height: 168px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border-radius: var(--r-sm);
+  background: #0d0e10;
+  font-size: var(--fs-micro);
+  line-height: 1.35;
+}
+.fw-sim-log li { color: #d6d6d4; overflow-wrap: anywhere; }
+.fw-sim-log li.is-empty { color: #6c6c72; }
+.fw-sim-log li.is-you { color: #9fb6ff; }
+.fw-sim-log li.is-info { color: #8d8d93; }
+.fw-sim-log li.is-error { color: #ff8a80; }
+.fw-sim-meta { color: #6c6c72; font-size: var(--fs-micro); }
+
+/* the prototype's simRows: a sunk strip with one light option */
+.fw-sim-seg { display: flex; flex-wrap: wrap; gap: 3px; padding: 3px; border-radius: var(--r-btn-sm); background: #222327; }
+.fw-sim-seg button {
+  flex: 1 1 auto;
+  height: 26px;
+  padding: 0 var(--sp-4);
+  background: transparent;
+  color: #c9c9cc;
+  font-weight: var(--fw-medium);
+}
+.fw-sim-seg button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.06); }
+.fw-sim .fw-sim-seg button[aria-pressed="true"] { background: #e8e8e6; color: #151618; font-weight: var(--fw-bold); }
+
+.fw-sim-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
+
+/* tray icon states: the light swatch of the prototype; the current one ringed */
+.fw-sim-tray {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border-radius: var(--r-btn-sm);
+  background: #e9eaec;
+  color: #1c1c1e;
+}
+.fw-sim-tray-item { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 3px var(--sp-2); border-radius: var(--r-key); font-size: var(--fs-caption); white-space: nowrap; }
+.fw-sim-tray-item[aria-current="true"] { background: #ffffff; box-shadow: 0 0 0 1.5px #1c1c1e; font-weight: var(--fw-semibold); }
+.fw-tray-icon { position: relative; flex: none; width: 16px; height: 16px; }
+.fw-tray-icon .ring { position: absolute; inset: 0; border-radius: 50%; background: #1c1c1e; }
+.fw-tray-icon .dot { position: absolute; left: 3px; top: 3px; width: 5px; height: 5px; border-radius: 50%; background: #e9eaec; }
+.fw-tray-icon .badge { position: absolute; right: -3px; top: -3px; width: 7px; height: 7px; border-radius: 50%; background: #e39a1f; }
+.fw-tray-icon.is-off .ring { background: none; border: 1.6px solid #1c1c1e; opacity: 0.5; }
+.fw-tray-icon.is-off .dot { background: #1c1c1e; opacity: 0.5; }
+.fw-tray-icon.is-absent .ring { background: none; border: 1.6px dashed #1c1c1e; opacity: 0.55; }
+.fw-tray-icon.is-absent .dot { display: none; }
+
+/* send keys for real: a dark switch row */
+.fw-sim-switch {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-6);
+  padding: var(--sp-4) var(--sp-5);
+  border-radius: var(--r-btn-sm);
+  background: #222327;
+  color: #e6e6e4;
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+.fw-sim-switch-text { display: flex; flex-direction: column; gap: var(--sp-1); }
+.fw-sim-switch-title { font-weight: var(--fw-semibold); }
+.fw-sim-switch-sub { color: #8d8d93; font-size: var(--fs-micro); }
+.fw-sim-switch input {
+  appearance: none;
+  flex: none;
+  position: relative;
+  width: var(--switch-w);
+  height: var(--switch-h);
+  margin: 0;
+  border-radius: var(--r-pill);
+  background: #45464c;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.fw-sim-switch input::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  transition: transform 0.15s ease;
+}
+.fw-sim-switch input:checked { background: var(--accent); }
+.fw-sim-switch input:checked::after { transform: translateX(18px); }
