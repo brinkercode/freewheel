@@ -56,6 +56,10 @@ pub struct StatusEvent {
     /// The dial override a key turned the wheel into, until that key is
     /// pressed again or the Wheel tab's 'Back to normal'.
     pub wheel_override: Option<OverrideMode>,
+    /// The keys lit on the device by binding name (`"Snap"`, `"Cam1"`,
+    /// then the wheel button `"Jog"`, `"Shtl"` or `"Scrl"`); empty while
+    /// not connected. The Keys tab drawing lights the same keys.
+    pub lit: Vec<String>,
 }
 
 impl StatusEvent {
@@ -70,6 +74,7 @@ impl StatusEvent {
             bus: None,
             paused: false,
             wheel_override: None,
+            lit: Vec::new(),
         }
     }
 
@@ -79,6 +84,7 @@ impl StatusEvent {
             self.battery = None;
             self.bus = None;
             self.wheel_override = None;
+            self.lit.clear();
         }
         self.connection = connection;
     }
@@ -185,6 +191,7 @@ mod tests {
         status.bus = Some(Bus::Bluetooth);
         status.paused = true;
         status.wheel_override = Some(OverrideMode::SystemVolume);
+        status.lit = vec!["Snap".into(), "Shtl".into()];
         assert_eq!(
             serde_json::to_value(&status).unwrap(),
             serde_json::json!({
@@ -197,7 +204,8 @@ mod tests {
                 "permissions": {"Accessibility": "Granted", "InputMonitoring": "Missing"},
                 "bus": "Bluetooth",
                 "paused": true,
-                "wheel_override": "SystemVolume"
+                "wheel_override": "SystemVolume",
+                "lit": ["Snap", "Shtl"]
             })
         );
     }
@@ -211,7 +219,12 @@ mod tests {
             charging: false,
         });
         status.bus = Some(Bus::Usb);
+        status.lit = vec!["Scrl".into()];
         status.set_connection(ConnectionStatus::Absent);
+        assert!(
+            status.lit.is_empty(),
+            "nothing is lit on a device that is gone"
+        );
         assert_eq!(status.battery, None);
         assert_eq!(status.bus, None);
         assert_eq!(status.connection, ConnectionStatus::Absent);

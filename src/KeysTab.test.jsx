@@ -210,3 +210,14 @@ test("saving calls save_config with the key's new action", async () => {
   expect(log).toHaveBeenCalled();
   log.mockRestore();
 });
+
+test("the drawing lights what the device lights while connected: latched key, page key and the wheel button", () => {
+  const lit = (html) => [...html.matchAll(/data-binding="(\w+)"[^>]*class="key[^"]*is-lit/g)].map((m) => m[1]).sort();
+  const connected = renderToString(<KeysTab initial={config} status={{ connection: "Connected", layer: "base", lit: ["Cam1", "Snap", "Shtl"] }} />);
+  expect(lit(connected)).toEqual(["Cam1", "Shtl", "Snap"]);
+  // the wheel names the lit wheel button
+  expect(connected).toMatch(/<text class="wheel-button"[^>]*>SHTL<\/text>/);
+  // not connected: only the wheel button the config starts in, as before
+  const absent = renderToString(<KeysTab initial={config} status={{ connection: "Absent", layer: "base", lit: [] }} />);
+  expect(lit(absent)).toEqual(["Scrl"]);
+});

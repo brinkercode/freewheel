@@ -25,7 +25,12 @@ export function createSimFake() {
   const trayClicks = [];
   let map = {};
   const jumps = [];
-  const leds = () => (s.connection === "Connected" ? [{ Scroll: "Scrl", Jog: "Jog", Shuttle: "Shtl" }[s.jog_mode]] : []);
+  // As Engine::leds: the key that went to this page, then the wheel button.
+  const leds = () => {
+    if (s.connection !== "Connected") return [];
+    const pageKey = Object.keys(map.base ?? {}).find((k) => s.page !== "base" && map.base[k] === `page ${s.page}`);
+    return [pageKey, { Scroll: "Scrl", Jog: "Jog", Shuttle: "Shtl" }[s.jog_mode]].filter(Boolean);
+  };
   const toast = (t) => s.toasts.push(t);
   const connected = () => (s.connection === "Connected" ? true : (toast("no device connected"), false));
 

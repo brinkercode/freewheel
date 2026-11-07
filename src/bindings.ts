@@ -47,7 +47,13 @@ paused: boolean,
  * The dial override a key turned the wheel into, until that key is
  * pressed again or the Wheel tab's 'Back to normal'.
  */
-wheel_override: OverrideMode | null, };
+wheel_override: OverrideMode | null, 
+/**
+ * The keys lit on the device by binding name (`"Snap"`, `"Cam1"`,
+ * then the wheel button `"Jog"`, `"Shtl"` or `"Scrl"`); empty while
+ * not connected. The Keys tab drawing lights the same keys.
+ */
+lit: Array<string>, };
 
 export type ConnectionStatus = "Absent" | "Connected" | "Off" | "AuthFailed";
 

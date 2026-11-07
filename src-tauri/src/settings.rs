@@ -265,6 +265,7 @@ impl Settings {
             Update::KeyPressed(_) => {}
             Update::Override(mode) => status.wheel_override = *mode,
             Update::Diagnostics(d) => *lock(&self.diagnostics) = (**d).clone(),
+            Update::Leds(lit) => status.lit.clone_from(lit),
         })
     }
 
@@ -741,6 +742,13 @@ mod tests {
         assert_eq!(settings.set_permissions(&missing), None);
         assert_eq!(settings.apply(&Update::Layer("edit".into())), None);
         assert_eq!(settings.status(), status);
+        // The device's lit keys reach the Keys tab drawing; gone with it.
+        let lit = vec!["Snap".to_string(), "Shtl".to_string()];
+        assert_eq!(settings.apply(&Update::Leds(lit.clone())).unwrap().lit, lit);
+        let gone = settings
+            .apply(&Update::State(ConnectionStatus::Absent))
+            .unwrap();
+        assert!(gone.lit.is_empty());
     }
 
     fn logger_in(dir: &Path) -> Logger {
