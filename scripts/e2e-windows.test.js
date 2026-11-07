@@ -35,7 +35,7 @@ test("every action is followed by a 5 s round trip through the app in both windo
   expect(script).toContain('["settings", "get_status", {}]');
   expect(script).toContain('["simulator", "simulate", { control: { type: "Status" } }]');
   for (const flow of ["button.get-started", "Continue", '[data-binding="Cut"]', "Open an app or website", "panel-try.is-saved", "Help & backup",
-    "DaVinci Resolve", "appearance-option", '"Bluetooth 64%"', '"Not found"', '"Open"', '"Closed"', '"Off"', '"On"', "Turn wheel left"])
+    "DaVinci Resolve", "appearance-option", '"Bluetooth 64%"', '"Not found"', '"Open"', '"Closed"', '"Off"', '"On"', "Turn wheel left", "aria-label=Maximise", "aria-label=Restore", "aria-label=Minimise", "isDecorated", '"macOS permission", "Missing"', "Open System Settings", "would open System Settings", '"macOS permission", "Allowed"'])
     expect(script).toContain(flow);
 });
 

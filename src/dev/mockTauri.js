@@ -124,7 +124,10 @@ export function installMockTauri(win = window) {
     app_version: () => params.get("updated") ?? "0.1.0",
     open_release_page: () => null,
     get_permissions: () => status.permissions,
-    open_permission_pane: () => null,
+    open_permission_pane: ({ permission }) =>
+      params.get("simulate") === "1"
+        ? `Simulated: this would open System Settings › Privacy & Security › ${permission === "InputMonitoring" ? "Input Monitoring" : permission}. Allow it in the Simulator (macOS permission: Allowed).`
+        : null,
     open_bluetooth_settings: () => null,
     export_mappings: () => true,
     import_mappings: () => true,

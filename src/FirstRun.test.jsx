@@ -99,6 +99,22 @@ test("each row: Open System Settings, then Waiting…, then a live Allowed from 
   vi.useRealTimers();
 });
 
+test("in --simulate Open System Settings shows what it would open (the app answers with a line)", async () => {
+  const said = "Simulated: this would open System Settings › Privacy & Security › Accessibility.";
+  window.__TAURI__ = { core: { invoke: async (cmd) => (cmd === "open_permission_pane" ? said : undefined) } };
+  const onToast = vi.fn();
+  render(<PermissionsScreen initial={{ Accessibility: "Missing" }} button="Done" onDone={() => {}} onToast={onToast} />);
+  await act(async () => fireEvent.click(screen.getByText("Open System Settings")));
+  expect(onToast).toHaveBeenCalledWith(said);
+});
+
+test("granted permissions (--simulate's default on Windows) never ask: Continue finishes", () => {
+  const onFinish = vi.fn();
+  render(<FirstRun state={usb} permissions={{ Accessibility: "Granted", InputMonitoring: "Granted" }} step={1} onFinish={onFinish} />);
+  fireEvent.click(screen.getByText("Continue"));
+  expect(onFinish).toHaveBeenCalledOnce();
+});
+
 test("a row is idle, waiting once asked, and allowed once granted", () => {
   expect(rowState("Missing", false)).toBe("idle");
   expect(rowState("Missing", true)).toBe("waiting");

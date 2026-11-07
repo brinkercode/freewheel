@@ -159,6 +159,26 @@ input[type="range"] { accent-color: var(--accent); border: none; background: tra
   padding: 0 14px;
   border-bottom: 1px solid var(--line);
 }
+/* the window's own title bar (TitleBar.jsx): the OS draws none on Windows and
+   Linux, so the toolbar is the header, in the app's colours: drag it to move
+   the window; minimise / maximise / close sit at its top-right edge. macOS
+   keeps its traffic lights, over the toolbar's left end. */
+.toolbar { user-select: none; -webkit-user-select: none; }
+.toolbar:has(.window-controls) { padding-right: 0; }
+.app.is-mac .toolbar { padding-left: 84px; }
+.title-bar { height: 36px; flex: none; display: flex; justify-content: flex-end; user-select: none; -webkit-user-select: none; }
+.app.is-mac .title-bar { height: 40px; }
+.window-controls { display: flex; align-self: flex-start; flex: none; height: 32px; margin-left: 10px; }
+.window-control { width: 46px; height: 32px; padding: 0; border: none; border-radius: 0; background: transparent; color: var(--ink2); display: flex; align-items: center; justify-content: center; }
+.window-control:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
+.window-control:active:not(:disabled) { background: var(--line); }
+.window-control .icon,
+.window-control svg { width: 16px; height: 16px; display: block; }
+.window-control [data-icon="crop_square"] svg,
+.window-control [data-icon="filter_none"] svg { width: 14px; height: 14px; }
+.window-control.window-close svg { width: 17px; height: 17px; }
+.window-control.window-close:hover:not(:disabled) { background: #c42b1c; color: #fff; }
+.window-control.window-close:active:not(:disabled) { background: #a32417; color: #fff; }
 .tabs { display: flex; gap: 4px; flex: 1; min-width: 0; }
 .tab { height: var(--h-tab); border: none; background: transparent; color: var(--ink2); font-weight: var(--fw-medium); padding: 0 12px; gap: 7px; }
 .tab::before { content: ""; width: 19px; height: 19px; background: currentColor; -webkit-mask: var(--mask) center / contain no-repeat; mask: var(--mask) center / contain no-repeat; }
