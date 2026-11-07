@@ -1,0 +1,55 @@
+# Release-please for freewheel: on each push to main it keeps one release PR
+# open (the next version from the conventional commits, the CHANGELOG and
+# the version in package.json, tauri.conf.json and the Cargo files). Merging
+# that PR tags vX.Y.Z and publishes its GitHub release with the notes; this
+# workflow then starts release.yml on the tag, which builds and uploads the
+# signed installers and latest.json (with the same notes) to that release.
+#
+# Tags, PRs and pushes made with GITHUB_TOKEN start no other workflow, so the
+# release PR's CI and the release build are started here by
+# workflow_dispatch, the one event GITHUB_TOKEN may trigger. Uses no secret.
+name: release-please
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # the release PR's branch, the tag and the release
+      pull-requests: write # the release PR
+      actions: write # workflow_dispatch of ci.yml and release.yml
+    steps:
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      # The required checks run on the release PR's head commit.
+      - name: Run CI on the release PR
+        if: steps.release.outputs.prs_created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ steps.release.outputs.pr }}
+        run: |
+          branch=$(jq -r .headBranchName <<<"$PR")
+          gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"
+
+      - name: Build the release
+        if: steps.release.outputs.release_created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag_name }}
+        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"

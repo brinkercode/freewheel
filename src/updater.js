@@ -49,9 +49,14 @@ export async function download(update, onState, log = console.error) {
   onState({ status: "ready", version: update.version });
 }
 
-/** Installs the downloaded update (Windows runs the passive NSIS installer) and relaunches. */
-export async function restart(update, relaunch, onState) {
+/**
+ * Installs the downloaded update (Windows runs the passive NSIS installer)
+ * and relaunches. `beforeInstall` runs first: on Windows the app exits
+ * inside install(), so anything for after the restart is kept before it.
+ */
+export async function restart(update, relaunch, onState, beforeInstall = () => {}) {
   onState({ status: "restarting", version: update.version });
+  beforeInstall(update);
   await update.install();
   await relaunch();
 }
