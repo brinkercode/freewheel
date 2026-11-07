@@ -15,6 +15,7 @@ pub const UNAVAILABLE: &str = "not available on this system";
 #[cfg_attr(windows, allow(dead_code))]
 pub struct Unavailable(pub &'static str);
 
+#[cfg_attr(windows, allow(dead_code))]
 impl Unavailable {
     fn fail(&self) -> Result<(), ControlError> {
         Err(ControlError(self.0.into()))
