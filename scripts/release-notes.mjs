@@ -2,7 +2,7 @@
 // freewheel's user-facing release notes, one script for the release and for
 // every preview of it, so they can't diverge:
 //
-//   node scripts/release-notes.mjs filter [--in notes.md]
+//   node scripts/release-notes.mjs filter [--in notes.md] [--version X.Y.Z]
 //     release-please's notes (the GitHub release body) -> the notes the app's
 //     What's new shows (release.yml writes them into latest.json):
 //     developer-only bullets dropped (scripts/release-notes.json
@@ -14,10 +14,17 @@
 //     tag (or the root) grouped as release-please groups them
 //     (release-please-config.json changelog-sections), then `filter`.
 //     --raw prints the release-please-style notes before the filter.
+//   node scripts/release-notes.mjs curated --version X.Y.Z [--out file]
+//     the hand-written notes in release-notes/vX.Y.Z.md; exits 1 when there are none.
+//
+// Hand-written notes win: when release-notes/v<version>.md exists, `filter
+// --version` and `preview` give it as is (release.yml then also makes it the
+// GitHub release body), in place of the generated notes.
 //
 // CHANGELOG.md and the GitHub release keep release-please's full notes.
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const read = (rel) => JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8"));
@@ -31,6 +38,19 @@ export const REPO_URL = "https://github.com/brinkercode/freewheel";
 
 /** What a version without any user-visible change says. */
 export const NOTHING_VISIBLE = "This version has no changes you’ll notice. Everything that changed is listed on GitHub.";
+
+/** Where hand-written notes live, one file per version: release-notes/v0.1.0.md. */
+export const CURATED_DIR = "release-notes";
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
+
+/** The hand-written notes for `version` ("0.1.0" or "v0.1.0") in `dir`, or null when there are none. */
+export function curatedNotes(version, dir = ROOT) {
+  if (!version) return null;
+  const file = path.join(dir, CURATED_DIR, `v${String(version).replace(/^v/, "")}.md`);
+  if (!existsSync(file)) return null;
+  const text = readFileSync(file, "utf8").replace(/\r\n?/g, "\n").trim();
+  return text ? `${text}\n` : null;
+}
 
 const HIDDEN_TYPES = () => new Set(SECTIONS.filter((s) => s.hidden).map((s) => s.type));
 /** Sections release-please hides now (older notes, or GitHub's, may still have them). */
@@ -240,7 +260,8 @@ export function preview({ dir = ".", version, date = new Date().toISOString().sl
   const commits = commitsSince(dir, tag);
   const v = version ?? nextVersion(tag, commits);
   const raw = releasePleaseNotes(commits, { version: v, previous: tag, date });
-  return { version: v, tag, commits: commits.length, raw, notes: userNotes(raw) };
+  const curated = curatedNotes(v, dir);
+  return { version: v, tag, commits: commits.length, raw, notes: curated ?? userNotes(raw), curated: Boolean(curated) };
 }
 
 export function parseArgs(argv) {
@@ -259,13 +280,18 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const opts = parseArgs(process.argv.slice(2));
   let text;
   if (opts.command === "filter") {
-    text = userNotes(readFileSync(opts.in ?? 0, "utf8"));
+    const curated = curatedNotes(opts.version);
+    if (curated) console.error(`release-notes: using ${CURATED_DIR}/v${opts.version.replace(/^v/, "")}.md`);
+    text = curated ?? userNotes(readFileSync(opts.in ?? 0, "utf8"));
+  } else if (opts.command === "curated") {
+    text = curatedNotes(opts.version);
+    if (!text) process.exit(1);
   } else if (opts.command === "preview") {
     const p = preview({ dir: opts.dir ?? ".", version: opts.version });
-    console.error(`release-notes: ${p.commits} commits since ${p.tag ?? "the root"}, next version ${p.version}`);
+    console.error(`release-notes: ${p.commits} commits since ${p.tag ?? "the root"}, next version ${p.version}${p.curated ? " (hand-written notes)" : ""}`);
     text = opts.raw ? p.raw : p.notes;
   } else {
-    console.error("usage: release-notes.mjs filter [--in notes.md] | preview [--dir .] [--version X.Y.Z] [--raw] [--out file]");
+    console.error("usage: release-notes.mjs filter [--in notes.md] [--version X.Y.Z] | curated --version X.Y.Z [--out file] | preview [--dir .] [--version X.Y.Z] [--raw] [--out file]");
     process.exit(1);
   }
   if (opts.out) writeFileSync(opts.out, text);

@@ -1,0 +1,56 @@
+# What must never appear in this public repository: file contents, file paths,
+# commit messages, PR titles and bodies. Read by scripts/oss-readiness.mjs.
+#
+# One rule per line, `<category> <rule>`:
+#   <category> re:<regex>     a case-insensitive JavaScript regular expression
+#   <category> sha256:<hex>   a word whose lowercase sha256 is <hex>, for values
+#                             that are themselves private (a word is a run of
+#                             [A-Za-z0-9_-], or a whole e-mail address)
+# `<category>@messages <rule>` applies only to commit messages and PR titles and
+# bodies (release-please writes the release notes from commit subjects).
+# Categories: infra, path, process, design, identity (identity matches are never
+# printed). `identity` hits in commit
+# metadata (author, committer, Signed-off-by) are warnings until the repository
+# variable OSS_STRICT_IDENTITY is 1; everywhere else every hit fails.
+# Add a word: printf %s 'word' | tr A-Z a-z | sha256sum
+
+# Private hosts and networks
+infra re:\bbrinker-?node\d+\b
+infra sha256:ca4c3bbb08f8f56d0f07ad9fa0b7c1a5ee4eee0d772dccb3102642dc5e67d55f
+infra re:\b[a-z0-9-]+\.ts\.net\b
+infra re:\btail(net|scale)\b
+infra re:\b100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}\b
+infra re:\b[a-z0-9.-]+:8765\b
+infra re:\b(192\.168|10\.\d{1,3})\.\d{1,3}\.\d{1,3}\b
+
+# Home directories and machine-local tool paths
+path re:/home/brinker
+path re:/Users/brinker
+path sha256:a823445fe0cdb5199b53e8e0edd2798ac3727cca98d68d564e7cd8785e623eec
+path re:~?/\.her[m]es/
+path re:\bfw-swarm\b|\bfw-purge\b
+
+# Internal process artefacts: card, goal and record ids, trackers, the build pipeline
+process re:\bfreewheel-(m\d+-\d+(-part\d+)?|goal-\d+|\d+(?![.\d])|records|design-system)\b
+process re:^(Card|Tracker):\s
+process re:\bbrinkercode/track[e]r\b
+process re:\bsoftware factory\b|\bfactory (agents?|host|PR)\b|\bthe factory\b
+process re:\borchestrator\b
+process re:\binception\b
+process re:\bswarm/
+process sha256:a92cfe9a634854dd458de368ce998489f986e97cb4c88ba1181dd2d796b0fa62
+process re:\bApproved by \S+ on \d{4}-
+process re:\bagent minutes\b
+process@messages re:^\w+\(freewheel-(?!core\b)[\w-]+\)!?:
+process@messages re:\bowner('s)?\b
+
+# The owner's private design handoff
+design re:\bdesign/handoff\b
+design re:\bfreewheel\.dc\.html\b
+design re:\bscreens-and-components\.md\b
+design@messages re:\bhandoff\b
+design@messages re:\bprototype('s)?\b
+
+# Personal e-mail (only <user>@users.noreply.github.com is public)
+identity sha256:c64e0c8fc653933cc2937256dfacea94e618014d7d02a7be228ba228e9298923
+identity re:\b[a-z0-9._%+-]+@(gmail|googlemail|outlook|hotmail|live|yahoo|icloud|proton|protonmail)\.(com|me|net)\b

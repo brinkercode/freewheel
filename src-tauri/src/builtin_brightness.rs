@@ -1,6 +1,6 @@
 //! The macOS built-in panel [`BrightnessControl`], through private symbols
 //! loaded at runtime with `dlopen`/`dlsym` (best effort, as the
-//! freewheel-m4-5 spike recorded):
+//! hardware spike recorded):
 //! - arm64: `DisplayServicesGetBrightness` / `DisplayServicesSetBrightness`
 //!   from the private DisplayServices framework.
 //! - x86_64: `CoreDisplay_Display_GetUserBrightness` /
@@ -12,8 +12,8 @@
 //! [`UNAVAILABLE`], which the settings window shows; the reason is logged.
 //! The symbols are resolved once and cached.
 //!
-//! [manual] macOS 15 on arm64 and on x86_64 (release checklist
-//! freewheel-m7-3): with the dial on the brightness override, turning the jog
+//! [manual] macOS 15 on arm64 and on x86_64 (the release
+//! checklist in README.md): with the dial on the brightness override, turning the jog
 //! wheel steps the built-in panel, or settings shows 'built-in display
 //! brightness unavailable' and the log says why.
 

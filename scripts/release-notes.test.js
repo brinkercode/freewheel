@@ -2,12 +2,14 @@
 // release-please writes, what What's new shows, and the preview of the next
 // release from the repo's history that the Simulator and the update e2e use.
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
 import {
   CONFIG,
+  CURATED_DIR,
+  curatedNotes,
   NOTHING_VISIBLE,
   RELEASE_PLEASE,
   nextVersion,
@@ -52,7 +54,7 @@ test("release-please's notes become What's new's: developer bullets, hashes and 
 });
 
 test("internal ticket scopes lose their label, the bullet stays", () => {
-  expect(userBullet("**freewheel-m5-4:** Start at login ([#99](u))")).toBe("Start at login ([#99](u))");
+  expect(userBullet("**freewheel-ab1:** Start at login ([#99](u))")).toBe("Start at login ([#99](u))");
   expect(userBullet("**keys:** a held Shift is released")).toBe("**keys:** a held Shift is released");
   expect(userBullet("**scripts:** resolve the CodeQL alerts")).toBeNull();
 });
@@ -186,11 +188,12 @@ test("the preview reads the commits after the last tag (all of them before the f
   expect(p.notes).toBe(userNotes(p.raw));
 });
 
-test("release.yml gives latest.json the filtered notes and keeps the release's own", () => {
+test("release.yml gives latest.json the filtered notes and keeps the release's own (unless hand-written notes replace both)", () => {
   const release = read("../.github/workflows/release.yml");
-  expect(release).toContain('node scripts/release-notes.mjs filter --in "$RUNNER_TEMP/release-notes.md" --out "$RUNNER_TEMP/user-notes.md"');
+  expect(release).toContain('node scripts/release-notes.mjs filter --version "${GITHUB_REF_NAME#v}" --in "$RUNNER_TEMP/release-notes.md" --out "$RUNNER_TEMP/user-notes.md"');
   expect(release).toContain('cat "$RUNNER_TEMP/user-notes.md"');
-  expect(release).not.toMatch(/gh release edit/);
+  // The release body is only ever replaced by hand-written notes.
+  expect(release.match(/gh release edit[^\n]*/g)).toEqual(['gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/curated.md"']);
 });
 
 test("test builds embed the next release's notes and the e2e proves them in What's new", () => {
@@ -210,4 +213,29 @@ test("test builds embed the next release's notes and the e2e proves them in What
   const sim = read("./e2e-windows.mjs");
   for (const label of ["Next release (real notes)", "Sample notes", "Paste notes…"]) expect(sim).toContain(label);
   expect(read("../src-tauri/build.rs")).toContain('const NEXT_NOTES_ENV: &str = "FREEWHEEL_NEXT_NOTES_FILE";');
+});
+
+test("hand-written notes in release-notes/v<version>.md win over the generated ones", () => {
+  const dir = mkdtempSync(join(tmpdir(), "fw-notes-"));
+  mkdirSync(join(dir, CURATED_DIR));
+  writeFileSync(join(dir, CURATED_DIR, "v1.2.3.md"), "## Hello\r\n\r\n* a thing\r\n\r\n");
+  expect(curatedNotes("1.2.3", dir)).toBe("## Hello\n\n* a thing\n");
+  expect(curatedNotes("v1.2.3", dir)).toBe("## Hello\n\n* a thing\n");
+  expect(curatedNotes("1.2.4", dir)).toBeNull();
+  expect(curatedNotes(undefined, dir)).toBeNull();
+});
+
+test("release-notes/v0.1.0.md is the first release's plain, user-facing notes", () => {
+  const notes = curatedNotes("0.1.0");
+  expect(notes).toMatch(/^## First release\n/);
+  for (const part of ["### Download", "### Updates", "portable", "--simulate"]) expect(notes).toContain(part);
+  expect(notes).not.toMatch(/freewheel-[a-z]*\d|\bscope\b|\bcard\b|commit|\bCI\b|e2e|handoff|prototype|owner/i);
+  expect(userNotes(notes)).toBe(notes);
+});
+
+test("release.yml makes the hand-written notes the release body and What's new", () => {
+  const release = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
+  expect(release).toContain('node scripts/release-notes.mjs curated --version "${GITHUB_REF_NAME#v}" --out "$RUNNER_TEMP/curated.md"');
+  expect(release).toContain('gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/curated.md"');
+  expect(release).toContain('node scripts/release-notes.mjs filter --version "${GITHUB_REF_NAME#v}" --in');
 });

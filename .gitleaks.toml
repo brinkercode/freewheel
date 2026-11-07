@@ -1,0 +1,21 @@
+# gitleaks: the default rules plus freewheel's own, run over the full history
+# by the oss-readiness job (gitleaks git --log-opts=--all).
+title = "freewheel"
+
+[extend]
+useDefault = true
+
+# A Tauri/minisign updater secret key (tauri signer generate). CI makes its
+# test key at run time; the release key lives only in the repository secrets.
+[[rules]]
+id = "minisign-secret-key"
+description = "minisign / Tauri updater secret key"
+regex = '''untrusted comment: (?:rsign|minisign) encrypted secret key'''
+keywords = ["encrypted secret key"]
+
+# A GitHub token in any form.
+[[rules]]
+id = "github-token-any"
+description = "GitHub token"
+regex = '''\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}\b|\bgithub_pat_[A-Za-z0-9_]{60,}\b'''
+keywords = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_"]

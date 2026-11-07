@@ -1,5 +1,5 @@
 /* freewheel --simulate: the Simulator window, the prototype's dark
-   "Prototype controls" column (freewheel.dc.html). Always dark, whatever the
+   "Prototype controls" column. Always dark, whatever the
    app's appearance; every rule is scoped to .fw-sim so the settings window
    (same bundle) is untouched. Raw values are the prototype's. */
 

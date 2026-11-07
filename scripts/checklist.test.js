@@ -62,11 +62,11 @@ test("Windows covers SmartScreen on install and on update", () => {
 test("the open spike items are listed, each tied to its real-device check", () => {
   const open = section("Open items the hardware spike left unconfirmed");
   expect(open).toMatch(/C9a.*Bluetooth on Windows 11/);
-  expect(open).toMatch(/freewheel-m5-2.*Resolve re-acquire.*Windows/);
-  expect(open).toMatch(/freewheel-m5-5.*macOS Input Monitoring/);
+  expect(open).toMatch(/R1.*Resolve re-acquire.*Windows/);
+  expect(open).toMatch(/P1.*macOS Input Monitoring/);
   expect(open).toMatch(/SmartScreen/);
   expect(windows()).toMatch(/\[C9a\]/);
   expect(mac()).toMatch(/\[C9a\]/);
-  expect(windows()).toMatch(/\[freewheel-m5-2\]/);
-  expect(mac()).toMatch(/\[freewheel-m5-5\]/);
+  expect(windows()).toMatch(/\[R1\]/);
+  expect(mac()).toMatch(/\[P1\]/);
 });
