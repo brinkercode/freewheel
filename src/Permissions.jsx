@@ -1,4 +1,8 @@
 import { useEffect, useState } from "react";
+import Icon from "./Icon.jsx";
+
+// The prototype's row icons.
+const ROW_ICON = { Accessibility: "keyboard", InputMonitoring: "usb" };
 
 // macOS only: get_permissions is empty elsewhere (src-tauri permissions.rs).
 const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
@@ -51,16 +55,30 @@ export default function Permissions({ initial = null, poll = 2000 }) {
   const names = Object.keys(permissions ?? {});
   if (names.length === 0) return null;
   return (
-    <section id="permissions">
-      <h2>Permissions</h2>
-      {Object.values(permissions).includes("Missing") && <p>Needs permission</p>}
+    <section id="permissions" className="permissions-section">
+      <h2 className="section-title">Permissions</h2>
+      {Object.values(permissions).includes("Missing") && (
+        <p className="permissions-status">
+          <span className="status-dot dot-orange" aria-hidden="true" />
+          Needs permission
+        </p>
+      )}
       {names.map((name) => (
-        <div key={name}>
-          <span>{LABELS[name] ?? name}</span>{" "}
+        <div key={name} className={`card card-row permission-card${permissions[name] === "Granted" ? " granted" : ""}`}>
+          <Icon name={ROW_ICON[name] ?? "lock"} className="icon permission-icon" />
+          <div className="grow">
+            <div className="card-title">{TITLES[name] ?? LABELS[name] ?? name}</div>
+            <div className="card-sub">
+              {ABOUT[name]}
+              <span>{LABELS[name] ?? name}</span>.
+            </div>
+          </div>
           {permissions[name] === "Granted" ? (
-            <span>✓ Allowed</span>
+            <span className="allowed">
+              <Icon name="check_circle" /> <span>Allowed</span>
+            </span>
           ) : (
-            <button onClick={() => invoke("open_permission_pane", { permission: name })}>
+            <button className="btn-primary" onClick={() => invoke("open_permission_pane", { permission: name })}>
               Open System Settings
             </button>
           )}
@@ -92,6 +110,7 @@ export function PermissionsScreen({ initial = null, initialAsked = [], poll = 20
         const state = rowState(permissions[name], asked.includes(name));
         return (
           <div key={name} className={`permission-row ${state}`}>
+            <Icon name={ROW_ICON[name] ?? "lock"} className="icon permission-icon" />
             <div className="grow">
               <strong>{TITLES[name] ?? LABELS[name] ?? name}</strong>
               <div className="card-sub">
@@ -101,7 +120,7 @@ export function PermissionsScreen({ initial = null, initialAsked = [], poll = 20
             </div>
             {state === "granted" && (
               <span className="allowed">
-                <span aria-hidden="true">✓</span> <span>Allowed</span>
+                <Icon name="check_circle" /> <span>Allowed</span>
               </span>
             )}
             {state === "waiting" && (
@@ -111,6 +130,7 @@ export function PermissionsScreen({ initial = null, initialAsked = [], poll = 20
             )}
             {state === "idle" && (
               <button
+                className="btn-primary"
                 onClick={() => {
                   setAsked((a) => [...a, name]);
                   openPane(name);

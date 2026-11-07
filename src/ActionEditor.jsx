@@ -1,14 +1,7 @@
 import { useEffect, useState } from "react";
-import { COMBO_KINDS, LABELS, comboError, comboFromEvent, formatCombo, setBinding } from "./keys.js";
+import Icon, { iconSvg } from "./Icon.jsx";
+import { COMBO_KINDS, LABELS, comboError, comboFromEvent, describeAction, formatCombo, setBinding } from "./keys.js";
 import { getConfig, saveConfig, saveErrorText } from "./settingsApi.js";
-import appsSvg from "./assets/icons/apps.svg?raw";
-import checkSvg from "./assets/icons/check_circle.svg?raw";
-import keyboardSvg from "./assets/icons/keyboard.svg?raw";
-import panToolSvg from "./assets/icons/pan_tool.svg?raw";
-import tabSvg from "./assets/icons/tab.svg?raw";
-import toggleOnSvg from "./assets/icons/toggle_on.svg?raw";
-import volumeUpSvg from "./assets/icons/volume_up.svg?raw";
-import wheelSvg from "./assets/icons/wheel.svg?raw";
 
 // The action editors for app launch, page push (a Layer in bindings.ts),
 // wheel mode and wheel override. Layers are "pages" in every visible string.
@@ -152,15 +145,27 @@ export const KIND_TEXT = {
 export const KIND_ROWS = [...COMBO_KINDS, "LaunchApp", "OverrideToggle", "LayerPush", "SetJogMode"];
 
 /** Each choice's icon (bundled SVG, never fetched), as the CH table names it. */
-export const KIND_ICON = {
-  Hotkey: ["keyboard", keyboardSvg],
-  Held: ["pan_tool", panToolSvg],
-  Latched: ["toggle_on", toggleOnSvg],
-  LaunchApp: ["apps", appsSvg],
-  OverrideToggle: ["volume_up", volumeUpSvg],
-  LayerPush: ["tab", tabSvg],
-  SetJogMode: ["wheel", wheelSvg],
-};
+export const KIND_ICON = Object.fromEntries(
+  Object.entries({
+    Hotkey: "keyboard",
+    Held: "pan_tool",
+    Latched: "toggle_on",
+    LaunchApp: "apps",
+    OverrideToggle: "volume_up",
+    LayerPush: "tab",
+    SetJogMode: "wheel",
+  }).map(([kind, name]) => [kind, [name, iconSvg(name)]]),
+);
+
+// The prototype's "Or pick a common one" shortcuts; Cmd stands in for Ctrl on a Mac.
+const MOD = /Mac/.test(globalThis.navigator?.userAgent ?? "") ? "Meta" : "Ctrl";
+export const PRESETS = [
+  ["Copy", { modifiers: [MOD], key: "C" }],
+  ["Paste", { modifiers: [MOD], key: "V" }],
+  ["Undo", { modifiers: [MOD], key: "Z" }],
+  ["Redo", MOD === "Meta" ? { modifiers: [MOD, "Shift"], key: "Z" } : { modifiers: [MOD], key: "Y" }],
+  ["Save", { modifiers: [MOD], key: "S" }],
+];
 
 /** The detail view's [title, subtitle] for `kind` (the prototype's MT/MS); `key` is the printed name. */
 export function modeText(kind, key) {
@@ -174,10 +179,6 @@ export function modeText(kind, key) {
     SetJogMode: KIND_TEXT.SetJogMode[1],
   };
   return [KIND_TEXT[kind][0], MS[kind]];
-}
-
-function Icon({ name, svg, className }) {
-  return <span className={className} data-icon={name} aria-hidden="true" dangerouslySetInnerHTML={{ __html: svg }} />;
 }
 
 const comboOf = (action) => (action && Object.values(action)[0]?.combo) || null;
@@ -199,27 +200,82 @@ export async function saveKey({ config, pageId, key, kind, combo, save = saveCon
   }
 }
 
-/** The record box: click it, then press the shortcut. */
-function RecordBox({ combo, error, onRecord }) {
+/** The combo as keycaps with "+" between, like the prototype's record box. */
+function Keycaps({ combo }) {
+  const caps = [...combo.modifiers, combo.key].filter(Boolean);
+  return (
+    <span className="keycaps">
+      {caps.map((k, i) => (
+        <span key={k} className="keycaps-item">
+          {i > 0 && <span className="keycaps-plus">+</span>}
+          <kbd className="keycap-lg">{k}</kbd>
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/**
+ * The record box: click it (its input takes the focus), then press the
+ * shortcut. Shows Record, Listening… or the recorded keycaps.
+ */
+function RecordBox({ kind, combo, error, onRecord }) {
+  const [listening, setListening] = useState(false);
+  const shortcut = kind === "Hotkey";
   const record = (e) => {
     if (e.key === "Tab") return;
     e.preventDefault();
-    onRecord(comboFromEvent(e));
+    const next = comboFromEvent(e);
+    onRecord(next);
+    if (next.key) setListening(false);
   };
+  const recorded = combo && (combo.key || combo.modifiers.length > 0);
   return (
-    <label className="record-box">
-      <span className="field-label">Shortcut</span>
-      <input
-        className="combo-capture"
-        readOnly
-        placeholder="Click here, then press the shortcut"
-        value={combo ? formatCombo(combo) : ""}
-        onKeyDown={record}
-        aria-invalid={Boolean(error)}
-      />
-    </label>
+    <>
+      <label className={`record-box${listening ? " is-listening" : ""}`}>
+        <input
+          className="combo-capture"
+          readOnly
+          aria-label="Shortcut"
+          placeholder="Click here, then press the shortcut"
+          value={combo ? formatCombo(combo) : ""}
+          onKeyDown={record}
+          onFocus={() => setListening(true)}
+          onBlur={() => setListening(false)}
+          aria-invalid={Boolean(error)}
+        />
+        <span className="record-face" aria-hidden="true">
+          {listening ? (
+            <span className="record-listen">
+              <span className="rec-dot" />
+              {shortcut ? "Listening… press your shortcut" : "Listening… press a key"}
+            </span>
+          ) : recorded ? (
+            <>
+              <Keycaps combo={combo} />
+              <span className="record-hint">Click to record again</span>
+            </>
+          ) : (
+            <>
+              <span className="record-idle">
+                <span className="rec-dot" />
+                Record
+              </span>
+              <span className="record-hint">{shortcut ? "Then press the keys together on your keyboard" : "Then press one key, like Shift"}</span>
+            </>
+          )}
+        </span>
+      </label>
+      {listening && (
+        <button className="btn-ghost record-cancel" onMouseDown={(e) => e.preventDefault()} onClick={() => document.activeElement?.blur()}>
+          Cancel
+        </button>
+      )}
+    </>
   );
 }
+
+const sameCombo = (a, b) => Boolean(a && b) && formatCombo(a) === formatCombo(b);
 
 /**
  * The key panel: one choices list (KIND_ROWS); picking a kind opens its detail
@@ -228,7 +284,7 @@ function RecordBox({ combo, error, onRecord }) {
  * and resolves to { error }; `onSaveAction(action)` saves any other kind and
  * resolves to { errors }. A set key opens on its own choice.
  */
-export function KeyPanel({ keyName, heading, action, config, layerId, onSave, onSaveAction, onClose, initialMode, initialError = null }) {
+export function KeyPanel({ keyName, action, config, layerId, onSave, onSaveAction, onClose, initialMode, initialError = null }) {
   const boundKind = KIND_ROWS.find((k) => action && k in action) ?? null;
   const [mode, setMode] = useState(initialMode === undefined ? boundKind : initialMode);
   const [combo, setCombo] = useState(comboOf(action));
@@ -241,32 +297,41 @@ export function KeyPanel({ keyName, heading, action, config, layerId, onSave, on
     setErrors({});
     if (!COMBO_KINDS.includes(k)) setDraft(boundKind === k ? action : blank(k, config, layerId));
   };
-  const [modeTitle, modeSub] = mode ? modeText(mode, LABELS[keyName] ?? keyName) : [];
+  const [justSaved, setJustSaved] = useState(false);
+  const printed = LABELS[keyName] ?? keyName;
+  const [modeTitle, modeSub] = mode ? modeText(mode, printed) : [];
+  const done = (r) => (r?.config && setJustSaved(true), r);
   const save = () =>
     COMBO_KINDS.includes(mode)
-      ? onSave?.(mode, combo).then((r) => setError(r?.error ?? null))
-      : onSaveAction?.(draft).then((r) => setErrors(r?.errors ?? {}));
+      ? onSave?.(mode, combo).then(done).then((r) => setError(r?.error ?? null))
+      : onSaveAction?.(draft).then(done).then((r) => setErrors(r?.errors ?? {}));
+  const record = (c) => (setCombo(c), setError(null), setJustSaved(false));
   return (
-    <section id="action-editor" className="key-panel key-editor" aria-label={`${LABELS[keyName] ?? keyName} action`}>
-      <div className="panel-head">
-        <h2 className="panel-title">{heading ?? `When I press ${keyName}…`}</h2>
+    <section id="action-editor" className="key-panel key-editor" aria-label={`${printed} action`}>
+      <header className="panel-head">
+        <kbd className="keycap">{printed}</kbd>
+        <div className="grow">
+          <h2 className="panel-title">{`When I press ${keyName}…`}</h2>
+          <div className="panel-now">{action ? `Right now: ${describeAction(action, config ?? { layers: [] })}` : "Not set yet"}</div>
+        </div>
         {onClose && (
-          <button className="btn-ghost" onClick={onClose}>
-            Close
+          <button className="icon-btn" title="Close" aria-label="Close" onClick={onClose}>
+            <Icon name="close" />
           </button>
         )}
-      </div>
+      </header>
+      <div className="panel-body">
       {mode === null ? (
         <div className="choices" role="radiogroup" aria-label="Choices">
           {KIND_ROWS.map((k) => (
             <label key={k} className={`choice${boundKind === k ? " is-current" : ""}`}>
               <input type="radio" name="kind" className="choice-input" checked={boundKind === k} onChange={() => pick(k)} />
-              <Icon className="choice-icon" name={KIND_ICON[k][0]} svg={KIND_ICON[k][1]} />
+              <Icon className="choice-icon" name={KIND_ICON[k][0]} />
               <span className="choice-text">
                 <strong>{KIND_TEXT[k][0]}</strong>
                 <span className="choice-sub">{KIND_TEXT[k][1]}</span>
               </span>
-              {boundKind === k && <Icon className="choice-check" name="check_circle" svg={checkSvg} />}
+              {boundKind === k && <Icon className="choice-check" name="check_circle" />}
             </label>
           ))}
         </div>
@@ -278,9 +343,31 @@ export function KeyPanel({ keyName, heading, action, config, layerId, onSave, on
           <h3 className="mode-title">{modeTitle}</h3>
           {modeSub && <p className="mode-sub">{modeSub}</p>}
           {COMBO_KINDS.includes(mode) ? (
-            <RecordBox combo={combo} error={error} onRecord={(c) => (setCombo(c), setError(null))} />
+            <RecordBox key={mode} kind={mode} combo={combo} error={error} onRecord={record} />
           ) : (
             draft && <ActionForm action={draft} config={config} layerId={layerId} errors={errors} onChange={setDraft} />
+          )}
+          {mode === "Hotkey" && (
+            <>
+              <div className="field-label">Or pick a common one</div>
+              <div className="presets">
+                {PRESETS.map(([name, c]) => (
+                  <button key={name} className={`preset${sameCombo(c, combo) ? " is-current" : ""}`} onClick={() => record(c)}>
+                    <strong>{name}</strong>
+                    <span className="preset-combo">{formatCombo(c)}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+          {mode === "Latched" && (
+            <div className="lit-card">
+              <span className="mini-key" aria-hidden="true">
+                <span className="mini-key-led" />
+                <span className="mini-key-name">{printed}</span>
+              </span>
+              <p>While it’s on, the light on this key stays lit — so you can always see it’s held down.</p>
+            </div>
           )}
           {error && <p role="alert">{error}</p>}
           {errors.save && <p role="alert">{errors.save}</p>}
@@ -289,7 +376,34 @@ export function KeyPanel({ keyName, heading, action, config, layerId, onSave, on
           </button>
         </div>
       )}
+      </div>
+      {action && (
+        <div className={`panel-try${justSaved ? " is-saved" : ""}`}>
+          <Icon name={justSaved ? "check_circle" : "touch_app"} />
+          {justSaved ? `Saved. Press ${printed} on your Speed Editor to try it.` : `Try it: press ${printed} on your Speed Editor.`}
+        </div>
+      )}
     </section>
+  );
+}
+
+/** "Pick a key", with the prototype's wheel tip while nothing is set up yet. */
+export function PickAKey({ config }) {
+  const empty = config?.layers.length === 1 && Object.keys(config.layers[0].bindings).length === 0;
+  return (
+    <div className="panel-empty">
+      <span className="empty-icon">
+        <Icon name="touch_app" />
+      </span>
+      <div className="empty-title">Pick a key</div>
+      <p>Click any key in the drawing — or simply press it on your Speed Editor. Then choose what it does.</p>
+      {empty && (
+        <div className="tip">
+          <Icon name="trip_origin" />
+          <span>Your wheel already scrolls, like a mouse wheel. Give it a spin!</span>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -306,7 +420,7 @@ export default function ActionEditor({ keyName, page = null, initialConfig = nul
     if (initialConfig) setConfig(initialConfig);
     else Promise.resolve().then(load).then(setConfig, (e) => console.error("freewheel: loading the config failed:", String(e)));
   }, [initialConfig, load]);
-  if (!keyName) return <p className="panel-empty">Pick a key</p>;
+  if (!keyName) return <PickAKey config={config} />;
   if (!config) return null;
   const saved = (r) => {
     if (!r.config) return r;

@@ -21,15 +21,40 @@ export default function Simulator({ initial = null }) {
 
   if (!status) return <h1>freewheel Simulator</h1>;
   const connected = status.connection === "Connected";
+  // The prototype's controls column: always dark, titled groups of small buttons.
   return (
-    <main className="simulator">
-      <h1>freewheel Simulator</h1>
-      <p>
+    <main className="simulator" data-theme="dark">
+      <div>
+        <h1>freewheel Simulator</h1>
+        <p className="sim-sub">Pretend to be the computer and the Speed Editor.</p>
+      </div>
+      <p className="sim-status">
         {connected ? `Connected over ${status.bus}` : status.connection === "Off" ? "Off" : "Device not found"}
         {status.battery != null && ` · battery ${status.battery}%${status.charging ? " charging" : ""}`}
         {status.low_battery && " · low battery"}
         {` · page ${status.page} · LEDs ${status.lit_leds.join(", ") || "none"}`}
       </p>
+      <h2 className="sim-title">Press a key on the Speed Editor</h2>
+      <section className="sim-row">
+        {status.keys.map((key) => (
+          <button
+            key={key}
+            className="sim-key"
+            aria-pressed={status.held_keys.includes(key)}
+            onMouseDown={() => send({ type: "Key", key, down: true })}
+            onMouseUp={() => send({ type: "Key", key, down: false })}
+          >
+            {key}
+          </button>
+        ))}
+      </section>
+      <ul className="sim-log">
+        {log.length === 0 && <li className="sim-log-empty">What the Speed Editor did shows up here.</li>}
+        {log.map((line, i) => (
+          <li key={i}>{line}</li>
+        ))}
+      </ul>
+      <h2 className="sim-title">Speed Editor</h2>
       <section className="sim-row">
         <button onClick={() => send({ type: "Connect", bus: "Usb" })}>Connect USB</button>
         <button onClick={() => send({ type: "Connect", bus: "Bluetooth" })}>Connect Bluetooth</button>
@@ -39,6 +64,7 @@ export default function Simulator({ initial = null }) {
         </button>
         <button onClick={() => send({ type: "LoadSampleMappings" })}>Load sample mappings</button>
       </section>
+      <h2 className="sim-title">Computer</h2>
       <section className="sim-row">
         <button onClick={() => send({ type: "Resolve", open: !status.resolve_open })}>
           {status.resolve_open ? "Close Resolve" : "Open Resolve"}
@@ -53,6 +79,7 @@ export default function Simulator({ initial = null }) {
         {status.first_run && " · first run"}
       </section>
       <UpdateBanner update={status.update} />
+      <h2 className="sim-title">Battery</h2>
       <section className="sim-row">
         <label>
           Battery {battery}%
@@ -61,6 +88,7 @@ export default function Simulator({ initial = null }) {
         <button onClick={() => send({ type: "Battery", level: battery, charging: false })}>Send battery</button>
         <button onClick={() => send({ type: "Battery", level: battery, charging: true })}>Send charging</button>
       </section>
+      <h2 className="sim-title">Wheel</h2>
       <section className="sim-row">
         {["Scroll", "Jog", "Shuttle"].map((mode) => (
           <button key={mode} disabled={status.jog_mode === mode} onClick={() => send({ type: "WheelMode", mode })}>
@@ -70,19 +98,7 @@ export default function Simulator({ initial = null }) {
         <button onClick={() => send({ type: "Wheel", value: -1 })}>Wheel left</button>
         <button onClick={() => send({ type: "Wheel", value: 1 })}>Wheel right</button>
       </section>
-      <section className="sim-row">
-        {status.keys.map((key) => (
-          <button
-            key={key}
-            aria-pressed={status.held_keys.includes(key)}
-            onMouseDown={() => send({ type: "Key", key, down: true })}
-            onMouseUp={() => send({ type: "Key", key, down: false })}
-          >
-            {key}
-          </button>
-        ))}
-      </section>
-      <label>
+      <label className="check-row">
         <input
           type="checkbox"
           checked={status.send_for_real}
@@ -90,11 +106,6 @@ export default function Simulator({ initial = null }) {
         />
         Send for real
       </label>
-      <ul>
-        {log.map((line, i) => (
-          <li key={i}>{line}</li>
-        ))}
-      </ul>
     </main>
   );
 }

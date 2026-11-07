@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Icon from "./Icon.jsx";
 import { PermissionsScreen } from "./Permissions.jsx";
 import { openBluetoothSettings } from "./settingsApi.js";
 import { connectionText } from "./shell.js";
@@ -31,6 +32,7 @@ export default function FirstRun({ state, permissions, step: first = 0, initialP
       <Dots step={step} steps={asksPermissions ? 3 : 2} />
       {step === 0 && (
         <section className="first-run-step">
+          <span className="logo-disc logo-welcome" aria-hidden="true" />
           <h1>Welcome to freewheel</h1>
           <p>
             Use your Speed Editor for everyday things — copy and paste, volume, opening your favorite apps — whenever
@@ -46,18 +48,29 @@ export default function FirstRun({ state, permissions, step: first = 0, initialP
           <p>Connect it with its USB cable. Or switch it on and pair it in your computer’s Bluetooth settings.</p>
           {state.connected ? (
             <div className="found" role="status">
-              <span aria-hidden="true">✓</span> <strong>Found it!</strong> <span>{connectionText(state.bus)}</span>
+              <Icon name="check" className="icon found-icon" />
+              <div>
+                <strong>Found it!</strong>
+                <div className="card-sub">{connectionText(state.bus)}</div>
+              </div>
             </div>
           ) : (
             <div className="looking" role="status">
-              <span className="spinner" aria-hidden="true" /> <strong>Looking for your Speed Editor…</strong>{" "}
-              <span>This usually takes a few seconds.</span>
+              <span className="spinner spinner-lg" aria-hidden="true" />
+              <div>
+                <strong>Looking for your Speed Editor…</strong>
+                <div className="card-sub">This usually takes a few seconds.</div>
+              </div>
             </div>
           )}
-          <button className="btn" onClick={onBluetooth}>Open Bluetooth settings</button>{" "}
-          <button className="btn-primary" disabled={!state.connected} onClick={next}>
-            Continue
-          </button>
+          <div className="button-row first-run-buttons">
+            <button className="btn-lg" onClick={onBluetooth}>
+              Open Bluetooth settings
+            </button>
+            <button className="btn-primary btn-lg" disabled={!state.connected} onClick={next}>
+              Continue
+            </button>
+          </div>
         </section>
       )}
       {step === 2 && <PermissionsScreen initial={initialPermissions} button="Start using freewheel" onDone={onFinish} />}

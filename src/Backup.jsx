@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Icon from "./Icon.jsx";
 import { exportMappings, importErrorText, importMappings } from "./settingsApi.js";
 
 /** Back up: resolves to the toast text, or null when the user cancelled. */
@@ -15,13 +16,14 @@ export async function restore(allowApps, importFn = importMappings) {
 }
 
 /** The Help & backup tab's Back up… and Restore from a backup… buttons. */
-export default function Backup({ onToast = () => {}, initialAllowApps = false }) {
+export default function Backup({ initialAllowApps = false, initialMessage = null }) {
   const [allowApps, setAllowApps] = useState(initialAllowApps);
   const [error, setError] = useState(null);
+  const [message, setMessage] = useState(initialMessage);
   const run = (action) => {
     setError(null);
     action().then(
-      (text) => text && onToast(text),
+      (text) => text && setMessage(text),
       (e) => setError(importErrorText(e)),
     );
   };
@@ -43,6 +45,12 @@ export default function Backup({ onToast = () => {}, initialAllowApps = false })
               Restore from a backup…
             </button>
           </div>
+          {message && (
+            <div className="success-line" role="status">
+              <Icon name="check_circle" className="icon success-icon" />
+              {message}
+            </div>
+          )}
           <label className="check-row">
             <input type="checkbox" checked={allowApps} onChange={(e) => setAllowApps(e.target.checked)} /> Let restored keys
             open apps

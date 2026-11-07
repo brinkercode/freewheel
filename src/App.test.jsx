@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { renderToString } from "react-dom/server";
 import { expect, test } from "vitest";
 import viteConfig from "../vite.config.js";
@@ -76,4 +76,15 @@ test("Simulator window renders the status and every control", () => {
 test("vite outDir is the frontendDist of the Tauri config", () => {
   const tauri = JSON.parse(readFileSync(new URL("../src-tauri/tauri.conf.json", import.meta.url)));
   expect(tauri.build.frontendDist).toBe(`../${viteConfig.build.outDir}`);
+});
+
+test("bundle icons are the tauri icon set macOS and Windows can bundle", () => {
+  const tauri = JSON.parse(readFileSync(new URL("../src-tauri/tauri.conf.json", import.meta.url)));
+  const icons = tauri.bundle.icon;
+  for (const name of ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"]) {
+    expect(icons).toContain(name);
+  }
+  for (const icon of icons) {
+    expect(existsSync(new URL(`../src-tauri/${icon}`, import.meta.url))).toBe(true);
+  }
 });
