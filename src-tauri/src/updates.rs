@@ -51,9 +51,8 @@ pub fn requested(args: impl IntoIterator<Item = String>) -> bool {
 /// Runs the headless update and returns the exit code. `configured` is
 /// whether this build has an updater pubkey.
 pub fn run(mut context: tauri::Context<tauri::Wry>, configured: bool) -> i32 {
-    if !configured {
-        tracing::error!("update run: this build has no updater pubkey");
-        return Outcome::NotConfigured.code();
+    if let Some(outcome) = precheck(configured) {
+        return outcome.code();
     }
     // No settings window: the run must not start the UI's own update check.
     context.config_mut().app.windows.clear();
@@ -70,6 +69,16 @@ pub fn run(mut context: tauri::Context<tauri::Wry>, configured: bool) -> i32 {
     let outcome = tauri::async_runtime::block_on(check_and_install(app.handle()));
     tracing::info!(?outcome, "update run finished");
     outcome.code()
+}
+
+/// The outcome decided before any network call: a build without an updater
+/// pubkey never updates.
+fn precheck(configured: bool) -> Option<Outcome> {
+    if configured {
+        return None;
+    }
+    tracing::error!("update run: this build has no updater pubkey");
+    Some(Outcome::NotConfigured)
 }
 
 async fn check_and_install(app: &tauri::AppHandle<tauri::Wry>) -> Outcome {
@@ -173,8 +182,10 @@ mod tests {
 
     #[test]
     fn a_build_without_a_pubkey_does_not_update() {
-        let context = tauri::generate_context!();
-        assert_eq!(run(context, false), Outcome::NotConfigured.code());
+        // (tauri::generate_context! may be expanded once per binary, so the
+        // check before the app is built is tested on its own.)
+        assert_eq!(precheck(false), Some(Outcome::NotConfigured));
+        assert_eq!(precheck(true), None);
     }
 
     #[test]
