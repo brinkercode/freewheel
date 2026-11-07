@@ -15,8 +15,8 @@
 //
 //   node scripts/e2e-update-windows.mjs --app <installed freewheel.exe> --bundle <B setup.exe> --sig <B setup.exe.sig>
 //        --from 0.1.0 --to 0.2.0 --server-port 8719 [--port 9223] [--driver http://127.0.0.1:4444] [--out e2e-update-shots]
-import { spawn } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEVTOOLS_PORT_ENV, Driver, FIND_JS, shotName } from "./e2e-windows.mjs";
@@ -56,6 +56,26 @@ export function parseArgs(argv) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Where e2e builds also read the DevTools port (src-tauri simulate.rs,
+ * `e2e` feature): the installer starts the updated app through the user's
+ * shell, without this script's environment.
+ */
+export const portFile = (localAppData = process.env.LOCALAPPDATA ?? "") => join(localAppData, "freewheel-e2e", "devtools-port");
+
+/** The freewheel and installer processes running now (Windows), for the log. */
+function processes() {
+  try {
+    return execFileSync("tasklist", ["/FO", "CSV", "/NH"], { encoding: "utf8" })
+      .split(/\r?\n/)
+      .filter((l) => /freewheel|setup/i.test(l))
+      .map((l) => l.split('","').slice(0, 2).join(" pid ").replace(/"/g, ""))
+      .join("; ");
+  } catch {
+    return "(tasklist failed)";
+  }
+}
 
 /** The page targets on the DevTools port (none while nothing listens). */
 const pages = (port) =>
@@ -154,6 +174,8 @@ async function main() {
     server = await startUpdateServer({ bundle: resolve(opts.bundle), signature, version: opts.to, notes, port: Number(opts["server-port"]), mode: "fail" });
     say(`update server on ${server.url} offering ${opts.to} (${opts.bundle}), mode fail`);
 
+    mkdirSync(join(portFile(), ".."), { recursive: true });
+    writeFileSync(portFile(), String(opts.port));
     say(`starting ${opts.app} (version ${opts.from})`);
     app = await launch(resolve(opts.app), opts.port, say);
     await attach();
@@ -237,7 +259,13 @@ async function main() {
     say(`  server saw: ${server.hits.join(" | ")}`);
     say("waiting for the installer to start the new version");
     d = new Driver(opts.driver);
-    await waitForPage(opts.port, 180000);
+    const watch = setInterval(() => say(`  running: ${processes() || "(no freewheel or installer process)"}`), 5000);
+    try {
+      await waitForPage(opts.port, 180000);
+    } finally {
+      clearInterval(watch);
+    }
+    say(`  running: ${processes()}`);
     await attach();
     const b = await invoke("app_version");
     say(`running version after the restart: ${JSON.stringify(b)}`);
@@ -260,6 +288,7 @@ async function main() {
     await d.quit();
     app?.kill();
     await server?.close();
+    rmSync(join(portFile(), ".."), { recursive: true, force: true });
   }
 }
 
