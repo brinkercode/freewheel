@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 use crate::clock::Clock;
-use crate::config::{Action, Config, ConfigStore, JogMode};
+use crate::config::{Action, Config, ConfigStore, JogMode, OverrideMode};
 use crate::connection::{ConnectionEvent, ConnectionManager, ConnectionStatus, RETRY_INTERVAL};
 use crate::engine::Engine;
 use crate::first_run::{FakeFirstRun, FirstRun};
@@ -625,8 +625,28 @@ impl Simulator {
         }
         let errors = self.engine.take_launch_errors();
         self.toasts.extend(errors.iter().map(ToString::to_string));
+        // The dial controls are the OS's; the simulator only says what
+        // they would do.
+        for (mode, ticks) in self.engine.take_override_ticks() {
+            let line = override_toast(mode, ticks);
+            info!("{line}");
+            self.toasts.push(line);
+        }
         self.engine.take_reports();
     }
+}
+
+/// "would turn the volume up 2 steps" for dial override ticks.
+fn override_toast(mode: OverrideMode, ticks: i32) -> String {
+    let what = match mode {
+        OverrideMode::SystemVolume => "the volume",
+        OverrideMode::AppVolume => "the app's volume",
+        OverrideMode::Brightness => "the brightness",
+    };
+    let way = if ticks < 0 { "down" } else { "up" };
+    let n = ticks.unsigned_abs();
+    let steps = if n == 1 { "step" } else { "steps" };
+    format!("would turn {what} {way} {n} {steps}")
 }
 
 #[cfg(test)]
@@ -888,6 +908,29 @@ mod tests {
             assert_eq!((s.jog_mode, s.lit_leds), (mode, vec![led.to_string()]));
             assert_eq!(sim.apply(Control::Wheel { value: -1 }).toasts, [left]);
             assert_eq!(sim.apply(Control::Wheel { value: 1 }).toasts, [right]);
+        }
+        assert!(mock.calls().is_empty());
+    }
+
+    #[test]
+    fn the_volume_and_brightness_wheel_modes_say_what_they_would_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut sim, mock) = sim_in(dir.path());
+        sim.apply(Control::Connect { bus: Bus::Usb });
+        for (mode, what) in [
+            (JogMode::Volume, "the volume"),
+            (JogMode::Brightness, "the brightness"),
+        ] {
+            let s = sim.apply(Control::WheelMode { mode });
+            assert_eq!(s.jog_mode, mode);
+            assert_eq!(
+                sim.apply(Control::Wheel { value: 2 }).toasts,
+                [format!("would turn {what} up 2 steps")]
+            );
+            assert_eq!(
+                sim.apply(Control::Wheel { value: -1 }).toasts,
+                [format!("would turn {what} down 1 step")]
+            );
         }
         assert!(mock.calls().is_empty());
     }

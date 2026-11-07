@@ -167,13 +167,17 @@ impl Engine {
         self.last_shuttle_fire = None;
         let device = match mode {
             JogMode::Shuttle => DeviceJogMode::AbsoluteDeadzero,
-            JogMode::Jog | JogMode::Scroll => DeviceJogMode::Relative,
+            JogMode::Jog | JogMode::Scroll | JogMode::Volume | JogMode::Brightness => {
+                DeviceJogMode::Relative
+            }
         };
         self.reports.push(set_jog_mode(device).to_vec());
     }
 
     fn jog(&mut self, value: i32, injector: &mut dyn KeyInjector) -> Result<(), InjectError> {
-        if let Some(mode) = self.active_override {
+        // A toggled dial override wins; else a Volume/Brightness wheel mode
+        // hands each tick to that control.
+        if let Some(mode) = self.active_override.or(self.jog_mode.override_mode()) {
             if value != 0 {
                 self.override_ticks.push((mode, value));
             }
@@ -320,7 +324,8 @@ impl Engine {
                 .filter_map(Led::for_key)
                 .collect(),
             jog: match self.jog_mode {
-                JogMode::Jog => JogLed::Jog,
+                // The device has no Volume/Brightness LED; they turn like Jog.
+                JogMode::Jog | JogMode::Volume | JogMode::Brightness => JogLed::Jog,
                 JogMode::Shuttle => JogLed::Shtl,
                 JogMode::Scroll => JogLed::Scrl,
             },
@@ -1400,5 +1405,52 @@ mod tests {
             .handle(&Release(Key::Out), &mut mock, &mut MockLauncher::new())
             .unwrap();
         assert!(mock.calls().is_empty());
+    }
+
+    #[test]
+    fn volume_and_brightness_wheel_modes_route_ticks_to_their_control() {
+        for (mode, control) in [
+            (JogMode::Volume, OverrideMode::SystemVolume),
+            (JogMode::Brightness, OverrideMode::Brightness),
+        ] {
+            let mut engine = jog_engine(JogMode::Scroll, 1, None);
+            engine.set_jog_mode(mode);
+            assert_eq!(
+                engine.take_reports(),
+                [set_jog_mode(DeviceJogMode::Relative).to_vec()]
+            );
+            let mut mock = MockInjector::new();
+            for value in [2, -1, 0] {
+                engine
+                    .handle(
+                        &DeviceEvent::Jog { mode: 0, value },
+                        &mut mock,
+                        &mut MockLauncher::new(),
+                    )
+                    .unwrap();
+            }
+            assert_eq!(engine.take_override_ticks(), [(control, 2), (control, -1)]);
+            assert!(mock.calls().is_empty(), "{mode:?} sent no keys or scrolls");
+            assert_eq!(engine.leds().jog, JogLed::Jog);
+        }
+    }
+
+    #[test]
+    fn a_toggled_dial_override_wins_over_the_wheel_mode() {
+        let mut engine = jog_engine(JogMode::Scroll, 1, None);
+        engine.set_jog_mode(JogMode::Volume);
+        engine.toggle_override(OverrideMode::Brightness);
+        let mut mock = MockInjector::new();
+        engine
+            .handle(
+                &DeviceEvent::Jog { mode: 0, value: 3 },
+                &mut mock,
+                &mut MockLauncher::new(),
+            )
+            .unwrap();
+        assert_eq!(
+            engine.take_override_ticks(),
+            [(OverrideMode::Brightness, 3)]
+        );
     }
 }

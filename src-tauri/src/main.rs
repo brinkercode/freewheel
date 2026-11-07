@@ -6,6 +6,7 @@ mod app_volume;
 mod brightness;
 #[cfg(any(target_os = "macos", all(unix, test)))]
 mod builtin_brightness;
+mod controls;
 #[cfg(target_os = "macos")]
 mod ddc_macos;
 mod device;
@@ -79,6 +80,7 @@ fn spawn_device(
 ) {
     use freewheel_core::connection::{ConnectionManager, ConnectionStatus};
     use freewheel_core::engine::Engine;
+    use freewheel_core::overrides::{OverrideRunner, OverrideWorker};
 
     std::thread::spawn(move || {
         let (mut injector, api) = match (inject::EnigoInjector::new(), hidapi::HidApi::new()) {
@@ -98,12 +100,20 @@ fn spawn_device(
             }
         };
         let manager = ConnectionManager::new(open, SystemClock, auth_response as fn(u64) -> u64);
+        let overrides = OverrideWorker::spawn(OverrideRunner::new(
+            controls::os_controls(),
+            config.overrides.clone(),
+            SystemClock,
+        ));
         device::run(
             manager,
             Engine::new(&config),
             &SystemClock,
-            &mut injector,
-            &mut launch::ProcessLauncher,
+            device::Outputs {
+                injector: &mut injector,
+                launcher: &mut launch::ProcessLauncher,
+                overrides: &overrides,
+            },
             commands,
             {
                 let mut view = tray::TrayView::new(config.settings.low_battery_threshold);
@@ -155,7 +165,7 @@ fn spawn_permission_watch(app: tauri::AppHandle<tauri::Wry>, status: tray::Statu
 fn spawn_resolve_watch(
     app: tauri::AppHandle<tauri::Wry>,
     config: &Config,
-    manual: mpsc::Receiver<bool>,
+    manual: mpsc::Receiver<resolve_watch::Message>,
     commands: mpsc::Sender<device::Command>,
 ) {
     let watcher = ResolveWatcher::from_settings(&config.settings);
@@ -229,7 +239,9 @@ fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::
             settings::import_mappings,
             permissions::get_permissions,
             permissions::open_permission_pane,
-            permissions::open_bluetooth_settings
+            permissions::open_bluetooth_settings,
+            settings::export_logs,
+            settings::set_detailed_logs
         ])
 }
 
@@ -248,7 +260,7 @@ fn open_simulator(app: &tauri::App) -> tauri::Result<()> {
 }
 
 fn main() {
-    let _logger = init_logging();
+    let logger = init_logging();
     if permissions::probe_requested(std::env::args()) {
         let report = permissions::probe_report(&permissions::current());
         tracing::info!(%report, "permission probe");
@@ -294,7 +306,9 @@ fn main() {
             settings::import_mappings,
             permissions::get_permissions,
             permissions::open_permission_pane,
-            permissions::open_bluetooth_settings
+            permissions::open_bluetooth_settings,
+            settings::export_logs,
+            settings::set_detailed_logs
         ])
     };
     let app = builder
@@ -307,12 +321,10 @@ fn main() {
                 tracing::warn!(error = %e, "config not loaded, running with defaults");
             }
             let (manual, manual_rx) = mpsc::channel();
-            app.manage(settings::Settings::new(
-                store,
-                config.clone(),
-                commands.clone(),
-                manual.clone(),
-            ));
+            app.manage(
+                settings::Settings::new(store, config.clone(), commands.clone(), manual.clone())
+                    .with_logger(logger.clone()),
+            );
             spawn_resolve_watch(app.handle().clone(), &config, manual_rx, commands.clone());
             let (tray, toggle, status) = tray::build(app.handle(), commands, manual)?;
             spawn_device(app.handle().clone(), config, tray, toggle, receiver);

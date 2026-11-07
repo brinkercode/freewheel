@@ -53,6 +53,22 @@ pub enum JogMode {
     Jog,
     Scroll,
     Shuttle,
+    /// Each wheel tick steps the system volume by `overrides.system_volume_step`.
+    Volume,
+    /// Each wheel tick steps display brightness by `overrides.brightness_step`.
+    Brightness,
+}
+
+impl JogMode {
+    /// The dial override control a turn of the wheel drives in this mode,
+    /// or `None` when the wheel fires its jog actions.
+    pub fn override_mode(self) -> Option<OverrideMode> {
+        match self {
+            JogMode::Volume => Some(OverrideMode::SystemVolume),
+            JogMode::Brightness => Some(OverrideMode::Brightness),
+            JogMode::Jog | JogMode::Scroll | JogMode::Shuttle => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -164,6 +180,13 @@ pub struct Settings {
     // New versions download by themselves; the user chooses when to restart.
     #[serde(default = "yes")]
     pub auto_update: bool,
+    // Resolve tab: switch Off while DaVinci Resolve is open so it gets the
+    // Speed Editor; off keeps freewheel On alongside Resolve.
+    #[serde(default = "yes")]
+    pub step_aside_for_resolve: bool,
+    // Help & backup: DEBUG lines in freewheel.log (they turn off after 24 h).
+    #[serde(default)]
+    pub detailed_logs: bool,
 }
 
 fn yes() -> bool {
@@ -195,6 +218,8 @@ impl Default for Settings {
             low_battery_threshold: 15,
             appearance: Appearance::System,
             auto_update: true,
+            step_aside_for_resolve: true,
+            detailed_logs: false,
         }
     }
 }
@@ -680,8 +705,13 @@ mod tests {
             low_battery_threshold: 9,
             appearance: Appearance::Dark,
             auto_update: false,
+            step_aside_for_resolve: false,
+            detailed_logs: true,
         };
         roundtrip(&settings);
+        for mode in [JogMode::Volume, JogMode::Brightness] {
+            roundtrip(&Action::SetJogMode { mode });
+        }
         let mut config = Config::default();
         config.layers.push(layer);
         config.jog = jog;
@@ -708,6 +738,72 @@ mod tests {
         let loaded = s.load().unwrap().settings;
         assert!(!loaded.auto_update);
         assert_eq!(loaded.appearance, Appearance::Light);
+    }
+
+    #[test]
+    fn step_aside_is_on_and_detailed_logs_off_by_default_and_both_persist() {
+        let defaults = Settings::default();
+        assert!(defaults.step_aside_for_resolve);
+        assert!(!defaults.detailed_logs);
+        // A config saved before these switches existed still loads, with
+        // the old behaviour: step aside for Resolve, INFO logs.
+        let old: Settings = serde_json::from_value(serde_json::json!({
+            "enabled": true, "resolve_process_name": "Resolve", "low_battery_threshold": 15,
+            "start_at_login": false, "appearance": "Dark", "auto_update": true
+        }))
+        .unwrap();
+        assert!(old.step_aside_for_resolve);
+        assert!(!old.detailed_logs);
+        let (_dir, mut s) = store();
+        let mut config = Config::default();
+        config.settings.step_aside_for_resolve = false;
+        config.settings.detailed_logs = true;
+        s.save(&config).unwrap();
+        let loaded = s.load().unwrap().settings;
+        assert!(!loaded.step_aside_for_resolve);
+        assert!(loaded.detailed_logs);
+    }
+
+    #[test]
+    fn an_old_config_file_without_the_new_settings_loads_and_saves() {
+        let (dir, mut s) = store();
+        let mut old = serde_json::to_value(Config::default()).unwrap();
+        let settings = old["settings"].as_object_mut().unwrap();
+        settings.remove("step_aside_for_resolve");
+        settings.remove("detailed_logs");
+        fs::write(dir.path().join(CONFIG_FILE), old.to_string()).unwrap();
+        assert_eq!(s.load().unwrap(), Config::default());
+        // The settings window sends what it got; an old window's save works too.
+        assert_eq!(parse_for_save(&old).unwrap(), Config::default());
+    }
+
+    #[test]
+    fn volume_and_brightness_wheel_modes_drive_their_dial_controls() {
+        assert_eq!(
+            JogMode::Volume.override_mode(),
+            Some(OverrideMode::SystemVolume)
+        );
+        assert_eq!(
+            JogMode::Brightness.override_mode(),
+            Some(OverrideMode::Brightness)
+        );
+        for mode in [JogMode::Jog, JogMode::Scroll, JogMode::Shuttle] {
+            assert_eq!(mode.override_mode(), None);
+        }
+        assert_eq!(
+            serde_json::to_value(JogMode::Volume).unwrap(),
+            serde_json::json!("Volume")
+        );
+        let mut config = Config::default();
+        config.jog.default_mode = JogMode::Brightness;
+        config.layers[0].bindings.insert(
+            "Cam1".into(),
+            Action::SetJogMode {
+                mode: JogMode::Volume,
+            },
+        );
+        let value = serde_json::to_value(&config).unwrap();
+        assert_eq!(parse_for_save(&value).unwrap(), config);
     }
 
     #[test]

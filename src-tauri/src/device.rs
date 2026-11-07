@@ -7,15 +7,16 @@ use std::time::Duration;
 
 use freewheel_core::battery::Battery;
 use freewheel_core::clock::Clock;
-use freewheel_core::config::Config;
+use freewheel_core::config::{Config, OverrideMode};
 use freewheel_core::connection::{ConnectionEvent, ConnectionManager, ConnectionStatus};
 use freewheel_core::engine::Engine;
 use freewheel_core::hid::{HidError, HidTransport};
 use freewheel_core::inject::KeyInjector;
 use freewheel_core::launch::Launcher;
+use freewheel_core::overrides::OverrideWorker;
 use freewheel_core::report::DeviceEvent;
 use freewheel_core::status::KeyPressed;
-use tracing::warn;
+use tracing::{info, warn};
 
 /// How long one loop turn waits for an input report or a command.
 const POLL: Duration = Duration::from_millis(20);
@@ -66,13 +67,20 @@ pub fn shutdown(commands: &Sender<Command>, timeout: Duration) -> bool {
     commands.send(Command::Quit(done)).is_ok() && released.recv_timeout(timeout).is_ok()
 }
 
+/// What the engine drives: injected keys, launched apps and the dial
+/// overrides (system volume, app volume, brightness).
+pub struct Outputs<'a> {
+    pub injector: &'a mut dyn KeyInjector,
+    pub launcher: &'a mut dyn Launcher,
+    pub overrides: &'a OverrideWorker,
+}
+
 /// Runs the device loop until [`Command::Quit`] or until every sender is gone.
 pub fn run<T, O, C, F>(
     mut manager: ConnectionManager<T, O, C, F>,
     mut engine: Engine,
     clock: &dyn Clock,
-    injector: &mut dyn KeyInjector,
-    launcher: &mut dyn Launcher,
+    outputs: Outputs<'_>,
     commands: Receiver<Command>,
     mut on_update: impl FnMut(Update),
 ) where
@@ -81,6 +89,11 @@ pub fn run<T, O, C, F>(
     C: Clock + Clone,
     F: Fn(u64) -> u64,
 {
+    let Outputs {
+        injector,
+        launcher,
+        overrides,
+    } = outputs;
     loop {
         // While connected the read itself waits; otherwise the command wait does.
         let wait = if manager.status() == Some(ConnectionStatus::Connected) {
@@ -91,18 +104,21 @@ pub fn run<T, O, C, F>(
         let mut events = match commands.recv_timeout(wait) {
             Ok(Command::SetEnabled(on)) => manager.set_enabled(on),
             Ok(Command::Reload(config)) => {
-                release(&mut engine, injector);
+                release(&mut engine, injector, overrides);
+                overrides.set_steps(config.overrides.clone());
                 engine = Engine::new(&config);
                 on_update(Update::Layer(engine.current_layer().to_string()));
                 Vec::new()
             }
             Ok(Command::Quit(done)) => {
-                release(&mut engine, injector);
+                release(&mut engine, injector, overrides);
                 let _ = done.send(());
                 return;
             }
             Err(RecvTimeoutError::Timeout) => Vec::new(),
-            Err(RecvTimeoutError::Disconnected) => return release(&mut engine, injector),
+            Err(RecvTimeoutError::Disconnected) => {
+                return release(&mut engine, injector, overrides);
+            }
         };
         events.extend(manager.tick(POLL));
         for event in events {
@@ -117,11 +133,15 @@ pub fn run<T, O, C, F>(
                         _ => {}
                     }
                     let layer = engine.current_layer().to_string();
+                    let dial = engine.active_override();
                     if let Err(e) = engine.handle(&event, injector, launcher) {
                         warn!(error = %e, "device event failed");
                     }
                     if engine.current_layer() != layer {
                         on_update(Update::Layer(engine.current_layer().to_string()));
+                    }
+                    if engine.active_override() != dial {
+                        dial_changed(dial, engine.active_override(), overrides);
                     }
                 }
             }
@@ -129,18 +149,37 @@ pub fn run<T, O, C, F>(
         if let Err(e) = engine.tick(clock, injector) {
             warn!(error = %e, "shuttle repeat failed");
         }
-        // LED and dial override output are not wired to the device yet; drop
-        // what the engine queued so it cannot grow.
+        // Only queues: a slow control never delays the next key.
+        for (mode, ticks) in engine.take_override_ticks() {
+            overrides.push(mode, ticks);
+        }
+        // The worker logs each failed control call; drop them so they
+        // cannot grow.
+        overrides.take_errors();
+        // LED output is not wired to the device yet; drop what the engine
+        // queued so it cannot grow.
         engine.take_reports();
-        engine.take_override_ticks();
         engine.take_launch_errors();
     }
 }
 
-fn release(engine: &mut Engine, injector: &mut dyn KeyInjector) {
+/// Switches the dial override controls when the engine's mode changes:
+/// leaving app volume drops its tap, entering it asks for the permission.
+fn dial_changed(from: Option<OverrideMode>, to: Option<OverrideMode>, overrides: &OverrideWorker) {
+    info!(?from, ?to, "dial override changed");
+    if from == Some(OverrideMode::AppVolume) {
+        overrides.release();
+    }
+    if to == Some(OverrideMode::AppVolume) {
+        overrides.activate(OverrideMode::AppVolume);
+    }
+}
+
+fn release(engine: &mut Engine, injector: &mut dyn KeyInjector, overrides: &OverrideWorker) {
     if let Err(e) = engine.release_all(injector) {
         warn!(error = %e, "releasing held keys failed");
     }
+    overrides.release();
 }
 
 #[cfg(test)]
@@ -151,6 +190,8 @@ mod tests {
     use freewheel_core::hid::FakeTransport;
     use freewheel_core::inject::MockInjector;
     use freewheel_core::launch::MockLauncher;
+    use freewheel_core::overrides::ControlCall::{Down, Up};
+    use freewheel_core::overrides::{Controls, FakeControl, OverrideRunner};
     use freewheel_core::report::{DeviceEvent, Key};
     use std::thread;
 
@@ -211,8 +252,11 @@ mod tests {
                     absent_manager(),
                     Engine::new(&Config::default()),
                     &SystemClock,
-                    injector,
-                    &mut launcher,
+                    Outputs {
+                        injector,
+                        launcher: &mut launcher,
+                        overrides: &idle_overrides(),
+                    },
                     rx,
                     on_state,
                 );
@@ -258,8 +302,11 @@ mod tests {
                     manager,
                     Engine::new(&Config::default()),
                     &SystemClock,
-                    injector,
-                    &mut launcher,
+                    Outputs {
+                        injector,
+                        launcher: &mut launcher,
+                        overrides: &idle_overrides(),
+                    },
                     rx,
                     move |u| update_tx.send(u).unwrap(),
                 );
@@ -313,6 +360,129 @@ mod tests {
         config
     }
 
+    /// An override worker on fakes that no test looks at.
+    fn idle_overrides() -> OverrideWorker {
+        overrides_on(FakeControl::new(), FakeControl::new(), &Config::default())
+    }
+
+    fn overrides_on(
+        volume: FakeControl,
+        brightness: FakeControl,
+        config: &Config,
+    ) -> OverrideWorker {
+        let controls = Controls {
+            volume: Box::new(volume),
+            app_volume: Box::new(FakeControl::new()),
+            brightness: Box::new(brightness),
+        };
+        OverrideWorker::spawn(OverrideRunner::new(
+            controls,
+            config.overrides.clone(),
+            SystemClock,
+        ))
+    }
+
+    /// A 0x03 jog report turning the wheel by `value`.
+    fn jog_report(value: i32) -> Vec<u8> {
+        let mut r = vec![0x03, 0];
+        r.extend_from_slice(&value.to_le_bytes());
+        r
+    }
+
+    fn wait_until(f: impl Fn() -> bool) {
+        let end = std::time::Instant::now() + WAIT;
+        while !f() {
+            assert!(std::time::Instant::now() < end, "timed out");
+            thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    #[test]
+    fn a_wheel_turn_with_volume_or_brightness_picked_reaches_that_control() {
+        for (mode, picked) in [
+            (OverrideMode::SystemVolume, "volume"),
+            (OverrideMode::Brightness, "brightness"),
+        ] {
+            let config = with_binding(Key::Cam1, Action::OverrideToggle { mode });
+            let manager = connected_manager(vec![key_report(Key::Cam1), jog_report(2)]);
+            let (volume, brightness) = (FakeControl::new(), FakeControl::new());
+            let (tx, rx) = mpsc::channel();
+            let mut injector = MockInjector::new();
+            thread::scope(|s| {
+                let injector = &mut injector;
+                let (v, b) = (volume.clone(), brightness.clone());
+                let config = &config;
+                s.spawn(move || {
+                    run(
+                        manager,
+                        Engine::new(config),
+                        &SystemClock,
+                        Outputs {
+                            injector,
+                            launcher: &mut MockLauncher::new(),
+                            overrides: &overrides_on(v, b, config),
+                        },
+                        rx,
+                        |_| {},
+                    );
+                });
+                let steps = &config.overrides;
+                if mode == OverrideMode::SystemVolume {
+                    wait_until(|| volume.calls() == [Up(steps.system_volume_step * 2.0)]);
+                    assert!(brightness.calls().is_empty(), "{picked}");
+                } else {
+                    wait_until(|| {
+                        brightness.calls() == [Up(f32::from(steps.brightness_step) * 2.0)]
+                    });
+                    assert!(volume.calls().is_empty(), "{picked}");
+                }
+                assert!(shutdown(&tx, WAIT));
+            });
+            assert!(
+                injector.calls().is_empty(),
+                "{picked}: the turn sent no keys"
+            );
+        }
+    }
+
+    #[test]
+    fn a_saved_config_changes_the_dial_step() {
+        let mut saved = with_binding(
+            Key::Cam1,
+            Action::OverrideToggle {
+                mode: OverrideMode::SystemVolume,
+            },
+        );
+        saved.overrides.system_volume_step = 0.25;
+        let manager = connected_manager(vec![key_report(Key::Cam1), jog_report(-1)]);
+        let volume = FakeControl::new();
+        let (tx, rx) = mpsc::channel();
+        // Queued before the loop runs, so it lands before the turn is read.
+        tx.send(Command::Reload(Box::new(saved))).unwrap();
+        let mut injector = MockInjector::new();
+        thread::scope(|s| {
+            let injector = &mut injector;
+            let v = volume.clone();
+            s.spawn(move || {
+                let config = Config::default();
+                run(
+                    manager,
+                    Engine::new(&config),
+                    &SystemClock,
+                    Outputs {
+                        injector,
+                        launcher: &mut MockLauncher::new(),
+                        overrides: &overrides_on(v, FakeControl::new(), &config),
+                    },
+                    rx,
+                    |_| {},
+                );
+            });
+            wait_until(|| volume.calls() == [Down(0.25)]);
+            assert!(shutdown(&tx, WAIT));
+        });
+    }
+
     #[test]
     fn reload_applies_a_saved_config_to_the_running_engine() {
         let combo = KeyCombo {
@@ -333,8 +503,11 @@ mod tests {
                     manager,
                     Engine::new(&Config::default()),
                     &SystemClock,
-                    injector,
-                    &mut MockLauncher::new(),
+                    Outputs {
+                        injector,
+                        launcher: &mut MockLauncher::new(),
+                        overrides: &idle_overrides(),
+                    },
                     rx,
                     move |u| update_tx.send(u).unwrap(),
                 );
@@ -384,8 +557,11 @@ mod tests {
                     manager,
                     Engine::new(&config),
                     &SystemClock,
-                    injector,
-                    &mut MockLauncher::new(),
+                    Outputs {
+                        injector,
+                        launcher: &mut MockLauncher::new(),
+                        overrides: &idle_overrides(),
+                    },
                     rx,
                     move |u| update_tx.send(u).unwrap(),
                 );
@@ -421,8 +597,11 @@ mod tests {
                     absent_manager(),
                     engine,
                     &SystemClock,
-                    injector,
-                    &mut launcher,
+                    Outputs {
+                        injector,
+                        launcher: &mut launcher,
+                        overrides: &idle_overrides(),
+                    },
                     rx,
                     |_| {},
                 );

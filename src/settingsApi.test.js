@@ -1,11 +1,13 @@
 import { afterEach, expect, test } from "vitest";
 import {
+  exportLogs,
   getConfig,
   getStatus,
   onKeyPressed,
   onStatus,
   saveConfig,
   saveErrorText,
+  setDetailedLogs,
 } from "./settingsApi.js";
 
 function fakeTauri() {
@@ -37,6 +39,18 @@ test("the config and status commands reach src-tauri by name", async () => {
     ["get_config", undefined],
     ["save_config", { config }],
     ["get_status", undefined],
+  ]);
+});
+
+test("the log commands reach src-tauri by name", async () => {
+  const { calls } = fakeTauri();
+  await exportLogs();
+  await setDetailedLogs(true);
+  await setDetailedLogs(false);
+  expect(calls).toEqual([
+    ["export_logs", undefined],
+    ["set_detailed_logs", { on: true }],
+    ["set_detailed_logs", { on: false }],
   ]);
 });
 

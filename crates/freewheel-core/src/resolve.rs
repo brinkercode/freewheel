@@ -65,6 +65,8 @@ pub enum HandOff {
 #[derive(Debug, Clone)]
 pub struct ResolveWatcher {
     process_name: String,
+    /// `settings.step_aside_for_resolve`: switch Off while Resolve runs.
+    step_aside: bool,
     resolve_running: bool,
     off_by_resolve: bool,
 }
@@ -73,6 +75,7 @@ impl ResolveWatcher {
     pub fn new(process_name: impl Into<String>) -> Self {
         Self {
             process_name: process_name.into(),
+            step_aside: true,
             resolve_running: false,
             off_by_resolve: false,
         }
@@ -80,7 +83,20 @@ impl ResolveWatcher {
 
     /// A watcher for the process name in the config.
     pub fn from_settings(settings: &Settings) -> Self {
-        Self::new(settings.resolve_process_name.clone())
+        let mut watcher = Self::new(settings.resolve_process_name.clone());
+        watcher.set_step_aside(settings.step_aside_for_resolve);
+        watcher
+    }
+
+    /// Whether freewheel steps aside (switches Off) while Resolve runs.
+    pub fn step_aside(&self) -> bool {
+        self.step_aside
+    }
+
+    /// The Resolve tab's switch. Turned off while stepped aside, the next
+    /// poll switches freewheel back On.
+    pub fn set_step_aside(&mut self, on: bool) {
+        self.step_aside = on;
     }
 
     pub fn process_name(&self) -> &str {
@@ -96,6 +112,13 @@ impl ResolveWatcher {
     pub fn poll(&mut self, lister: &mut impl ProcessLister, enabled: bool) -> Option<HandOff> {
         let running = lister.is_running(&self.process_name);
         let was_running = std::mem::replace(&mut self.resolve_running, running);
+        if !self.step_aside {
+            if self.off_by_resolve {
+                self.off_by_resolve = false;
+                return Some(HandOff::SwitchOn);
+            }
+            return None;
+        }
         match (was_running, running) {
             (false, true) if enabled => {
                 self.off_by_resolve = true;
@@ -206,5 +229,51 @@ mod tests {
         let (mut ps, mut w) = (FakeProcessLister::new(), ResolveWatcher::new(NAME));
         ps.start("Resolve Helper");
         assert_eq!(w.poll(&mut ps, true), None);
+    }
+
+    #[test]
+    fn step_aside_follows_the_setting() {
+        assert!(ResolveWatcher::new(NAME).step_aside());
+        assert!(ResolveWatcher::from_settings(&Settings::default()).step_aside());
+        let off = Settings {
+            step_aside_for_resolve: false,
+            ..Settings::default()
+        };
+        assert!(!ResolveWatcher::from_settings(&off).step_aside());
+    }
+
+    #[test]
+    fn with_step_aside_off_resolve_starting_leaves_freewheel_on() {
+        let (mut ps, mut w) = (FakeProcessLister::new(), ResolveWatcher::new(NAME));
+        w.set_step_aside(false);
+        ps.start(NAME);
+        assert_eq!(w.poll(&mut ps, true), None);
+        assert!(!w.off_by_resolve());
+        ps.stop(NAME);
+        assert_eq!(w.poll(&mut ps, true), None);
+    }
+
+    #[test]
+    fn turning_step_aside_off_while_stepped_aside_switches_back_on() {
+        let (mut ps, mut w) = (FakeProcessLister::new(), ResolveWatcher::new(NAME));
+        ps.start(NAME);
+        assert!(matches!(
+            w.poll(&mut ps, true),
+            Some(HandOff::SwitchOff { .. })
+        ));
+        w.set_step_aside(false);
+        assert_eq!(w.poll(&mut ps, false), Some(HandOff::SwitchOn));
+        assert_eq!(w.poll(&mut ps, true), None);
+        // Turned back on while Resolve still runs: no surprise Off, only
+        // the next Resolve start steps aside.
+        w.set_step_aside(true);
+        assert_eq!(w.poll(&mut ps, true), None);
+        ps.stop(NAME);
+        assert_eq!(w.poll(&mut ps, true), None);
+        ps.start(NAME);
+        assert!(matches!(
+            w.poll(&mut ps, true),
+            Some(HandOff::SwitchOff { .. })
+        ));
     }
 }
