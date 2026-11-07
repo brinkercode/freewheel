@@ -1,6 +1,6 @@
 import { renderToString } from "react-dom/server";
 import { expect, test, vi } from "vitest";
-import General, { applyAppearance, changeSetting, switchLogin, updateText } from "./General.jsx";
+import General, { applyAppearance, changeSetting, switchLogin, updateButton, updateText } from "./General.jsx";
 import { checkNow } from "./updater.js";
 
 const settings = { enabled: true, start_at_login: false, appearance: "System", auto_update: true };
@@ -81,24 +81,55 @@ test("'Check for updates' shows idle, checking, up to date, downloading and read
   expect(sub(null)).not.toContain("spinner");
 });
 
-test("checking finds no update: checking then up to date; a failure goes back to idle", async () => {
+const now = { minMs: 0 };
+
+test("checking finds no update: checking then up to date; a failure is an error with Try again", async () => {
   const states = [];
-  await checkNow({ check: async () => null, onState: (s) => states.push(s) });
+  await checkNow({ ...now, check: async () => null, onState: (s) => states.push(s) });
   expect(states).toEqual([{ status: "checking" }, { status: "current" }]);
   const failed = [];
   const log = vi.fn();
-  await checkNow({ check: async () => Promise.reject("offline"), onState: (s) => failed.push(s), log });
-  expect(failed).toEqual([{ status: "checking" }, null]);
+  await checkNow({ ...now, check: async () => Promise.reject("offline"), onState: (s) => failed.push(s), log });
+  expect(failed).toEqual([{ status: "checking" }, { status: "error", during: "check", message: "offline" }]);
   expect(log).toHaveBeenCalledWith("update check failed", "offline");
+  const html = general({ update: failed[1], onCheck: () => {} });
+  expect(html).toContain("Couldn’t check for updates.");
+  expect(html).toContain(">Try again</button>");
+});
+
+test("a build without the updater says so instead of doing nothing", () => {
+  const html = general({ update: { status: "error", during: "check", notConfigured: true, message: "plugin updater not found" }, onCheck: () => {} });
+  expect(html).toContain("This test build can’t update itself.");
+});
+
+test("the version card's button follows the update: check, download, downloading, restart", () => {
+  const on = { onCheck: () => "check", onDownload: () => "download", onRestart: () => "restart" };
+  const b = (update) => {
+    const x = updateButton(update, on);
+    return [x.label, x.onClick?.() ?? null, !!x.spin, !!x.disabled];
+  };
+  expect(b(null)).toEqual(["Check for updates", "check", false, false]);
+  expect(b({ status: "checking" })).toEqual(["Check for updates", null, true, true]);
+  expect(b({ status: "current" })).toEqual(["Check for updates", "check", false, false]);
+  expect(b({ status: "available", version: "0.2.0" })).toEqual(["Download and install", "download", false, false]);
+  expect(b({ status: "downloading", version: "0.2.0", progress: 3 })).toEqual(["Downloading…", null, true, true]);
+  expect(b({ status: "ready", version: "0.2.0" })).toEqual(["Restart to update", "restart", false, false]);
+  expect(b({ status: "restarting", version: "0.2.0" })).toEqual(["Restarting…", null, true, true]);
+  expect(b({ status: "error", during: "check" })).toEqual(["Try again", "check", false, false]);
+  expect(b({ status: "error", during: "download", version: "0.2.0" })).toEqual(["Try again", "download", false, false]);
+  expect(b({ status: "error", during: "install", version: "0.2.0" })).toEqual(["Try again", "restart", false, false]);
+  const downloading = general({ update: { status: "downloading", version: "0.2.0", progress: 40 }, onCheck: () => {} });
+  expect(downloading).toContain("Downloading the new version… 40%");
+  expect(downloading).toMatch(/role="progressbar"[^>]*aria-valuenow="40"/);
 });
 
 test("checking finds an update: with Update automatically it downloads to ready, else it is available", async () => {
   const update = { version: "0.2.0", download: async () => {} };
   const states = [];
-  await checkNow({ check: async () => update, onState: (s) => states.push(s?.status) });
+  await checkNow({ ...now, check: async () => update, onState: (s) => states.push(s?.status) });
   expect(states).toEqual(["checking", "downloading", "ready"]);
   const manual = [];
-  await checkNow({ check: async () => update, autoUpdate: false, onState: (s) => manual.push(s?.status) });
+  await checkNow({ ...now, check: async () => update, autoUpdate: false, onState: (s) => manual.push(s?.status) });
   expect(manual).toEqual(["checking", "available"]);
 });
 

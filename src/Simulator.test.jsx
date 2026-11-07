@@ -117,7 +117,7 @@ test("Jump to opens the settings window's screens", async () => {
   expect(fake.jumps).toEqual(["FirstRun", "Settings", "RecordKey", "Reload", "Quit", "Dark"]);
   expect(pressed("Computer appearance")).toEqual(["Dark"]);
   await click(screen.getByRole("button", { name: "New version" }));
-  expect(screen.getByText("New version: freewheel 99.0.0 is available.")).toBeTruthy();
+  expect(screen.getByText(/New version published: freewheel finds it by itself/)).toBeTruthy();
 });
 
 test("send keys for real is a switch", async () => {

@@ -264,8 +264,9 @@ fn main() {
     let (commands, receiver) = mpsc::channel();
     let quit_commands = commands.clone();
     let simulate = simulator::requested(std::env::args());
-    if let Some(args) = simulate::browser_args(simulate) {
-        // The Windows e2e (scripts/e2e-windows.mjs) attaches to this port.
+    if let Some(args) = simulate::browser_args(simulate || cfg!(feature = "e2e")) {
+        // The Windows e2e (scripts/e2e-windows.mjs, and with the e2e-only
+        // `e2e` feature scripts/e2e-update-windows.mjs) attaches to this port.
         for window in &mut context.config_mut().app.windows {
             window.additional_browser_args = Some(args.clone());
         }
@@ -288,7 +289,9 @@ fn main() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ));
-    if updater_pubkey_set(&context.config().plugins) {
+    // `--simulate` never updates for real: its settings window uses the
+    // simulated update source (src/simUpdate.js) instead.
+    if !simulate && updater_pubkey_set(&context.config().plugins) {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
     builder = if simulate {

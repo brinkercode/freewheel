@@ -5,6 +5,7 @@ import UpdateBanner from "./UpdateBanner.jsx";
 import { WhatsNewNotice, WhatsNewPage } from "./WhatsNew.jsx";
 import { markSeen, openReleasePage, rememberNotes, whatsNew } from "./whatsNew.js";
 import { checkNow, download, restart, startupCheck } from "./updater.js";
+import { createSimUpdates, simRelaunch } from "./simUpdate.js";
 import General, { applyAppearance, changeSetting, switchLogin } from "./General.jsx";
 import Simulator from "./Simulator.jsx";
 import Backup from "./Backup.jsx";
@@ -27,7 +28,7 @@ import {
   setEnabled,
   setStartAtLogin,
 } from "./settingsApi.js";
-import { listenSimulate } from "./simulateEvents.js";
+import { listenSimulate, simulating } from "./simulateEvents.js";
 import { TABS, finishFirstRun, firstRunDone, fromStatusEvent, showToast, switchOn } from "./shell.js";
 
 /** The status event's permissions, when it has any (else the screen polls get_permissions). */
@@ -59,6 +60,13 @@ function Settings({ autoUpdate, storage }) {
   const [newsOpen, setNewsOpen] = useState(false);
   const pending = useRef(null);
   const toastTimer = useRef(null);
+  // --simulate only: the simulated update server and the version a simulated update "installed".
+  const simUpdates = useRef(null);
+  simUpdates.current ??= createSimUpdates();
+  const [simVersion, setSimVersion] = useState(null);
+  const shownVersion = simVersion ?? version;
+  const current = useRef(null);
+  current.current = { version: shownVersion, update, config };
   const say = (text) => {
     globalThis.clearTimeout(toastTimer.current);
     toastTimer.current = showToast(setToast, text);
@@ -70,7 +78,7 @@ function Settings({ autoUpdate, storage }) {
       .then((c) => {
         setConfig(c);
         if (c?.settings) applyAppearance(c.settings.appearance);
-        return startupCheck({ check, autoUpdate: c?.settings?.auto_update ?? autoUpdate, onState: setUpdate });
+        return startupCheck({ check: () => source().check(), autoUpdate: c?.settings?.auto_update ?? autoUpdate, onState: setUpdate });
       })
       .then((u) => (pending.current = u));
   }, [autoUpdate]);
@@ -91,18 +99,61 @@ function Settings({ autoUpdate, storage }) {
           setTab("Keys");
           setRecord((r) => ({ key, n: (r?.n ?? 0) + 1 }));
         },
-        onUpdate: (u) => setUpdate(u ?? null),
+        // "New version": the simulated server publishes a newer version and freewheel finds it by itself.
+        onUpdate: () => {
+          const busy = ["checking", "downloading", "restarting"].includes(current.current.update?.status);
+          if (busy) return;
+          simUpdates.current.publish(current.current.version);
+          startupCheck({
+            check: () => simUpdates.current.check(current.current.version),
+            autoUpdate: current.current.config?.settings?.auto_update ?? autoUpdate,
+            onState: setUpdate,
+          }).then((u) => u && (pending.current = u));
+        },
       }),
     [],
   );
   // What's new: once per update, after the restart into the newer version.
   useEffect(() => {
-    if (version) setNews(whatsNew(storage, version));
-  }, [version, storage]);
+    if (shownVersion) setNews(whatsNew(storage, shownVersion));
+  }, [shownVersion, storage]);
   const seeNews = (open) => {
     markSeen(storage, news.version);
     if (open) setNewsOpen(true);
     else setNews(null);
+  };
+  // Where updates come from: the updater plugin, or in --simulate only the simulated server.
+  const source = () => {
+    if (!simulating()) return { check, relaunch };
+    return {
+      check: () => simUpdates.current.check(current.current.version),
+      relaunch: (u) =>
+        simRelaunch(() => {
+          pending.current = null;
+          setSimVersion(u.version);
+          setUpdate(null);
+          say(`Updated to freewheel ${u.version}`);
+        }),
+    };
+  };
+  const autoUpdateOn = () => current.current.config?.settings?.auto_update ?? autoUpdate;
+  const onCheck = () => {
+    let last = null;
+    const onState = (s) => {
+      last = s;
+      setUpdate(s);
+    };
+    return checkNow({ check: source().check, autoUpdate: autoUpdateOn(), onState }).then((u) => {
+      pending.current = u;
+      if (last?.status === "current") say("You’re up to date.");
+    });
+  };
+  const onDownload = () => pending.current && download(pending.current, setUpdate);
+  const onRestart = () => {
+    const u = pending.current;
+    if (!u) return;
+    const { relaunch: again } = source();
+    restart(u, () => again(u), setUpdate, (up) => rememberNotes(storage, up));
   };
   const state = fromStatusEvent(status ?? { connection: "Absent" });
   // A failed switch is an error that needs action: it is logged, never toasted.
@@ -158,9 +209,9 @@ function Settings({ autoUpdate, storage }) {
         />
         <UpdateBanner
           update={update}
-          onInstall={() => pending.current && download(pending.current, setUpdate)}
+          onInstall={onDownload}
           onLater={() => setUpdate(null)}
-          onRestart={() => pending.current && restart(pending.current, relaunch, setUpdate, (u) => rememberNotes(storage, u))}
+          onRestart={onRestart}
         />
         {!newsOpen && <WhatsNewNotice news={news} onOpen={() => seeNews(true)} onDismiss={() => seeNews(false)} />}
         {status && <NoticeBar state={state} onFix={() => setFixing(true)} onTurnOn={() => turn(true)} />}
@@ -184,13 +235,11 @@ function Settings({ autoUpdate, storage }) {
               onSetting={onSetting}
               startAtLogin={login}
               onStartAtLogin={(on) => switchLogin({ on, set: setStartAtLogin, get: getStartAtLogin, setLogin, setConfig })}
-              version={version}
+              version={shownVersion}
               update={update}
-              onCheck={() =>
-                checkNow({ check, autoUpdate: config?.settings?.auto_update ?? autoUpdate, onState: setUpdate }).then(
-                  (u) => (pending.current = u),
-                )
-              }
+              onCheck={onCheck}
+              onDownload={onDownload}
+              onRestart={onRestart}
             />
           )}
           {!newsOpen && tab === "Help & backup" && <Backup detailedLogs={config?.settings?.detailed_logs} onDetailedLogs={onDetailedLogs} />}

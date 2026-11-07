@@ -48,10 +48,10 @@ const TRAY = [
   ["attention", "Needs attention"],
 ];
 
+// "New version" publishes a newer version on the simulated update server;
+// the settings window finds it by itself, as after a real release.
 const UPDATE_TEXT = {
-  available: (v) => `New version: freewheel ${v} is available.`,
-  downloading: (v) => `New version: downloading freewheel ${v}…`,
-  ready: (v) => `New version: freewheel ${v} is ready.`,
+  available: () => "New version published: freewheel finds it by itself, or with Check for updates.",
 };
 
 /** A titled row of options, one of them current (the prototype's simRows). */

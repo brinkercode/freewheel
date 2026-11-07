@@ -43,7 +43,7 @@ test("the e2e workflow is a Windows PR check that builds the embedded UI and upl
   expect(checkWorkflow(wf)).toEqual([]);
   expect(wf).toMatch(/^on:\n {2}pull_request:/m);
   expect(wf).toMatch(/^ {2}push:\n {4}branches: \[main\]/m);
-  expect(wf.match(/runs-on: \S+/g)).toEqual(["runs-on: windows-2025"]);
+  expect(wf.match(/runs-on: \S+/g)).toEqual(["runs-on: windows-2025", "runs-on: windows-2025"]);
   expect(wf).toContain("cargo build --release --locked -p freewheel --features tauri/custom-protocol");
   expect(wf).toContain("node scripts/e2e-windows.mjs --port 9222 --app target/release/freewheel.exe --out e2e-shots");
   expect(wf).toMatch(/name: e2e-screenshots\n\s+path: e2e-shots/);

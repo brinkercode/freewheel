@@ -5,7 +5,7 @@ import { renderToString } from "react-dom/server";
 import { expect, test, vi } from "vitest";
 import App from "./App.jsx";
 import UpdateBanner from "./UpdateBanner.jsx";
-import { download, restart, startupCheck } from "./updater.js";
+import { checkNow, download, errorState, restart, startupCheck } from "./updater.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const conf = JSON.parse(read("../src-tauri/tauri.conf.json"));
@@ -76,13 +76,42 @@ test("a failed check is logged and does not throw", async () => {
   expect(onState).not.toHaveBeenCalled();
 });
 
-test("a failed download is logged and goes back to available", async () => {
+test("a failed download is logged and is an error to retry", async () => {
   const log = vi.fn();
   const states = [];
   const update = { version: "0.2.0", download: async () => Promise.reject(new Error("reset")) };
-  await download(update, (s) => states.push(s), log);
+  expect(await download(update, (s) => states.push(s), log)).toBe(false);
   expect(log).toHaveBeenCalledWith("update download failed", expect.any(Error));
-  expect(states.at(-1)).toEqual({ status: "available", version: "0.2.0" });
+  expect(states.at(-1)).toEqual({ status: "error", during: "download", version: "0.2.0", message: "reset" });
+});
+
+test("a failed install is logged and is an error to retry", async () => {
+  const log = vi.fn();
+  const onState = vi.fn();
+  const update = { version: "0.2.0", install: async () => Promise.reject(new Error("denied")) };
+  const relaunch = vi.fn();
+  await restart(update, relaunch, onState, () => {}, log);
+  expect(onState).toHaveBeenLastCalledWith({ status: "error", during: "install", version: "0.2.0", message: "denied" });
+  expect(relaunch).not.toHaveBeenCalled();
+});
+
+test("a build without the updater (no pubkey) reads as not configured, a network failure does not", () => {
+  expect(errorState("check", "plugin updater not found").notConfigured).toBe(true);
+  expect(errorState("check", new Error("Could not fetch a valid release JSON from the remote")).notConfigured).toBeUndefined();
+});
+
+test("Check for updates shows checking for at least the minimum time, even when the answer is instant", async () => {
+  const states = [];
+  let release;
+  const wait = vi.fn(() => new Promise((r) => (release = r)));
+  const done = checkNow({ check: async () => null, onState: (s) => states.push(s), wait, minMs: 900 });
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(wait).toHaveBeenCalledWith(900);
+  expect(states).toEqual([{ status: "checking" }]);
+  release();
+  await done;
+  expect(states).toEqual([{ status: "checking" }, { status: "current" }]);
 });
 
 test("Restart to update shows restarting, installs, then relaunches", async () => {
@@ -103,7 +132,14 @@ test("the banner shows each state", () => {
   expect(available).toContain("Download and install");
   expect(available).toContain("Later");
   const downloading = banner({ status: "downloading", version: "0.2.0", progress: 40 });
-  expect(downloading).toMatch(/<progress[^>]*value="40"/);
+  expect(downloading).toMatch(/role="progressbar"[^>]*aria-valuenow="40"/);
+  expect(downloading).toContain("width:40%");
+  expect(banner({ status: "downloading", version: "0.2.0", progress: null })).toContain("is-indeterminate");
+  const failed = banner({ status: "error", during: "download", version: "0.2.0", message: "reset" });
+  expect(failed).toContain("Try again");
+  expect(failed).toContain("is-error");
+  // A failed check shows on the General tab only.
+  expect(banner({ status: "error", during: "check", message: "offline" })).toBe("");
   const ready = banner({ status: "ready", version: "0.2.0" });
   expect(ready).toContain("Restart to update");
   expect(ready).toContain("Later");

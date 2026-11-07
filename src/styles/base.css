@@ -230,7 +230,15 @@ input[type="range"] { accent-color: var(--accent); border: none; background: tra
 }
 .update-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .update-title { font-weight: var(--fw-semibold); }
-.update-banner progress { width: 100%; max-width: 320px; height: 4px; accent-color: var(--accent); }
+/* the prototype's download bar: a 4px line2 track with the accent fill */
+.update-progress { position: relative; display: block; height: 4px; border-radius: 2px; background: var(--line2); overflow: hidden; max-width: 320px; }
+.update-progress-fill { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 2px; transition: width 0.2s ease-out; }
+.update-progress.is-indeterminate .update-progress-fill { width: 30%; animation: fwslide 1.2s ease-in-out infinite; }
+@keyframes fwslide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+.update-pct { font-weight: var(--fw-regular); color: var(--ink2); font-variant-numeric: tabular-nums; }
+.update-sub { font-size: 12.5px; color: var(--ink2); }
+.update-banner.is-error { background: var(--warn-soft); }
+.update-banner.is-error .logo-disc { background: var(--warn); }
 .whats-new-notes ul { margin: 6px 0 0; padding-left: 20px; }
 .whats-new-notes li + li { margin-top: 4px; }
 .toast {
@@ -579,3 +587,10 @@ td.row-chevron .icon { vertical-align: middle; }
 .first-run .get-started { margin-top: 12px; }
 .first-run.permissions { flex: none; padding: 0; overflow: visible; justify-content: flex-start; align-items: stretch; }
 .version-card { gap: 14px; }
+/* the prototype's Check for updates button: 36px, line2 border, panel fill, the 14px spinner before the label */
+.version-card .update-button { height: 36px; padding: 0 16px; border-radius: 8px; gap: 8px; flex: none; }
+.version-card .update-button .spinner { width: 14px; height: 14px; }
+/* busy (checking, downloading, restarting): the prototype keeps the button and its spinner at full strength */
+.version-card .update-button:disabled:has(.spinner) { opacity: 1; cursor: progress; }
+.version-card .update-progress { margin-top: 8px; }
+.version-card .card-sub.is-error { color: var(--warn); }

@@ -71,7 +71,7 @@ async function launch(app, port, say) {
 export const shotName = (n, window, step) =>
   `${String(n).padStart(2, "0")}-${window}-${step.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}.png`;
 
-class Driver {
+export class Driver {
   constructor(base) {
     this.base = base;
     this.session = null;
@@ -139,7 +139,7 @@ class Driver {
 }
 
 // In-page helper: the first element matching `css` whose text contains `text`.
-const FIND_JS = `const [css, text] = arguments;
+export const FIND_JS = `const [css, text] = arguments;
   return [...document.querySelectorAll(css)].find((e) => !text || e.textContent.replace(/\\s+/g, " ").includes(text)) ?? null;`;
 
 async function main() {
@@ -184,6 +184,8 @@ async function main() {
   /** Clicks the element matching css (+ text) in window `name`, with a real WebDriver click. */
   const click = async (name, css, text = "") => {
     const el = await waitFor(name, `${css} "${text}"`, FIND_JS, [css, text]);
+    // Below the fold of a scrolling panel (the Simulator's Jump to) WebDriver may not scroll it in itself.
+    await d.exec("arguments[0].scrollIntoView({ block: 'center' })", [el]);
     const id = Object.values(el)[0];
     await d.click(id);
     return id;
@@ -369,6 +371,54 @@ async function main() {
         await click("settings", "button.appearance-option", look);
         await waitFor("settings", `appearance ${look}`, `return document.documentElement.dataset.appearance === arguments[0]`, [look]);
       });
+    // Updates in --simulate: the simulated update source (src/simUpdate.js)
+    // through the same states as a real update, dark then light.
+    const updateState = (state, ms = 15000) =>
+      waitFor("settings", `the update state ${state}`, `return document.querySelector('.version-card [data-update="' + arguments[0] + '"]')`, [state], ms);
+    await step("General: appearance Dark for the update", async () => {
+      await click("settings", "button.appearance-option", "Dark");
+      await waitFor("settings", "appearance Dark", `return document.documentElement.dataset.appearance === "Dark"`);
+    });
+    await step("updates: checking (dark)", async () => {
+      await click("settings", ".version-card .update-button", "Check for updates");
+      await updateState("checking", 2000);
+    });
+    await step("updates: up to date (dark)", () => updateState("current"));
+    await step("updates: Update automatically off", async () => {
+      await click("settings", '[aria-label="Update automatically"]');
+      await waitFor("settings", "Update automatically off", `return document.querySelector('[aria-label="Update automatically"]').getAttribute("aria-checked") === "false"`);
+    });
+    await step("simulator: New version, available (dark)", async () => {
+      await click("simulator", ".fw-sim-grid button", "New version");
+      await updateState("available");
+      await waitFor("settings", "the banner", `return document.querySelector('.update-banner[data-update="available"]')`);
+    }, ["simulator", "settings"]);
+    await step("updates: downloading with progress (dark)", async () => {
+      await click("settings", ".version-card .update-button", "Download and install");
+      await waitFor("settings", "progress past 25%", `return Number(document.querySelector(".version-card [role=progressbar]")?.getAttribute("aria-valuenow")) >= 25`);
+    });
+    await step("updates: ready, restart to update (dark)", () => updateState("ready", 10000));
+    await step("General: appearance Light, ready", async () => {
+      await click("settings", "button.appearance-option", "Light");
+      await waitFor("settings", "appearance Light", `return document.documentElement.dataset.appearance === "Light"`);
+    });
+    await step("updates: restarting (light)", async () => {
+      await click("settings", ".update-banner button", "Restart to update");
+      await updateState("restarting", 2000);
+    });
+    const newer = await waitFor("settings", "What's new after the simulated restart", `return document.body.innerText.match(/freewheel is updated to (\\S+)/)?.[1]`, [], 10000);
+    await step(`updates: What's new for ${newer} (light)`, async () => {
+      await waitFor("settings", "the new version on the General tab", `return document.querySelector(".version-card .card-title").textContent === "freewheel " + arguments[0]`, [newer]);
+    });
+    await step("updates: What's new page", async () => {
+      await click("settings", ".update-banner button", "What’s new in v");
+      await waitFor("settings", "the notes", `return document.body.innerText.includes("smoother scrolling")`);
+    });
+    await step("updates: Update automatically back on", async () => {
+      await click("settings", "nav.toolbar button.tab", "General");
+      await click("settings", '[aria-label="Update automatically"]');
+      await waitFor("settings", "Update automatically on", `return document.querySelector('[aria-label="Update automatically"]').getAttribute("aria-checked") === "true"`);
+    });
     await tab("Help & backup", "Help");
 
     await tab("Keys", "What each key does");
