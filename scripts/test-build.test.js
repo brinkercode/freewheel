@@ -73,12 +73,12 @@ test("a failed check fails the job, so nothing is uploaded", () => {
   expect(wf).not.toMatch(/continue-on-error|always\(\)|^\s+if:/m);
 });
 
-test("README explains how to get and run an unsigned test build", () => {
-  const readme = read("../README.md");
-  const section = readme.split(/^## /m).find((s) => s.startsWith("Test builds"));
+test("docs/releasing.md explains how to get and run an unsigned test build", () => {
+  const doc = read("../docs/releasing.md");
+  const section = doc.split(/^## /m).find((s) => s.startsWith("Test builds"));
   expect(section).toBeDefined();
   expect(section).toMatch(/Actions/);
-  expect(section).toContain("](../../actions/workflows/test-build.yml)");
+  expect(section).toContain("](https://github.com/brinkercode/freewheel/actions/workflows/test-build.yml)");
   expect(section).toMatch(/artifact/i);
   expect(section).toMatch(/unsigned/i);
   expect(section).toContain("`freewheel.exe`");

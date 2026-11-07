@@ -485,6 +485,75 @@ async function main() {
       return [...document.querySelectorAll(".fw-sim-log li")].slice(0, 14).some((li) => parts.every((p) => li.textContent.includes(p)));`, [parts]);
   const dialogs = join(out, "dialogs");
   let saved = null;
+  let freshWheel = null;
+
+  /**
+   * README-grade stills (docs/images): the window's own client area only
+   * (it draws its own title bar, so no desktop shows), at its 1000x640
+   * default, the pointer parked and toasts gone, in Light and Dark, into
+   * <out>/readme/<look>-<screen>.png. The sample setup gives the drawing
+   * real labels.
+   */
+  const README_DIR = join(out, "readme");
+  const still = async (name, file) => {
+    await use(name);
+    await d.exec("document.querySelectorAll('*').forEach((e) => { if (e.scrollTop) e.scrollTop = 0; })");
+    await d.call("POST", "/actions", { actions: [{ type: "pointer", id: "mouse", parameters: { pointerType: "mouse" }, actions: [{ type: "pointerMove", x: 2, y: 2, origin: "viewport" }] }] }).catch(() => {});
+    await d.call("DELETE", "/actions").catch(() => {});
+    await sleep(2500); // the "You pressed" line and toasts fade, transitions end
+    const size = await d.exec("return [innerWidth, innerHeight, devicePixelRatio].join('x')");
+    writeFileSync(join(README_DIR, file), Buffer.from(await d.screenshot(), "base64"));
+    say(`  readme screenshot ${file} (${size})`);
+  };
+  const readmeTab = async (t) => {
+    await click("settings", "nav.toolbar button.tab", t);
+    await waitFor("settings", `the ${t} tab`, `return document.querySelector('nav.toolbar button.tab[aria-pressed="true"]')?.textContent.includes(arguments[0])`, [t]);
+  };
+  const readmeShots = async () => {
+    mkdirSync(README_DIR, { recursive: true });
+    await step("README: the sample setup over USB", async () => {
+      await click("simulator", `[role=group][aria-label="Speed Editor"] button`, "USB");
+      // Only the sample keys on one page, and the wheel as a fresh install has it.
+      await click("simulator", `[role=group][aria-label="Keys"] button`, "Empty setup");
+      await logged("empty setup loaded");
+      await configShows("no keys", (c) => c.layers.length === 1 && Object.keys(c.layers[0].bindings).length === 0);
+      if (freshWheel) await saveConfig({ ...(await readConfig()), ...freshWheel });
+      await click("simulator", `[role=group][aria-label="Keys"] button`, "Several set");
+      await logged("sample mappings loaded");
+      await waitFor("settings", "the drawing's Play/Pause", `return document.querySelector('.device [data-binding="StopPlay"]')?.getAttribute("title") === "Play/Pause"`, [], 20000);
+      await waitFor("settings", "Connected", `return document.querySelector("button.status")?.textContent.includes("Connected")`);
+      await press("SCRL");
+      await waitFor("settings", "SCRL lit", `return document.querySelector('.device [data-binding="Scrl"]')?.classList.contains("is-lit")`);
+    }, []);
+    for (const look of ["Light", "Dark"]) {
+      const f = look.toLowerCase();
+      await step(`README: screenshots (${look})`, async () => {
+        await readmeTab("General");
+        await click("settings", "button.appearance-option", look);
+        await waitFor("settings", `appearance ${look}`, `return document.documentElement.dataset.appearance === arguments[0]`, [look]);
+        await sim("Computer appearance", look).catch(() => {});
+        await still("settings", `${f}-general.png`);
+        await readmeTab("Wheel");
+        await still("settings", `${f}-wheel.png`);
+        await readmeTab("DaVinci Resolve");
+        await still("settings", `${f}-resolve.png`);
+        await readmeTab("Help & backup");
+        await still("settings", `${f}-help.png`);
+        await readmeTab("Keys");
+        await keyIn("StopPlay");
+        await waitFor("settings", "STOP/PLAY's panel", `return document.querySelector(".side-panel .panel-title")?.textContent.includes("STOP")`);
+        await still("settings", `${f}-keys.png`);
+        await click("settings", '.side-panel button[aria-label="Close"]');
+        await still("simulator", `${f}-simulator.png`);
+      }, []);
+    }
+    await step("README: back to Match my computer", async () => {
+      await readmeTab("General");
+      await click("settings", "button.appearance-option", "Match my computer");
+      await sim("Computer appearance", "Light");
+      await readmeTab("Keys");
+    }, []);
+  };
 
   try {
     say(`starting ${opts.app} --simulate`);
@@ -539,6 +608,7 @@ async function main() {
     });
 
     await tab("Keys", "What each key does");
+    freshWheel = await readConfig().then((c) => ({ jog: c.jog, overrides: c.overrides })); // the README stills use the default wheel
     await step("Keys: click CUT in the drawing", async () => {
       await click("settings", '.device [data-binding="Cut"]');
       await waitFor("settings", "the key panel", `return document.querySelector('.side-panel [role=radiogroup][aria-label="Choices"]')`);
@@ -1461,6 +1531,8 @@ async function main() {
         await waitFor("settings", "both pages", `return [...document.querySelectorAll(".pills .pill")].map((p) => p.textContent).join("|").includes("Edit Bay")`);
         await drawingShows({ In: "Ctrl+Shift+S", Cut: "Opens Round Trip", Cam5: "→ Edit Bay" });
       }, ["settings", "simulator"]);
+      // A fresh start (no battery warning, nothing held): the README stills.
+      await readmeShots();
       say("step: tray: Quit freewheel (after the restart)");
       await tray("quit").catch((e) => say(`  the Quit click: ${e.message}`));
       const end = Date.now() + 20000;

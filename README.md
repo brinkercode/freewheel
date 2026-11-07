@@ -1,162 +1,138 @@
 # freewheel
 
-Personal project, built through the Opal software factory. Scope comes from the inception.
+Use a Blackmagic Speed Editor with any app, without DaVinci Resolve.
 
-## Download
+[![CI](https://github.com/brinkercode/freewheel/actions/workflows/ci.yml/badge.svg)](https://github.com/brinkercode/freewheel/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/brinkercode/freewheel?sort=semver)](https://github.com/brinkercode/freewheel/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-freewheel is portable: nothing to install, one folder, and it adds nothing
-outside it but its settings. Get the newest release from
-[Releases](../../releases/latest):
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/dark-keys.png">
+  <img alt="freewheel's Keys tab: a drawing of the Speed Editor with STOP/PLAY selected and its panel open, set to the Play/Pause media key" src="docs/images/light-keys.png" width="1000">
+</picture>
 
-- **Windows**: `freewheel-<version>-windows-x64.zip`. Unzip it to a folder
-  you can change (Documents, Desktop, a USB stick; not Program Files) and run
-  `freewheel.exe`. It has the C runtime built in and needs WebView2, which
-  every Windows 11 has built in. `freewheel-simulate.cmd` next to it starts
-  the simulator. The exe is unsigned: SmartScreen asks once (**More info**,
-  then **Run anyway**).
-- **macOS 15**: `freewheel-<version>-macos-universal.zip` (Apple Silicon and
-  Intel). Unzip it and move `freewheel.app` to Applications (or anywhere you
-  can change). Until it is notarized, open it the first time with right-click
-  → **Open**.
+## What it does
 
-Settings live in your user config folder (Windows `%APPDATA%\freewheel`,
-macOS `~/Library/Application Support/freewheel`), never next to the app, so
-moving or replacing the app keeps them. To remove freewheel, quit it, turn off
-Start at login, and delete the folder (and the config folder, if you want).
+- **Remap every key** to a keyboard shortcut, a media key (Play/Pause, Mute,
+  volume), an app, a file or a website.
+- **Pages**: give the keys several sets of jobs and switch between them with a
+  key.
+- **Wheel modes**: Jog, Shuttle and Scroll, or turn the wheel into a knob for
+  system volume, the focused app's volume or screen brightness.
+- **Steps aside for DaVinci Resolve**: while Resolve is open freewheel lets go
+  of the Speed Editor, and takes it back when Resolve closes.
+- **Key lights** follow what is on: the wheel mode, toggled keys, the page.
+- **Lives in the tray** (the menu bar on macOS): switch it Off and On, check
+  for updates, open settings.
+- **Portable**: one folder, nothing to install.
+- **Small**: measured on Windows CI, about 31 MB of memory and 0.15% of one
+  CPU core when idle in the tray, from a 4.6 MB zip.
+
+Works over USB and Bluetooth, on Windows 11 and macOS 15 (Apple Silicon and
+Intel).
+
+## Download and run
+
+Get the newest zip from [Releases](https://github.com/brinkercode/freewheel/releases/latest).
+There is no installer.
+
+- **Windows**: `freewheel-<version>-windows-x64.zip`. Unzip it to a folder you
+  can write to (Documents, Desktop, a USB stick; not Program Files) and run
+  `freewheel.exe`. The exe is not code-signed, so SmartScreen may ask the
+  first time: **More info**, then **Run anyway**.
+- **macOS**: `freewheel-<version>-macos-universal.zip`. Unzip it and move
+  `freewheel.app` to Applications. It is not notarized yet, so macOS blocks
+  the first open: go to **System Settings → Privacy & Security**, click
+  **Open Anyway** next to freewheel and confirm. Then allow freewheel under
+  **Accessibility** and **Input Monitoring** (setup asks and takes you
+  there): it needs them to send keys and read the Speed Editor.
+
+The first start walks you through connecting the Speed Editor by cable or
+Bluetooth. Settings are kept in your user folder (`%APPDATA%\freewheel` on
+Windows, `~/Library/Application Support/freewheel` on macOS), not next to the
+app, so moving or replacing the app keeps them. To remove freewheel, quit it,
+turn off **Start freewheel when I log in**, and delete its folder.
 
 ## Updates
 
-freewheel checks the newest release once at start (and when you click
-**Check for updates** in General): it reads the release's `latest.json`,
-compares versions, downloads the zip for your OS to a temp folder with
-progress, and verifies its signature against the key built into your copy
-before it touches anything. **Restart to update** then puts the new
-`freewheel.exe` (or `freewheel.app`) in place of the running one, keeping the
-old one aside as `freewheel.exe.old` until the new one starts, restarts into
-it and shows **What's new**. The new one deletes the old copy and the
-download. If any step fails the old version stays (or is put back) and the
-General tab says why; if the app's folder can't be changed (e.g. Program
-Files) it tells you to move freewheel or download the new version yourself.
-Your settings and the Start at login entry (same path) are untouched.
+freewheel checks GitHub for a newer release when it starts and when you click
+**Check for updates** (General tab). With **Update automatically** on (the
+default) it downloads the zip for your system, verifies its signature against
+the key built into your copy, and offers **Restart to update**. That swaps
+the new version into the same folder, restarts, shows what's new, and deletes
+the old copy and the download. Your settings are kept. If any step fails,
+the version you have keeps running. Turn **Update automatically** off to be
+asked before the download.
 
-## First run
+## Screens
 
-The first time you open the settings window, it walks you through setup.
-After the welcome screen it waits for your Speed Editor to connect, by USB or
-over Bluetooth (**Open Bluetooth settings** helps you pair it). On macOS it
-then asks for Accessibility and Input Monitoring. When you finish, every key
-is Not set and the wheel scrolls. If a permission goes missing later, **Fix
-this** or the tray's 'Needs permission' item opens the same permissions screen.
+| Wheel | DaVinci Resolve |
+| --- | --- |
+| <img alt="Wheel tab" src="docs/images/light-wheel.png" width="400"> | <img alt="DaVinci Resolve tab" src="docs/images/light-resolve.png" width="400"> |
+| **General** | **Help & backup** |
+| <img alt="General tab" src="docs/images/light-general.png" width="400"> | <img alt="Help & backup tab" src="docs/images/light-help.png" width="400"> |
+| **Dark mode** | |
+| <img alt="Wheel tab in dark mode" src="docs/images/dark-wheel.png" width="400"> | |
 
-## Try it without a Speed Editor
+## Back up and restore
 
-Run `freewheel --simulate`. The app starts with a simulated device instead of the real one and opens an
-extra Simulator window: connect over USB or Bluetooth, disconnect, set the
-battery, press and release every key, turn the wheel in each wheel mode, and
-switch freewheel Off and On. **Load sample mappings** binds several keys and a
-layer page so you can see pages and lit keys change.
+**Help & backup → Back up…** saves your keys, pages and wheel settings to
+`freewheel-mappings.json`. **Restore from a backup…** asks before it replaces
+anything and keeps a copy of your current settings first.
 
-- Simulator mode keeps its own config in a `simulator` folder inside the normal
-  config folder, so your real mappings are never read or changed.
-- Key injection is off: each action shows in the Simulator window and the log
-  as e.g. `would press Ctrl+C`. Tick **Send for real** to send the keys to the
-  focused app.
-- Window titles contain "Simulator" so you can tell it from the real app.
+A backup can hold keys that open apps. Restored keys that open apps stay off
+unless you turn on **Let restored keys open apps**: leave it off for a file
+someone sent you.
 
-## Back up and share your keys
+Write or edit a mappings file by hand: see [SCHEMA.md](SCHEMA.md).
 
-In the settings window, **Help & backup** → **Back up…** saves your keys,
-wheel and dial settings to `freewheel-mappings.json`. **Restore from a
-backup…** checks the file, asks "Replace your keys?" and keeps a copy of your
-current `config.json` (`config.json.backup-<timestamp>`) before it replaces
-them. Keys in the file that open apps stay off unless you tick **Let restored
-keys open apps**: leave it off for a file someone sent you.
+## Troubleshooting
 
-## Test builds
+- **Help & backup → More → Device test** shows the connection, the unlock
+  handshake, the battery and every key and wheel report live; **Copy
+  diagnostics** copies it all as text.
+- **Download logs** (Help & backup, or the tray) saves a log bundle to your
+  Downloads folder; attach it to a
+  [bug report](https://github.com/brinkercode/freewheel/issues/new/choose).
+  Turn on **detailed logs** first for more detail.
+- A step-by-step USB and Bluetooth test: [docs/device-testing.md](docs/device-testing.md).
 
-Every push to main (or a manual **Run workflow**) runs the `test-build`
-workflow. To get a Windows build, open the latest run of
-[test-build on the **Actions** tab](../../actions/workflows/test-build.yml)
-and download the `freewheel-windows-…` artifact from the run's
-**Artifacts** section at the bottom of its summary page. It holds the
-portable `freewheel.exe` (and `freewheel-simulate.cmd`), which runs with
-nothing to install, and is kept for 1 day. Test builds can't update
-themselves (they have no updater key).
+## Building from source
 
-The build is unsigned, so Windows SmartScreen warns when you start it: click
-**More info**, then **Run anyway**.
+See [docs/development.md](docs/development.md).
 
-## Manual checklist
+## Releasing
 
-The release gate, checked by hand with a real Speed Editor on each OS before a
-release. A draft release is published only when every item below passes on
-Windows 11 and on macOS 15 on both Apple Silicon and Intel; one failure keeps
-the draft unpublished. Tick the items in a copy of this list for each release.
+Releases are made with [release-please](https://github.com/googleapis/release-please)
+from conventional commits: see [docs/releasing.md](docs/releasing.md). Before
+a release is published it is checked on real hardware with the
+[release checklist](.github/ISSUE_TEMPLATE/release-checklist.md).
 
-### Both
+## Privacy
 
-- [ ] Settings window: it opens at 1000×640 with the system's own title bar, resizes down to 820×520 and no smaller, and closing it hides it while freewheel keeps running in the tray (Open settings... brings it back).
-- [ ] Settings window toolbar: the tabs Keys, Wheel, DaVinci Resolve, General and Help & backup; the status reads Connected (USB) over a cable and Connected (Bluetooth · N%) over Bluetooth. The On/Off switch and the notice bar's Turn on really switch freewheel (the keys stop and start working, the tray toggle and icon follow) and a short "freewheel is Off." / "freewheel is On." toast shows bottom-centre.
-- [ ] General tab: picking Match my computer, Light or Dark changes the window at once and is kept after a restart; "Start freewheel when I log in" matches the OS login item and switching it adds or removes the item (the tray's Start at login follows after a restart); the version reads "freewheel <version>"; Check for updates shows Checking for updates…, then You're up to date. or the download and Restart to update; Update automatically is on on a fresh install and, switched off, a newer version is offered instead of downloaded.
-- [ ] Keys tab: pressing a key on the Speed Editor shows "You pressed X" for 2 s and selects that key in the drawing. In the key panel's choices list pick "Press a shortcut", record Ctrl+Shift+K in the detail view and press Save: that key sends Ctrl+Shift+K. Go back with "‹ All choices", pick "Hold a key while I hold this one", record a shortcut such as Shift+A, and Save: it stays down while the key is held. Do the same with "Turn a key on and off": it stays down until the next press. On either choice, tap a Quick pick (Shift, Ctrl or Alt; ⇧, ⌘ or ⌥ on a Mac): it saves at once, and the Speed Editor key holds or toggles that modifier alone; switching Off releases it.
-- [ ] Action editor (Keys tab): select a key, pick Open an app (path, one argument per line, the allow toggle), Go to a page, Set the wheel mode or Turn the wheel into a dial, and Save; the key does it at once and after a restart. An empty app path or a missing page shows an error under the field and saves nothing.
-- [ ] Wheel tab: for Jog, Shuttle and Scroll set Turn left / Turn right (Scroll, a shortcut or an app) and Ticks per step or Sensitivity, and the dial steps (%); Save, and the wheel does it at once. A step of 0 shows an error under the field and saves nothing.
-- [ ] DaVinci Resolve tab: the program name shows Resolve.exe on Windows and Resolve on macOS as the default; Reset restores it, and freewheel steps aside when a program of the saved name starts.
-- [ ] Resolve pause: with DaVinci Resolve open the status reads Paused (Resolve) and the notice bar says Paused for DaVinci Resolve (never Off or Turn on); quitting Resolve brings back Connected.
+No telemetry, no accounts, no analytics. freewheel's only network requests
+are for updates, to GitHub, over HTTPS:
 
-### Windows 11
+1. the release manifest,
+   `https://github.com/brinkercode/freewheel/releases/latest/download/latest.json`,
+   at start and when you click **Check for updates**;
+2. the zip for your system that the manifest lists (a file of the same GitHub
+   release), only when an update is downloaded.
 
-- [ ] [C9a] USB: plugged in, the Speed Editor opens and authenticates (status shows connected over USB); a Press fires its binding and a Jog turn scrolls. Confirms the USB path on real hardware.
-- [ ] [C9a] Bluetooth: paired and with the USB cable out, the Speed Editor opens and authenticates (status shows connected over Bluetooth); a Press fires its binding and a Jog turn scrolls. Confirms Bluetooth on Windows 11, which the hardware spike left unconfirmed.
-- [ ] Re-auth: left connected and idle past the auth timeout (up to 10 minutes) over USB and over Bluetooth, the device re-authenticates on its own and a Press still works without a replug.
-- [ ] Reconnect: unplug USB (or switch the device off on Bluetooth); the status shows disconnected, and on plug-in or power-on it reconnects and authenticates within a few seconds without restarting freewheel.
-- [ ] On/Off: holding a key set to "Hold a key while I hold this one" (choices list → detail view → Save) and switching Off from the tray releases the key (no stuck key in a text field), closes the device and turns the LEDs off; switching On re-opens and re-authenticates it.
-- [ ] [freewheel-m5-2] Resolve hand-off: with freewheel On, starting DaVinci Resolve switches freewheel Off and shows the replug notification; Resolve then drives the timeline with the Speed Editor, with or without a replug (record which). Quitting Resolve switches freewheel back On; after a manual Off it stays Off. Confirms whether Resolve re-acquires the device on Windows without a replug.
-- [ ] LEDs: SCRL is lit after connecting (default wheel mode); pressing SHTL / JOG / SCRL moves the light to that button; a key set to "Turn a key on and off" (e.g. TRANS) is lit while on and dark after the second press; a page key (e.g. CAM 1) is lit while its page is active and dark back on the first page; the active override's toggle button is lit; everything goes dark on Off, when freewheel steps aside for Resolve and on Quit, and comes back after unplug/replug.
-- [ ] Key injection: the debug command taps Shift+A into a focused text field (an "A" appears) and scrolls a long page in the browser.
-- [ ] Jog mode: left and right fire their actions once per tick threshold.
-- [ ] Scroll mode (the default): turning the wheel scrolls the focused page up and down.
-- [ ] Shuttle mode: off-centre repeats its action at a throttled rate that rises with the angle, and stops at centre.
-- [ ] System volume dial override: turning the jog wheel right raises and left lowers the default output device's volume (the Windows volume flyout moves), and it follows a change of default output device.
-- [ ] Brightness override: an external DDC/CI monitor and a laptop's built-in panel both step up and down with the jog wheel; with DDC/CI off on one monitor (and on a desktop with no built-in panel) that display shows its own error and the others still step.
-- [ ] Per-app volume: with the dial on the app-volume override and a video playing in the focused app, turning the jog wheel moves only that app's slider in the Volume Mixer; focusing an app with no audio reports 'no audio session'.
-- [ ] Battery: on Bluetooth the tray tooltip shows the battery level, and one notification appears when it drops below 15%.
-- [ ] Start at login: on a fresh install the tray's "Start at login" is unchecked. Checking it adds freewheel to Settings > Apps > Startup and freewheel starts after signing out and in; unchecking it removes the entry and freewheel no longer starts. The checkbox matches the Startup entry after a restart, including when the entry was switched off there.
-- [ ] Import and export: export writes freewheel-mappings.json; importing it asks for confirmation, backs up the current config first, and an imported LaunchApp stays disabled until opted in.
-- [ ] SmartScreen on install: running the unzipped, unsigned `freewheel.exe` the first time shows SmartScreen or not (record what is shown); "More info > Run anyway" starts it.
-- [ ] Update: unzipping the previous release into a folder and starting it offers the new version; accepting downloads it with progress, Restart to update restarts into it from the same folder, What's new shows, the keys and settings are unchanged and `freewheel.exe.old` is gone. SmartScreen on update: record whether the updated exe prompts again (it should not: the app downloads it, so it has no mark of the web). In a folder you can't change (Program Files) the update says to move freewheel or download it.
-- [ ] [T3] Update with a tampered .sig: serving a latest.json whose signature is altered (one character changed) makes the update fail with a signature error and is rejected; the folder's version is unchanged.
+Builds without the release's update key (built from source, CI test builds)
+make no requests at all. Links you click (What's new, a key set to open a
+website) open in your browser.
 
-### macOS 15 (Apple Silicon and Intel)
+## License and credits
 
-Run every item on an Apple Silicon Mac and on an Intel Mac, from the universal zip.
+MIT, see [LICENSE](LICENSE). Credits are in [NOTICE](NOTICE):
 
-- [ ] [C9a] USB: plugged in, the Speed Editor opens and authenticates (status shows connected over USB); a Press fires its binding and a Jog turn scrolls.
-- [ ] [C9a] Bluetooth: paired and with the USB cable out, the Speed Editor opens and authenticates (status shows connected over Bluetooth); a Press fires its binding and a Jog turn scrolls.
-- [ ] Re-auth: left connected and idle past the auth timeout (up to 10 minutes) over USB and over Bluetooth, the device re-authenticates on its own and a Press still works without a replug.
-- [ ] Reconnect: unplug USB (or switch the device off on Bluetooth); the status shows disconnected, and on plug-in or power-on it reconnects and authenticates within a few seconds without restarting freewheel.
-- [ ] On/Off: holding a key set to "Hold a key while I hold this one" (choices list → detail view → Save) and switching Off from the menu bar releases the key (no stuck key in a text field), closes the device and turns the LEDs off; switching On re-opens and re-authenticates it.
-- [ ] Resolve hand-off: with freewheel On, starting DaVinci Resolve switches freewheel Off and shows the replug notification; Resolve then drives the timeline with the Speed Editor, with or without a replug (record which). Quitting Resolve switches freewheel back On; after a manual Off it stays Off.
-- [ ] [freewheel-m5-5] Permissions: on a fresh install, or with Accessibility and Input Monitoring revoked, the menu bar shows 'Needs permission (click to fix)' and open_permission_pane lands on Privacy & Security > Accessibility and > Input Monitoring; once both are granted, Press events arrive. Confirms whether macOS Input Monitoring is needed to read the device.
-- [ ] LEDs: SCRL is lit after connecting (default wheel mode); pressing SHTL / JOG / SCRL moves the light to that button; a key set to "Turn a key on and off" (e.g. TRANS) is lit while on and dark after the second press; a page key (e.g. CAM 1) is lit while its page is active and dark back on the first page; the active override's toggle button is lit; everything goes dark on Off, when freewheel steps aside for Resolve and on Quit, and comes back after unplug/replug.
-- [ ] Key injection: the debug command taps Shift+A into a focused text field (an "A" appears) and scrolls a long page in the browser.
-- [ ] Jog mode: left and right fire their actions once per tick threshold.
-- [ ] Scroll mode (the default): turning the wheel scrolls the focused page up and down.
-- [ ] Shuttle mode: off-centre repeats its action at a throttled rate that rises with the angle, and stops at centre.
-- [ ] System volume: with the System volume override on, turning the jog wheel right raises and left lowers the default output device's volume (the menu bar volume follows), stopping at 0 and full. Switch the output (built-in speakers, then headphones or a USB/Bluetooth device) and it follows the new default. With an output that has no volume control (e.g. HDMI/DisplayPort audio), the settings window shows an override error instead.
-- [ ] Brightness override: with the dial on the brightness override, turning the jog wheel steps the built-in panel (or settings shows 'built-in display brightness unavailable' and the log says why) and every DDC monitor; unplugging one monitor's DDC cable gives that display its own error while the others still step.
-- [ ] Per-app volume: switching the app-volume override on for the first time shows the audio-capture prompt and the status shows 'permission needed' until it is allowed; then, with audio in two apps, turning the jog wheel changes only the frontmost one (to silence at 0), follows a focus switch, and leaving the override restores the app's own volume.
-- [ ] Battery: on Bluetooth the menu bar tooltip shows the battery level, and one notification appears when it drops below 15%.
-- [ ] Start at login: on a fresh install the menu bar's "Start at login" is unchecked. Checking it adds freewheel to System Settings > General > Login Items and freewheel starts after logging out and in; unchecking it removes the item and freewheel no longer starts. The checkbox matches Login Items after a restart, including when the item was removed there.
-- [ ] Import and export: export writes freewheel-mappings.json; importing it asks for confirmation, backs up the current config first, and an imported LaunchApp stays disabled until opted in.
-- [ ] Update: unzipping the previous release, moving freewheel.app to Applications and starting it offers the new version; accepting downloads it, Restart to update replaces freewheel.app in place and restarts into it (no Gatekeeper prompt), What's new shows, Login Items and Accessibility/Input Monitoring still list freewheel (record whether the permissions had to be granted again: ad-hoc signed builds may need it), and `freewheel.app.old` is gone.
-- [ ] [T3] Update with a tampered .sig: serving a latest.json whose signature is altered (one character changed) makes the update fail with a signature error and is rejected; the app's version is unchanged.
+- The Speed Editor's authentication is ported from `bmd.py` in
+  [smunaut/blackmagic-misc](https://github.com/smunaut/blackmagic-misc)
+  (Apache 2.0), whose reverse-engineering of the device's protocol informs
+  freewheel's device code.
+- UI icons are [Material Symbols](https://github.com/google/material-design-icons)
+  (Apache 2.0).
 
-### Open items the hardware spike left unconfirmed
-
-Each is confirmed only by its real-device check above; record the result in the release notes.
-
-- C9a: Bluetooth on Windows 11 (open, auth, Press and Jog over Bluetooth), checked by the [C9a] items.
-- freewheel-m5-2: Resolve re-acquire on Windows (does Resolve take the device back without a replug), checked by the [freewheel-m5-2] item.
-- freewheel-m5-5: macOS Input Monitoring (is it needed to read the device), checked by the [freewheel-m5-5] item.
-- SmartScreen on the unsigned portable exe, on first start and after each update (default: accept the prompt for v1 and note it in the release notes).
+freewheel is not affiliated with Blackmagic Design. Speed Editor and DaVinci
+Resolve are trademarks of Blackmagic Design.

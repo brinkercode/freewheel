@@ -25,12 +25,12 @@
 # 'e2e-update-screenshots' artifact.
 name: e2e-windows
 
+# No paths-ignore: these jobs are required checks, so a docs-only PR must
+# run them too (a skipped required check never reports and blocks the merge).
 on:
   pull_request:
-    paths-ignore: ["docs/**", "**.md"]
   push:
     branches: [main]
-    paths-ignore: ["docs/**", "**.md"]
   workflow_dispatch:
 
 concurrency:

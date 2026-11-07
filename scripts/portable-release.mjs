@@ -4,7 +4,7 @@
 //
 //   node scripts/portable-release.mjs package --os windows --version 0.1.1 --out <dir> [--exe target/release/freewheel.exe]
 //   node scripts/portable-release.mjs package --os macos --version 0.1.1 --out <dir> --app <path/to/freewheel.app>
-//     -> <dir>/freewheel-0.1.1-windows-x64.zip (freewheel.exe + freewheel-simulate.cmd)
+//     -> <dir>/freewheel-0.1.1-windows-x64.zip (freewheel.exe only)
 //        <dir>/freewheel-0.1.1-macos-universal.zip (freewheel.app, as ditto keeps it)
 //   node scripts/portable-release.mjs manifest --version 0.1.1 --notes-file notes.md --dir <dir> --base-url <url> [--only windows]
 //     -> latest.json on stdout: each platform's package url and its signature
@@ -29,8 +29,12 @@ export const PACKAGES = {
 /** The manifest's platform keys (selfupdate.rs platform_key) and the package serving each. */
 export const PLATFORMS = { "windows-x86_64": "windows", "darwin-aarch64": "macos", "darwin-x86_64": "macos" };
 
-/** What the Windows package holds, next to each other at its root. */
-export const WINDOWS_FILES = ["freewheel.exe", "freewheel-simulate.cmd"];
+/**
+ * What the Windows package holds, at its root: the app only. The
+ * double-click simulator launcher is a development aid and ships only in
+ * the test-build and e2e artifacts.
+ */
+export const WINDOWS_FILES = ["freewheel.exe"];
 
 const VERSION = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
 
@@ -70,7 +74,6 @@ export function makePackage({ os, version, out, exe = "target/release/freewheel.
     const stage = mkdtempSync(join(tmpdir(), "freewheel-package-"));
     try {
       copyFileSync(exe, join(stage, "freewheel.exe"));
-      copyFileSync(fileURLToPath(new URL("../src-tauri/windows/freewheel-simulate.cmd", import.meta.url)), join(stage, "freewheel-simulate.cmd"));
       // Windows' own bsdtar (not Git's GNU tar) writes zip with -a.
       const tar = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe");
       execFileSync(tar, ["-a", "-c", "-f", zip, "-C", stage, ...WINDOWS_FILES], { stdio: "inherit" });

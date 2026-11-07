@@ -1,8 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 
-const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
-const checklist = readme.slice(readme.indexOf("## Manual checklist"));
+const checklist = readFileSync(new URL("../.github/ISSUE_TEMPLATE/release-checklist.md", import.meta.url), "utf8");
 const section = (title) => {
   const start = checklist.indexOf(`### ${title}\n`);
   expect(start, `no '### ${title}' section`).toBeGreaterThanOrEqual(0);
@@ -11,6 +10,12 @@ const section = (title) => {
 };
 const windows = () => section("Windows 11");
 const mac = () => section("macOS 15 (Apple Silicon and Intel)");
+
+test("the checklist is an issue template the README and docs/releasing.md link to", () => {
+  expect(checklist).toMatch(/^---\nname: Release checklist\nabout: .+\ntitle: .+\n/);
+  for (const [file, link] of [["../README.md", "](.github/ISSUE_TEMPLATE/release-checklist.md)"], ["../docs/releasing.md", "](../.github/ISSUE_TEMPLATE/release-checklist.md)"]])
+    expect(readFileSync(new URL(file, import.meta.url), "utf8")).toContain(link);
+});
 
 test("[A12] the checklist has Windows 11 and macOS 15 sections and gates the draft on every item", () => {
   windows();
