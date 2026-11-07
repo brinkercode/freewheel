@@ -72,7 +72,11 @@ pub(crate) fn to_enigo(key: &Keystroke) -> Result<Key, InjectError> {
         media::VOLUME_DOWN => Key::VolumeDown,
         media::NEXT_TRACK => Key::MediaNextTrack,
         media::PREV_TRACK => Key::MediaPrevTrack,
-        _ => return Err(InjectError(format!("unknown key: {name}"))),
+        // A mappings file's other named keys (F13-F24, the number pad...).
+        other => {
+            return crate::key_names::extra_key(other)
+                .ok_or_else(|| InjectError(format!("unknown key: {name}")));
+        }
     })
 }
 

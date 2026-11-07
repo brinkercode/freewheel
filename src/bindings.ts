@@ -9,7 +9,12 @@ export type Appearance = "System" | "Light" | "Dark";
 
 export type Layer = { id: string, name: string, bindings: { [key in string]?: Action }, };
 
-export type Action = { "Hotkey": { combo: KeyCombo, } } | { "Held": { combo: KeyCombo, } } | { "Latched": { combo: KeyCombo, } } | { "Scroll": { amount: number, } } | { "LaunchApp": { path: string, args: Array<string>, enabled: boolean, } } | { "LayerPush": { target: string, } } | { "SetJogMode": { mode: JogMode, } } | { "OverrideToggle": { mode: OverrideMode, } };
+export type Action = { "Hotkey": { combo: KeyCombo, } } | { "Held": { combo: KeyCombo, } } | { "Latched": { combo: KeyCombo, } } | { "Scroll": { amount: number, } } | { "LaunchApp": { path: string, args: Array<string>, enabled: boolean, 
+/**
+ * The folder the app starts in (a mappings file's `cwd`); `None`:
+ * freewheel's own. Left out of config.json when unset.
+ */
+cwd?: string, } } | { "LayerPush": { target: string, } } | { "SetJogMode": { mode: JogMode, } } | { "OverrideToggle": { mode: OverrideMode, } };
 
 export type KeyCombo = { modifiers: Array<Modifier>, key: string, };
 
@@ -25,7 +30,7 @@ export type JogBinding = { left: Action | null, right: Action | null, threshold:
 
 export type OverrideSettings = { system_volume_step: number, app_volume_step: number, brightness_step: number, };
 
-export type SaveError = { "kind": "VersionMismatch", found: number, expected: number, } | { "kind": "UnknownField", path: string, } | { "kind": "UnknownKey", layer: string, key: string, } | { "kind": "BadLayerReference", location: string, target: string, } | { "kind": "Malformed", message: string, } | { "kind": "SaveFailed", message: string, };
+export type SaveError = { "kind": "VersionMismatch", found: number, expected: number, } | { "kind": "UnknownField", path: string, } | { "kind": "UnknownKey", layer: string, key: string, } | { "kind": "BadLayerReference", location: string, target: string, } | { "kind": "Malformed", message: string, } | { "kind": "SaveFailed", message: string, } | { "kind": "InvalidFile", line: number, column: number, at: string, message: string, };
 
 export type StatusEvent = { 
 /**

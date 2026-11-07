@@ -15,7 +15,7 @@
 // the session goes through tauri-driver (`tauri:options`).
 // Plain fetch and the W3C WebDriver protocol: no npm dependencies.
 import { spawn } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { notesText } from "../src/notesMarkdown.js";
@@ -464,8 +464,17 @@ async function main() {
       window.__TAURI__.core.invoke("save_config", { config }).then(() => done("ok"), (e) => done("error " + JSON.stringify(e)));`, [config]);
     if (r !== "ok") throw new Error(`save_config: ${r}`);
   };
-  /** The mappings part of a config, as a backup file holds it. */
-  const mappings = (c) => JSON.stringify({ layers: c.layers, base_layer: c.base_layer, jog: c.jog, overrides: c.overrides });
+  /**
+   * The mappings part of a config, as a backup file holds it: pages by name
+   * (a restore on a fresh setup makes page ids from the names, SCHEMA.md).
+   */
+  const mappings = (c) => {
+    const name = (id) => c.layers.find((l) => l.id === id)?.name ?? id;
+    const fix = (a) => (a?.LayerPush ? { LayerPush: { target: name(a.LayerPush.target) } } : a);
+    const layers = c.layers.map((l) => ({ name: l.name, bindings: Object.fromEntries(Object.entries(l.bindings).sort().map(([k, a]) => [k, fix(a)])) }));
+    const jog = { ...c.jog, per_mode: Object.fromEntries(Object.entries(c.jog.per_mode).sort().map(([m, b]) => [m, { ...b, left: fix(b.left), right: fix(b.right) }])) };
+    return JSON.stringify({ layers, base: name(c.base_layer), jog, overrides: c.overrides });
+  };
   const titleOf = (key) => d.exec(`return document.querySelector('.device [data-binding="' + arguments[0] + '"]')?.getAttribute("title") ?? null`, [key]);
   /** The drawing's label of each key in `want` ({ key: label }). */
   const drawingShows = (want) =>
@@ -1409,6 +1418,10 @@ async function main() {
 
     // ---- Backups, restores and imports prove the data ------------------
     let backedUp;
+    // A version-2 backup names programs by path, and a restore keeps a path
+    // on only when it exists (SCHEMA.md "How open finds the app").
+    const roundTrip = resolve(dialogs, "Round Trip.exe");
+    writeFileSync(roundTrip, "not really a program");
     await step("data: a distinctive setup on two pages", async () => {
       const cur = await readConfig();
       await saveConfig({
@@ -1419,7 +1432,7 @@ async function main() {
             name: basePage(cur).name,
             bindings: {
               In: { Hotkey: { combo: { modifiers: ["Ctrl", "Shift"], key: "S" } } },
-              Cut: { LaunchApp: { path: "C:\\Tools\\Round Trip.exe", args: ["--fw"], enabled: true } },
+              Cut: { LaunchApp: { path: roundTrip, args: ["--fw"], enabled: true } },
               Trans: { Held: { combo: { modifiers: ["Shift"], key: "" } } },
               Snap: { Latched: { combo: { modifiers: ["Alt"], key: "" } } },
               Cam5: { LayerPush: { target: "studio" } },
@@ -1451,9 +1464,18 @@ async function main() {
       await click("settings", "nav.toolbar button.tab", "Help & backup");
       await click("settings", "#backup button", "Back up");
       await shows("settings", "Your keys are backed up.");
-      const file = JSON.parse(readFileSync(join(dialogs, "freewheel-mappings.json"), "utf8"));
-      if (mappings(file) !== mappings(backedUp)) throw new Error(`the backup file is not the setup: ${JSON.stringify(file).slice(0, 400)}`);
-      say(`  backup file: ${file.layers.length} pages, ${file.layers.reduce((n, l) => n + Object.keys(l.bindings).length, 0)} keys, ${Object.keys(file.jog.per_mode).length} wheel modes`);
+      const text = readFileSync(join(dialogs, "freewheel-mappings.json"), "utf8");
+      const file = JSON.parse(text);
+      // The short form (SCHEMA.md): printed key names, one-line actions.
+      const base = file.pages?.[basePage(backedUp).name];
+      const want = { IN: "Ctrl+Shift+S", TRANS: "hold Shift", SNAP: "toggle Alt", CAM5: "page Edit Bay", SHTL: "wheel mode volume", "FULL VIEW": "wheel brightness" };
+      const wrong = Object.entries(want).filter(([k, v]) => base?.[k] !== v);
+      if (file.version !== 2 || !file.$schema?.endsWith("freewheel-mappings.schema.json") || wrong.length || base.CUT?.open !== roundTrip || base.CUT?.args?.[0] !== "--fw")
+        throw new Error(`the backup file is not the short form of the setup (${JSON.stringify(wrong)}): ${text.slice(0, 600)}`);
+      const studio = file.pages["Edit Bay"];
+      if (studio?.CUT !== "Play/Pause" || studio?.CAM5 !== "back" || file.wheel?.mode !== "jog" || file.dial?.brightness_step !== 7)
+        throw new Error(`the second page, wheel or dial is wrong: ${text}`);
+      say(`  backup file: ${Object.keys(file.pages).length} pages, ${Object.values(file.pages).reduce((n, p) => n + Object.keys(p).length, 0)} keys, ${text.split("\n").length} lines`);
     });
     await step("data: Empty setup clears it", async () => {
       await click("simulator", `[role=group][aria-label="Keys"] button`, "Empty setup");
@@ -1471,7 +1493,8 @@ async function main() {
     await step("data: the page key switches pages and the Keys tab follows", async () => {
       await pressKey("Cam5");
       await activePill("Edit Bay");
-      await waitFor("simulator", "the Speed Editor on the second page", `return document.querySelector(".fw-sim-meta")?.textContent.includes("Page studio")`);
+      const second = (await readConfig()).layers.find((l) => l.name === "Edit Bay").id;
+      await waitFor("simulator", "the Speed Editor on the second page", `return document.querySelector(".fw-sim-meta")?.textContent.includes("Page " + arguments[0])`, [second]);
       await drawingShows({ Cut: "Play/Pause", Cam5: "← Back to " + basePage(backedUp).name });
       await press("CUT");
       await logged("would press PlayPause");
@@ -1506,6 +1529,140 @@ async function main() {
       await press("CAM 1");
       await lineWith("would launch", "Tool.exe");
     }, ["settings", "simulator"]);
+    // ---- Hand-written short files (SCHEMA.md) ---------------------------
+    const restoredWith = async (text) => {
+      await waitFor("settings", `the restore message "${text}"`, `const t = document.querySelector("#backup .success-line")?.textContent ?? "";
+        if (t.includes(arguments[0])) return true;
+        throw new Error("restore says: " + t + " / " + (document.querySelector("#backup [role=alert]")?.textContent ?? ""));`, [text]);
+    };
+    let handWritten;
+    await step("data: a hand-written short file restores: key names, shortcuts, pages, apps, the wheel", async () => {
+      const short = join(dialogs, "hand-written.json");
+      writeFileSync(short, `{
+  "$schema": "https://raw.githubusercontent.com/brinkercode/freewheel/main/schema/freewheel-mappings.schema.json",
+  "version": 2,
+  "pages": {
+    "Main": {
+      "CUT": "Ctrl+Z",
+      "CAM1": "open Notepad",
+      "CAM2": "https://example.com",
+      "TRANS": "hold Shift",
+      "SNAP": "toggle Alt",
+      "ESC": "page Music",
+      "STOP/PLAY": "Play/Pause",
+      "AUDIO LEVEL": "wheel volume",
+      "cam 3": "open No Such App 42",
+      "in": "ctrl + shift + F13",
+      "OUT": "scroll -3"
+    },
+    "Music": { "ESC": "back", "CAM1": "Next track" }
+  },
+  "wheel": { "mode": "scroll", "speed": 5 }
+}
+`);
+      await restoreFrom(short, true);
+      await restoredWith("CAM3 on Main: there is no app or file called No Such App 42 on this computer.");
+      handWritten = await configShows("the hand-written keys", (c) => {
+        const main = basePage(c);
+        const music = c.layers.find((l) => l.name === "Music");
+        const b = main?.bindings ?? {};
+        const ok = main?.name === "Main" && c.layers.length === 2 && music && Object.keys(music.bindings).join() === "Cam1"
+          && JSON.stringify(b.Cut) === JSON.stringify({ Hotkey: { combo: { modifiers: ["Ctrl"], key: "Z" } } })
+          && b.Cam1?.LaunchApp?.enabled === true && /notepad/i.test(JSON.stringify(b.Cam1))
+          && JSON.stringify(b.Cam2) === JSON.stringify({ LaunchApp: { path: "explorer.exe", args: ["https://example.com"], enabled: true } })
+          && b.Trans?.Held?.combo.modifiers.join() === "Shift" && b.Snap?.Latched?.combo.modifiers.join() === "Alt"
+          && b.Esc?.LayerPush?.target === music.id && b.StopPlay?.Hotkey?.combo.key === "PlayPause"
+          && b.AudioLevel?.OverrideToggle?.mode === "SystemVolume"
+          && b.Cam3?.LaunchApp?.enabled === false && b.Cam3.LaunchApp.path === "No Such App 42"
+          && JSON.stringify(b.In) === JSON.stringify({ Hotkey: { combo: { modifiers: ["Ctrl", "Shift"], key: "F13" } } })
+          && b.Out?.Scroll?.amount === -3 && music.bindings.Cam1.Hotkey.combo.key === "NextTrack"
+          && c.jog.default_mode === "Scroll" && Object.values(c.jog.per_mode).every((m) => m.threshold === 6);
+        if (!ok) throw new Error(JSON.stringify(c).slice(0, 1500));
+        return true;
+      });
+      await click("settings", "nav.toolbar button.tab", "Keys");
+      await drawingShows({ Cut: "Undo", Cam1: "Opens Notepad", Cam2: "Opens example.com", Trans: "Hold Shift", Snap: "Alt on/off", Esc: "→ Music", StopPlay: "Play/Pause", AudioLevel: "Volume knob", Cam3: "Opens No Such App 42 (off)", In: "Ctrl+Shift+F13" });
+      await click("settings", ".pill button[role=tab]", "Music");
+      await drawingShows({ Esc: "← Back to Main", Cam1: "Next track" });
+    }, ["settings", "simulator"]);
+    await step("data: back up the hand-written setup, then restore that file: the same keys", async () => {
+      // The first backup is restored again at the end: keep it.
+      const original = readFileSync(join(dialogs, "freewheel-mappings.json"));
+      await click("settings", "nav.toolbar button.tab", "Help & backup");
+      await click("settings", "#backup button", "Back up");
+      await shows("settings", "Your keys are backed up.");
+      const text = readFileSync(join(dialogs, "freewheel-mappings.json"), "utf8");
+      writeFileSync(join(dialogs, "hand-written-backup.json"), text);
+      writeFileSync(join(dialogs, "freewheel-mappings.json"), original);
+      writeFileSync(join(out, "exported-example.json"), text);
+      say(`  the exported file:\n${text}`);
+      for (const part of ['"CUT": "Ctrl+Z"', '"CAM3": "open No Such App 42"', '"ESC": "page Music"', '"ESC": "back"', '"IN": "Ctrl+Shift+F13"', '"OUT": "scroll -3"', '"mode": "scroll"', '"speed": 5', '"CAM2": "https://example.com"'])
+        if (!text.includes(part)) throw new Error(`the exported file lacks ${part}:\n${text}`);
+      await click("simulator", `[role=group][aria-label="Keys"] button`, "Empty setup");
+      await configShows("no keys", (c) => c.layers.length === 1 && Object.keys(c.layers[0].bindings).length === 0);
+      await restoreFrom(join(dialogs, "hand-written-backup.json"), true);
+      await restoredWith("Your keys are restored.");
+      await configShows("the exported file restores the same keys", (c) => {
+        if (mappings(c) !== mappings(handWritten)) throw new Error(mappings(c).slice(0, 800) + " vs " + mappings(handWritten).slice(0, 800));
+        return true;
+      });
+    }, ["settings", "simulator"]);
+    await step("data: a mistake in a hand-written file names the line, column and key; nothing changes", async () => {
+      const before = JSON.stringify(await readConfig());
+      const typo = join(dialogs, "typo.json");
+      writeFileSync(typo, '{\n  "pages": {\n    "Main": {\n      "CAM1": "opn Spotify"\n    }\n  }\n}\n');
+      await restoreFrom(typo, true);
+      const want = `This file can't be restored: line 4, column 15, CAM1 on Main: unknown action "opn Spotify" (did you mean "open Spotify"?)`;
+      await waitFor("settings", "the line and key of the mistake", `const t = document.querySelector("#backup [role=alert]")?.textContent;
+        if (t === arguments[0]) return true;
+        throw new Error("alert: " + t);`, [want]);
+      await sleep(500);
+      if (JSON.stringify(await readConfig()) !== before) throw new Error("the bad file changed the config");
+    });
+    await step("data: open by full path runs a .cmd with its args in its cwd (send for real)", async () => {
+      const marker = resolve(dialogs, "marker.cmd");
+      const cwd = resolve(dialogs, "start here");
+      const result = resolve(dialogs, "marker.txt");
+      mkdirSync(cwd, { recursive: true });
+      rmSync(result, { force: true });
+      writeFileSync(marker, '@echo off\r\n> "%~dp0marker.txt" echo %~1^|%~2^|%CD%\r\n');
+      const file = join(dialogs, "open-by-path.json");
+      writeFileSync(file, JSON.stringify({
+        version: 2,
+        pages: {
+          Main: {
+            CAM4: { open: marker, args: ["hello world", "second"], cwd: `%${DIALOG_DIR_ENV}%\\start here` },
+            CAM5: `open %${DIALOG_DIR_ENV}%\\marker.cmd`,
+          },
+        },
+      }, null, 2));
+      await restoreFrom(file, true);
+      await restoredWith("Your keys are restored.");
+      await configShows("CAM4 runs marker.cmd by path, CAM5 by the expanded variable", (c) => {
+        const b = basePage(c).bindings;
+        const ok = b.Cam4?.LaunchApp?.path === marker && b.Cam4.LaunchApp.args.join("|") === "hello world|second" && b.Cam4.LaunchApp.cwd?.toLowerCase() === cwd.toLowerCase() && b.Cam4.LaunchApp.enabled
+          && b.Cam5?.LaunchApp?.path.toLowerCase() === marker.toLowerCase() && b.Cam5.LaunchApp.enabled;
+        if (!ok) throw new Error(JSON.stringify(b));
+        return true;
+      });
+      await click("simulator", ".fw-sim-switch input");
+      await shows("simulator", "Shortcuts reach the apps you have open.");
+      try {
+        await pressKey("Cam4");
+        const end = Date.now() + 15000;
+        let got = "";
+        while (Date.now() < end) {
+          got = existsSync(result) ? readFileSync(result, "utf8").trim() : "";
+          if (got) break;
+          await sleep(200);
+        }
+        say(`  marker.txt: ${JSON.stringify(got)}`);
+        if (got.toLowerCase() !== `hello world|second|${cwd}`.toLowerCase()) throw new Error(`marker.cmd wrote ${JSON.stringify(got)}`);
+      } finally {
+        await click("simulator", ".fw-sim-switch input");
+        await shows("simulator", "Off: shortcuts only show up in the log.");
+      }
+    }, ["simulator", "settings"]);
     for (const [name, text, error] of [
       ["broken.json", "{ this is not a backup", "This is not a freewheel mappings file"],
       ["newer.json", JSON.stringify({ version: 99, layers: "from the future" }), "This file is from a newer version of freewheel."],

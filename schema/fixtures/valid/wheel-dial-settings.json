@@ -1,0 +1,32 @@
+{
+  "wheel": {
+    "mode": "Shuttle",
+    "speed": 3,
+    "jog": {
+      "left": "Left",
+      "right": "nothing",
+      "speed": 9
+    },
+    "shuttle": {
+      "left": "J",
+      "right": "L",
+      "max_rate": 8
+    },
+    "volume": {
+      "max_rate": null
+    }
+  },
+  "dial": {
+    "volume_step": 0.5,
+    "app_volume_step": 10,
+    "brightness_step": 100
+  },
+  "settings": {
+    "appearance": "DARK",
+    "update_automatically": false,
+    "step_aside_for_resolve": true,
+    "resolve_program": "Resolve.exe",
+    "low_battery_warning": 0,
+    "detailed_logs": false
+  }
+}

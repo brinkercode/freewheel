@@ -155,7 +155,9 @@ test("capture records modifiers plus one key and shows it", () => {
 test("an invalid combo shows an inline error and is never saved", async () => {
   expect(comboError(null)).toBe("Press the shortcut you want first.");
   expect(comboError(combo("", "Ctrl"))).toBe("Add a key to go with the modifier, like Ctrl+K.");
-  expect(comboError(combo("CapsLock"))).toBe("freewheel can't send the CapsLock key.");
+  expect(comboError(combo("ContextMenu"))).toBe("freewheel can't send the ContextMenu key.");
+  // The keys a mappings file may name (SCHEMA.md) can be kept as they are.
+  for (const k of ["F24", "Num7", "NumAdd", "CapsLock", "PrintScreen"]) expect(comboError(combo(k))).toBeNull();
   expect(comboError(combo("F12", "Shift"))).toBeNull();
   const save = vi.fn(async () => {});
   const r = await saveKey({ config, pageId: "base", key: "Out", kind: "Hotkey", combo: combo("", "Ctrl"), save });
@@ -179,7 +181,7 @@ test("comboError still rejects an empty combo and everything it rejected for Hot
   for (const kind of ["Hotkey", "Held", "Latched"]) {
     expect(comboError(null, kind)).toBe("Press the shortcut you want first.");
     expect(comboError(combo(""), kind)).toBe("Press the shortcut you want first.");
-    expect(comboError(combo("CapsLock", "Shift"), kind)).toBe("freewheel can't send the CapsLock key.");
+    expect(comboError(combo("ContextMenu", "Shift"), kind)).toBe("freewheel can't send the ContextMenu key.");
     // Two modifiers and no key is not a lone modifier.
     expect(comboError(combo("", "Ctrl", "Shift"), kind)).toBe("Add a key to go with the modifier, like Ctrl+K.");
   }

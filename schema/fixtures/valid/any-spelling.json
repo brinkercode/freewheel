@@ -1,0 +1,16 @@
+{
+  "pages": {
+    "P": {
+      "cam 1": "ctrl + shift + k",
+      "Stop/Play": "play/pause",
+      "SmartInsrt": "F24",
+      "trim-out": "Ctrl++",
+      "SCRL": "wheel mode JOG",
+      "IN": "Alt+Num7",
+      "OUT": "Cmd+Option+Esc",
+      "DIS": "SCROLL UP",
+      "ROLL": null,
+      "CUT": "Hold shift"
+    }
+  }
+}

@@ -14,6 +14,7 @@ use freewheel_core::config::{
     Config, ConfigError, ConfigStore, MAPPINGS_FILE, SaveError, parse_for_save,
 };
 use freewheel_core::logging::Logger;
+use freewheel_core::mappings_file::{self, Host, InstalledApp, RealHost};
 use freewheel_core::permissions::Permissions;
 use freewheel_core::simulator::Bus;
 use freewheel_core::status::StatusEvent;
@@ -205,9 +206,12 @@ impl Settings {
         self.replace(parse_for_save(value)?)
     }
 
-    /// Writes the running config's mappings to `path` (freewheel-mappings.json).
-    pub fn export_to(&self, path: &Path) -> Result<(), SaveError> {
-        std::fs::write(path, self.config().export_mappings()).map_err(|e| {
+    /// Writes the running config's mappings to `path`
+    /// (freewheel-mappings.json, the short version-2 form, SCHEMA.md); apps
+    /// are written by their installed name on `host` when that opens them.
+    pub fn export_to(&self, path: &Path, host: &dyn Host) -> Result<(), SaveError> {
+        let bytes = mappings_file::export(&self.config(), host);
+        std::fs::write(path, bytes).map_err(|e| {
             tracing::error!(error = %e, "exporting the mappings failed");
             SaveError::SaveFailed {
                 message: e.to_string(),
@@ -217,23 +221,25 @@ impl Settings {
         Ok(())
     }
 
-    /// Validates a mappings file, asks `confirm`, backs up `config.json`,
-    /// then replaces the mappings. `Ok(false)` when the user kept their keys.
-    /// LaunchApp bindings stay disabled unless `allow_launch` (T1).
+    /// Validates a mappings file (version 2 or 1), asks `confirm`, backs up
+    /// `config.json`, then replaces the mappings. `Ok(None)` when the user
+    /// kept their keys, else the notes for the keys that came in off.
+    /// LaunchApp bindings stay disabled unless `allow_launch` (T1); `open`
+    /// targets resolve on `host`.
     pub fn import(
         &self,
         bytes: &[u8],
         allow_launch: bool,
+        host: &dyn Host,
         confirm: impl FnOnce() -> bool,
-    ) -> Result<bool, SaveError> {
-        let config = self
-            .config()
-            .import_mappings(bytes, allow_launch)
+    ) -> Result<Option<Vec<String>>, SaveError> {
+        let imported = mappings_file::import(&self.config(), bytes, allow_launch, host)
             .inspect_err(|e| tracing::warn!(error = %e, "mappings file rejected"))?;
         if !confirm() {
             tracing::info!("mappings import cancelled");
-            return Ok(false);
+            return Ok(None);
         }
+        let config = imported.config;
         let failed = |e: ConfigError| {
             tracing::error!(error = %e, "backing up config.json failed; import stopped");
             SaveError::SaveFailed {
@@ -242,8 +248,12 @@ impl Settings {
         };
         lock(&self.store).backup().map_err(failed)?;
         self.replace(config)?;
-        tracing::info!(allow_launch, "mappings imported");
-        Ok(true)
+        tracing::info!(
+            allow_launch,
+            notes = imported.notes.len(),
+            "mappings imported"
+        );
+        Ok(Some(imported.notes))
     }
 
     fn replace(&self, config: Config) -> Result<(), SaveError> {
@@ -315,6 +325,21 @@ pub fn save_config(
     settings.save(&config)
 }
 
+/// This computer, for resolving and writing `open` targets: its files,
+/// environment and the app picker's installed apps.
+pub fn host() -> impl Host {
+    RealHost::new(|| {
+        crate::apps::installed()
+            .into_iter()
+            .map(|a| InstalledApp {
+                name: a.name,
+                path: a.path,
+                args: a.args,
+            })
+            .collect()
+    })
+}
+
 /// Asks for a file in a save dialog and exports the mappings to it; `false`
 /// when the user cancelled. Async so the blocking dialog is off the main thread.
 #[tauri::command]
@@ -336,7 +361,7 @@ pub async fn export_mappings(
     match picked {
         None => Ok(false),
         Some(Ok(path)) => {
-            settings.export_to(&path)?;
+            settings.export_to(&path, &host())?;
             crate::simulate::note(&app, format!("Backed up the keys to {}", path.display()));
             Ok(true)
         }
@@ -345,14 +370,14 @@ pub async fn export_mappings(
 }
 
 /// Asks for a mappings file, validates it, confirms "Replace your keys?",
-/// backs up config.json and replaces the mappings; `false` when the user
-/// cancelled or kept their keys.
+/// backs up config.json and replaces the mappings; `null` when the user
+/// cancelled or kept their keys, else the notes about keys that came in off.
 #[tauri::command]
 pub async fn import_mappings(
     app: tauri::AppHandle,
     settings: tauri::State<'_, Settings>,
     allow_launch: bool,
-) -> Result<bool, SaveError> {
+) -> Result<Option<Vec<String>>, SaveError> {
     use crate::e2e::Dialog;
     use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
     let unreadable = |e: String| {
@@ -372,10 +397,11 @@ pub async fn import_mappings(
             .transpose()?,
     };
     let Some(path) = picked else {
-        return Ok(false);
+        return Ok(None);
     };
     let bytes = std::fs::read(&path).map_err(|e| unreadable(e.to_string()))?;
-    let restored = settings.import(&bytes, allow_launch, || {
+    let host = host();
+    let restored = settings.import(&bytes, allow_launch, &host, || {
         if let Some(yes) = crate::e2e::dialog(&app, Dialog::ConfirmReplace) {
             return yes.is_some();
         }
@@ -388,8 +414,11 @@ pub async fn import_mappings(
             ))
             .blocking_show()
     })?;
-    if restored {
+    if let Some(notes) = &restored {
         crate::simulate::note(&app, format!("Restored the keys from {}", path.display()));
+        for note in notes {
+            crate::simulate::note(&app, format!("Restore: {note}"));
+        }
     }
     Ok(restored)
 }
@@ -687,6 +716,7 @@ mod tests {
                 path: "/bin/app".into(),
                 args: vec![],
                 enabled: true,
+                cwd: None,
             },
         );
         config
@@ -696,15 +726,77 @@ mod tests {
     fn export_writes_the_mappings_file() {
         let (dir, settings, _commands) = settings();
         let path = dir.path().join(MAPPINGS_FILE);
-        settings.export_to(&path).unwrap();
+        settings.export_to(&path, &no_apps()).unwrap();
         assert_eq!(
             std::fs::read(&path).unwrap(),
-            Config::default().export_mappings()
+            mappings_file::export(&Config::default(), &no_apps())
+        );
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains("\"version\": 2") && text.contains("\"$schema\""),
+            "{text}"
         );
         assert!(matches!(
-            settings.export_to(dir.path()),
+            settings.export_to(dir.path(), &no_apps()),
             Err(SaveError::SaveFailed { .. })
         ));
+    }
+
+    fn no_apps() -> impl Host {
+        RealHost::new(Vec::new)
+    }
+
+    #[test]
+    fn a_hand_written_short_file_restores_and_backs_up_again() {
+        let (dir, settings, _commands) = settings();
+        let file = br#"{"pages": {"Main": {"CUT": "Ctrl+Z", "ESC": "page Music", "CAM1": "open No Such App 123"},
+            "Music": {"ESC": "back"}}, "wheel": {"mode": "jog", "speed": 4}}"#;
+        let notes = settings
+            .import(file, true, &no_apps(), || true)
+            .unwrap()
+            .unwrap();
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(
+            notes[0].starts_with("CAM1 on Main: there is no app or file called No Such App 123")
+        );
+        let config = settings.config();
+        assert_eq!(config.layers.len(), 2);
+        assert_eq!(config.layers[0].name, "Main");
+        assert!(matches!(
+            &config.layers[0].bindings["Cam1"],
+            Action::LaunchApp { enabled: false, .. }
+        ));
+        let path = dir.path().join("again.json");
+        settings.export_to(&path, &no_apps()).unwrap();
+        let again = std::fs::read(&path).unwrap();
+        let text = String::from_utf8_lossy(&again);
+        assert!(
+            text.contains("\"CUT\": \"Ctrl+Z\"")
+                && text.contains("\"ESC\": \"back\"")
+                && text.contains("\"speed\": 4"),
+            "{text}"
+        );
+        assert_eq!(
+            settings
+                .import(&again, true, &no_apps(), || true)
+                .unwrap()
+                .map(|n| n.len()),
+            Some(1)
+        );
+        assert_eq!(settings.config(), config);
+        let err = settings
+            .import(
+                br#"{"pages": {"Main": {"CAM1": "opn Spotify"}}}"#,
+                true,
+                &no_apps(),
+                || true,
+            )
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "line 1, column 29, CAM1 on Main: unknown action \"opn Spotify\" (did you mean \"open Spotify\"?)"
+        );
+        assert_eq!(settings.config(), config);
     }
 
     #[test]
@@ -719,18 +811,21 @@ mod tests {
 
         let mut asked = false;
         assert_eq!(
-            settings.import(&bytes, true, || {
+            settings.import(&bytes, true, &no_apps(), || {
                 asked = true;
                 false
             }),
-            Ok(false)
+            Ok(None)
         );
         assert!(asked);
         assert_eq!(settings.config(), Config::default());
         assert!(commands.try_recv().is_err());
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
 
-        assert_eq!(settings.import(&bytes, true, || true), Ok(true));
+        assert_eq!(
+            settings.import(&bytes, true, &no_apps(), || true),
+            Ok(Some(vec![]))
+        );
         assert_eq!(settings.config(), mappings());
         assert!(matches!(commands.try_recv(), Ok(Command::Reload(c)) if *c == mappings()));
         let backup = std::fs::read_dir(dir.path())
@@ -745,11 +840,18 @@ mod tests {
     #[test]
     fn import_rejects_a_bad_file_before_asking_and_changes_nothing() {
         let (dir, settings, commands) = settings();
-        for bytes in [&b"{oops"[..], br#"{"version": 2}"#] {
-            let result = settings.import(bytes, true, || panic!("asked for a bad file"));
+        for bytes in [
+            &b"{oops"[..],
+            br#"{"version": 3}"#,
+            br#"{"pages": {"Main": {"CUT": "nope nope"}}}"#,
+        ] {
+            let result =
+                settings.import(bytes, true, &no_apps(), || panic!("asked for a bad file"));
             assert!(matches!(
                 result,
-                Err(SaveError::Malformed { .. } | SaveError::VersionMismatch { .. })
+                Err(SaveError::Malformed { .. }
+                    | SaveError::VersionMismatch { .. }
+                    | SaveError::InvalidFile { .. })
             ));
         }
         assert_eq!(settings.config(), Config::default());
@@ -761,7 +863,10 @@ mod tests {
     fn import_without_the_opt_in_enables_no_launch_app() {
         let (_dir, settings, _commands) = settings();
         let bytes = mappings().export_mappings();
-        assert_eq!(settings.import(&bytes, false, || true), Ok(true));
+        assert_eq!(
+            settings.import(&bytes, false, &no_apps(), || true),
+            Ok(Some(vec![]))
+        );
         assert!(matches!(
             settings.config().layers[0].bindings["Snap"],
             Action::LaunchApp { enabled: false, .. }
