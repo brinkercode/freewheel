@@ -268,12 +268,14 @@ pub fn config_changes(old: &Config, new: &Config) -> Vec<String> {
         for key in keys {
             let (x, y) = (b.get(key), a.get(key));
             if x != y {
-                out.push(format!(
-                    "{}{on_page}: {} -> {}",
-                    key_label(key),
-                    maybe_action(x, &old.layers),
-                    maybe_action(y, &new.layers)
-                ));
+                let (from, to) = (maybe_action(x, &old.layers), maybe_action(y, &new.layers));
+                let line = if from == to {
+                    // Same app, other arguments (or turned on/off).
+                    format!("{}{on_page}: {to} (its details changed)", key_label(key))
+                } else {
+                    format!("{}{on_page}: {from} -> {to}", key_label(key))
+                };
+                out.push(line);
             }
         }
     }
@@ -541,6 +543,15 @@ mod tests {
             ]
         );
         assert!(config_changes(&new, &new).is_empty());
+        let mut args = new.clone();
+        args.layers[0].bindings.insert(
+            "Cut".into(),
+            launch("explorer.exe", &["https://example.com/b"]),
+        );
+        assert_eq!(
+            config_changes(&new, &args),
+            ["CUT: Open website example.com (its details changed)"]
+        );
         let back = config_changes(&new, &old);
         assert!(
             back.contains(&"page deleted \"Music\"".to_string()),
