@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "simulator",
-  "description": "The --simulate window drives the simulated Speed Editor, jumps the settings window to a screen, clicks the tray menu's items, hears what the app did for its log and draws its own title bar (minimise, maximise, close, drag).",
+  "description": "The --simulate window drives the simulated Speed Editor, jumps the settings window to a screen, clicks the tray menu's items, hears what the app did for its log, draws its own title bar (minimise, maximise, close, drag) and resizes the settings window (the Windows e2e checks its header at the 820px minimum).",
   "windows": ["simulator"],
   "permissions": [
     "allow-simulate",
@@ -16,6 +16,7 @@
     "core:window:allow-is-minimized",
     "core:window:allow-is-decorated",
     "core:window:allow-start-dragging",
-    "core:window:allow-close"
+    "core:window:allow-close",
+    "core:window:allow-set-size"
   ]
 }

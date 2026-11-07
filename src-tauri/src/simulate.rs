@@ -107,6 +107,9 @@ pub enum Mirror {
     Bus(Option<simulator::Bus>),
     /// Stepped aside for DaVinci Resolve.
     Paused(bool),
+    /// freewheel is On (stepped aside counts as On): the Simulator window
+    /// switched the simulated device itself.
+    Enabled(bool),
     Permissions(Permissions),
     /// A config the Simulator window changed (sample / empty setup).
     Config(Box<Config>),
@@ -174,6 +177,12 @@ pub fn permissions(state: simulator::Permissions) -> Permissions {
 /// Everything that changed between two statuses, for the [`Mirror`] sink.
 pub fn mirror(before: Option<&SimStatus>, now: &SimStatus) -> Vec<Mirror> {
     let mut out = Vec::new();
+    let paused = |s: &SimStatus| s.resolve_open && !s.enabled;
+    // First, so the On/Off is never shown with the old connection's news.
+    let on = |s: &SimStatus| s.enabled || paused(s);
+    if before.map(on) != Some(on(now)) {
+        out.push(Mirror::Enabled(on(now)));
+    }
     let ups = updates(before, now);
     if !ups.is_empty() {
         out.push(Mirror::Updates(ups));
@@ -181,7 +190,6 @@ pub fn mirror(before: Option<&SimStatus>, now: &SimStatus) -> Vec<Mirror> {
     if before.map(|b| b.bus) != Some(now.bus) {
         out.push(Mirror::Bus(now.bus));
     }
-    let paused = |s: &SimStatus| s.resolve_open && !s.enabled;
     if before.map(paused) != Some(paused(now)) {
         out.push(Mirror::Paused(paused(now)));
     }
@@ -311,6 +319,7 @@ pub fn attach(
                     Some(settings.status())
                 }
                 Mirror::Paused(paused) => settings.set_paused(paused),
+                Mirror::Enabled(on) => settings.mirror_enabled(on),
                 Mirror::Permissions(p) => settings.set_permissions(&p),
                 Mirror::Config(config) => {
                     // Saved through the settings window's own path (the

@@ -182,8 +182,11 @@ input[type="range"] { accent-color: var(--accent); border: none; background: tra
 .window-control.window-close svg { width: 17px; height: 17px; }
 .window-control.window-close:hover:not(:disabled) { background: #c42b1c; color: #fff; }
 .window-control.window-close:active:not(:disabled) { background: #a32417; color: #fff; }
-.tabs { display: flex; gap: 4px; flex: 1; min-width: 0; }
-.tab { height: var(--h-tab); border: none; background: transparent; color: var(--ink2); font-weight: var(--fw-medium); padding: 0 12px; gap: 7px; }
+/* The header row never overlaps: the tabs keep their width (clipped, never
+   drawn under the rest, if a big text size makes them too wide), the status
+   gets what is left between them and the switch. */
+.tabs { display: flex; gap: 4px; flex: 0 1 auto; min-width: 0; overflow: clip; overflow-clip-margin: 4px; }
+.tab { flex: none; height: var(--h-tab); border: none; background: transparent; color: var(--ink2); font-weight: var(--fw-medium); padding: 0 12px; gap: 7px; }
 .tab::before { content: ""; width: 19px; height: 19px; background: currentColor; -webkit-mask: var(--mask) center / contain no-repeat; mask: var(--mask) center / contain no-repeat; }
 .tab[data-icon="keyboard"] { --mask: url("../assets/icons/keyboard.svg"); }
 .tab[data-icon="trip_origin"] { --mask: url("../assets/icons/trip_origin.svg"); }
@@ -192,8 +195,26 @@ input[type="range"] { accent-color: var(--accent); border: none; background: tra
 .tab[data-icon="help"] { --mask: url("../assets/icons/help.svg"); }
 .tab[aria-pressed="true"],
 .tab[aria-pressed="true"]:hover:not(:disabled) { background: var(--accent-soft); color: var(--accent); font-weight: var(--fw-semibold); }
-.toolbar-right { display: flex; align-items: center; gap: 12px; margin-left: auto; }
-.status { height: auto; display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: none; border-radius: var(--r-sm); background: transparent; font-size: var(--fs-small); color: var(--ink2); cursor: default; }
+.toolbar-right { display: flex; align-items: center; gap: 12px; flex: 1 1 auto; margin-left: 8px; }
+.toolbar-right > :not(.status-slot) { flex: none; }
+/* The status' room: all the free width, measured as a container, so the
+   text shortens with an ellipsis and below 96px only the dot is left;
+   anything that still does not fit is clipped, never drawn over a tab. */
+.status-slot { flex: 1 1 0; min-width: 0; display: flex; justify-content: flex-end; overflow: hidden; container-type: inline-size; }
+.status { height: auto; display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; padding: 6px 8px; border: none; border-radius: var(--r-sm); background: transparent; font-size: var(--fs-small); color: var(--ink2); cursor: default; }
+.status-text { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+@container (max-width: 96px) {
+  .status { padding: 6px 2px; }
+  .status-text { display: none; }
+}
+/* A narrow window (down to the 820px minimum): a little less air between
+   the tabs and around the switch, so the status dot keeps its room. */
+@media (max-width: 899px) {
+  .tabs { gap: 2px; }
+  .tab { padding: 0 10px; }
+  .toolbar-right { gap: 10px; margin-left: 4px; }
+  .toolbar .window-controls { margin-left: 6px; }
+}
 .status:hover:not(:disabled) { background: transparent; }
 .status.is-link { cursor: pointer; }
 .status.is-link:hover:not(:disabled) { background: var(--hover); }

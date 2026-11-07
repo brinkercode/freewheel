@@ -144,7 +144,36 @@ export class Driver {
   screenshot() {
     return this.call("GET", "/screenshot", undefined, 30000);
   }
+  elementShot(id) {
+    return this.call("GET", `/element/${id}/screenshot`, undefined, 30000);
+  }
 }
+
+/**
+ * In-page check of the settings window's header row: the status (dot and
+ * text) must not touch a tab, the On/Off text, the switch or a window
+ * control, its text must stay inside it, and neither the tabs nor the row
+ * may overflow. Returns { bad: [...], ... } for the log.
+ */
+export const HEADER_JS = `const box = (e) => e.getBoundingClientRect();
+  const hit = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+  const q = (s) => document.querySelector(s);
+  const status = q(".toolbar .status");
+  if (!status) throw new Error("no header status");
+  const s = box(status);
+  const others = [...document.querySelectorAll(".toolbar .tab, .toolbar .toolbar-sep, .toolbar .switch-text, .toolbar .switch, .toolbar .window-control")];
+  const bad = others.filter((o) => hit(s, box(o))).map((o) => "overlaps " + (o.getAttribute("aria-label") || o.textContent.trim() || o.className));
+  const text = status.querySelector(".status-text");
+  const t = box(text);
+  if (t.width > 0 && (t.left < s.left - 0.5 || t.right > s.right + 0.5)) bad.push("text outside the status");
+  if (s.width < 8) bad.push("no room for the status dot");
+  const tabs = q(".toolbar .tabs");
+  if (tabs.scrollWidth > tabs.clientWidth + 1) bad.push("tabs clipped (" + tabs.scrollWidth + " > " + tabs.clientWidth + ")");
+  const row = q("nav.toolbar");
+  if (row.scrollWidth > row.clientWidth + 1) bad.push("header overflows (" + row.scrollWidth + " > " + row.clientWidth + ")");
+  const last = [...document.querySelectorAll(".toolbar .tab")].pop();
+  return { bad, width: innerWidth, label: status.getAttribute("aria-label"), status: [Math.round(s.left), Math.round(s.right)], text: Math.round(t.width), lastTab: Math.round(box(last).right), switch: Math.round(box(q(".toolbar .switch")).left) };`;
+
 
 // In-page helper: the first element matching `css` whose text contains `text`.
 export const FIND_JS = `const [css, text] = arguments;
@@ -988,14 +1017,122 @@ async function main() {
       await click("simulator", ".fw-sim-switch input");
       await shows("simulator", "Off: shortcuts only show up in the log.");
     }, ["simulator"]);
+    /** The window's switch, the tray's check (the Simulator's Tray menu) and get_status all read `on`. */
+    const allRead = async (on, by) => {
+      await waitFor("settings", `the window's switch ${on ? "On" : "Off"} (${by})`, `const on = arguments[0];
+        const sw = document.querySelector('button.switch[aria-label="Turn freewheel on or off"]');
+        const word = document.querySelector(".toolbar .switch-text")?.textContent;
+        if (sw?.getAttribute("aria-checked") === String(on) && word === (on ? "On" : "Off")) return true;
+        throw new Error("switch " + sw?.getAttribute("aria-checked") + ", " + word);`, [on]);
+      await waitFor("simulator", `the tray's check ${on ? "on" : "off"} (${by})`, `const on = arguments[0];
+        const item = document.querySelector('[data-tray="toggle"]');
+        if (item?.getAttribute("aria-pressed") === String(on) && item.textContent.includes(on ? "freewheel is On" : "freewheel is Off")) return true;
+        throw new Error("tray " + item?.getAttribute("aria-pressed") + ", " + item?.textContent);`, [on]);
+      await waitAsk("settings", `get_status enabled ${on} (${by})`, `return (await window.__TAURI__.core.invoke("get_status")).enabled;`, on);
+      say(`  ${by}: the window's switch, the tray's check and get_status are all ${on ? "On" : "Off"}`);
+    };
+    const windowSwitch = () => click("settings", 'button.switch[aria-label="Turn freewheel on or off"]');
     await step("tray: freewheel is On / Off", async () => {
       await tray("toggle");
       await logged("Tray: freewheel is");
       await waitFor("settings", "Off", `return document.querySelector("button.status")?.textContent.includes("Off: Resolve can use it")`);
       await waitFor("simulator", "the tray's Off", `return document.querySelector('[data-tray="toggle"]')?.textContent.includes("Off")`);
+      await allRead(false, "tray Off");
       await tray("toggle");
       await waitFor("settings", "On", `return document.querySelector("button.status")?.textContent.includes("Connected")`);
+      await allRead(true, "tray On");
     }, ["simulator", "settings"]);
+    await step("On/Off: the window's switch moves the tray's check", async () => {
+      await windowSwitch();
+      await allRead(false, "window switch Off");
+      await windowSwitch();
+      await allRead(true, "window switch On");
+      await waitFor("settings", "Connected", `return document.querySelector("button.status")?.textContent.includes("Connected")`);
+    }, ["simulator", "settings"]);
+    await step("On/Off: tray Off, window On, window Off, tray On", async () => {
+      await tray("toggle");
+      await allRead(false, "tray Off");
+      await windowSwitch();
+      await allRead(true, "window On after the tray's Off");
+      await windowSwitch();
+      await allRead(false, "window Off");
+      await tray("toggle");
+      await allRead(true, "tray On after the window's Off");
+    }, ["simulator", "settings"]);
+
+    // ---- The header at the narrowest window: the status never overlaps -
+    const OUT_HEADER = (name) => join(out, `header-${name}.png`);
+    /** Resizes the settings window (from the Simulator, which may) to `width` x 640 and waits for it. */
+    const resize = async (width) => {
+      const r = await ask("simulator", `const W = window.__TAURI__.window;
+        await new W.Window("main", { skip: true }).setSize(new W.LogicalSize(args[0], 640)); return "ok";`, [width]);
+      if (r !== "ok") throw new Error(`resizing the settings window: ${r}`);
+      await waitFor("settings", `a ${width}px window`, `if (innerWidth === arguments[0]) return true; throw new Error("innerWidth " + innerWidth);`, [width]);
+    };
+    /** Sets the window's look (as General's appearance does, without saving it). */
+    const look = (appearance) =>
+      d.exec(`document.documentElement.style.colorScheme = arguments[0] === "Dark" ? "dark" : "light"; document.documentElement.dataset.appearance = arguments[0]; return true;`, [appearance]);
+    /** Checks the header (HEADER_JS); throws with what overlapped. */
+    const headerOk = async (what) => {
+      await use("settings");
+      const r = await d.exec(HEADER_JS);
+      say(`  header ${what}: ${JSON.stringify(r)}`);
+      if (r.bad.length) throw new Error(`header ${what}: ${r.bad.join("; ")} ${JSON.stringify(r)}`);
+      return r;
+    };
+    const headerShot = async (name) => {
+      await use("settings");
+      const [el] = await d.find("nav.toolbar");
+      writeFileSync(OUT_HEADER(name), Buffer.from(await d.elementShot(el), "base64"));
+      say(`  screenshot header-${name}.png`);
+    };
+    await step("header: Looking for your Speed Editor… at 820px never overlaps", async () => {
+      await click("simulator", `[role=group][aria-label="Speed Editor"] button`, "Not found");
+      await waitFor("settings", "Looking", `return document.querySelector(".toolbar .status")?.getAttribute("aria-label") === "Looking for your Speed Editor…"`);
+      await resize(820);
+      for (const appearance of ["Light", "Dark"]) {
+        await look(appearance);
+        await headerOk(`820px ${appearance}`);
+        await headerShot(`820-${appearance.toLowerCase()}`);
+      }
+      await look("Light");
+      // Longer than any status there is: the text gives way, nothing moves.
+      await use("settings");
+      const long = "Looking for your Speed Editor… ".repeat(6);
+      const before = await d.exec(`const t = document.querySelector(".toolbar .status-text").firstChild; const was = t.nodeValue; t.nodeValue = arguments[0]; return was;`, [long]);
+      for (const width of [820, 900, 1000]) {
+        await resize(width);
+        await headerOk(`${width}px, ${long.length} characters`);
+      }
+      await use("settings");
+      await d.exec(`document.querySelector(".toolbar .status-text").firstChild.nodeValue = arguments[0]; return true;`, [before]);
+    }, ["settings"]);
+    await step("header: every status at 820px and 1000px, light and dark", async () => {
+      for (const [device, label] of [["USB", "Connected by USB"], ["Bluetooth 64%", "Connected by Bluetooth · 64%"], ["Not found", "Looking for your Speed Editor…"]]) {
+        await click("simulator", `[role=group][aria-label="Speed Editor"] button`, device);
+        await waitFor("settings", label, `return document.querySelector(".toolbar .status")?.getAttribute("aria-label") === arguments[0]`, [label]);
+        for (const width of [820, 1000]) {
+          await resize(width);
+          const r = await headerOk(`${width}px ${label}`);
+          if (width === 1000 && r.text === 0) throw new Error(`at 1000px the status text is hidden: ${JSON.stringify(r)}`);
+        }
+      }
+      await resize(1000);
+      for (const appearance of ["Light", "Dark"]) {
+        await look(appearance);
+        await headerShot(`1000-${appearance.toLowerCase()}`);
+      }
+      await look("Light");
+      await windowSwitch();
+      await allRead(false, "window switch Off");
+      await resize(820);
+      await headerOk("820px Off");
+      await windowSwitch();
+      await allRead(true, "window switch On");
+      await click("simulator", `[role=group][aria-label="Speed Editor"] button`, "USB");
+      await waitFor("settings", "Connected by USB", `return document.querySelector(".toolbar .status")?.getAttribute("aria-label") === "Connected by USB"`);
+      await resize(1000);
+    }, ["settings", "simulator"]);
     await step("tray: Open settings", async () => {
       await tray("open-settings");
       await logged("Tray: Open settings");
@@ -1196,6 +1333,20 @@ async function main() {
       await click("settings", "nav.toolbar button.tab", "Wheel");
       await waitFor("settings", "the Wheel tab", `return document.body.innerText.includes("When I turn the wheel")`);
     });
+    // Last, so every step before runs on the window the first run opened.
+    await step("On/Off: a settings window opened after the tray's Off reads Off", async () => {
+      await tray("toggle");
+      await allRead(false, "tray Off");
+      // Closing destroys the webview (#144); Open settings builds a new one.
+      await click("settings", ".window-control.window-close");
+      await tray("open-settings");
+      await findWindows();
+      await waitFor("settings", "the settings tabs", `return document.querySelector("nav.toolbar")`, [], 30000);
+      await allRead(false, "the new settings window");
+      await tray("toggle");
+      await allRead(true, "tray On");
+      await waitFor("settings", "Connected", `return document.querySelector("button.status")?.textContent.includes("Connected")`);
+    }, ["simulator", "settings"]);
 
     say("step: tray: Quit freewheel");
     // The app may be gone before the click answers.

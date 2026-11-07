@@ -133,3 +133,27 @@ test("a toast shows bottom-centre and clears after 2.8 s", () => {
   expect(setToast).toHaveBeenLastCalledWith(null);
   vi.useRealTimers();
 });
+
+test("the header status can never overlap the tabs, the switch or the window controls: it shrinks into its own slot", () => {
+  const html = toolbar({ ...ok, connected: false });
+  // The dot and the text sit in the status slot, between the tabs and the switch; the full text is the tooltip.
+  expect(html).toMatch(/<div class="toolbar-right"><div class="status-slot"><button class="status"[^>]*title="Looking for your Speed Editor…"[^>]*aria-label="Looking for your Speed Editor…"/);
+  expect(html).toContain('<span class="status-text">Looking for your Speed Editor…</span>');
+  const css = read("./styles/base.css");
+  const rule = (selector) => {
+    const at = css.indexOf(`\n${selector} {`);
+    expect(at, selector).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf("}", at));
+  };
+  // Flex all the way: the tabs keep their width, the slot takes what is left and clips, the text ends in an ellipsis.
+  expect(rule(".tabs")).toMatch(/flex: 0 1 auto; min-width: 0; overflow: clip/);
+  expect(rule(".tab")).toContain("flex: none");
+  expect(rule(".toolbar-right")).toContain("flex: 1 1 auto");
+  expect(rule(".toolbar-right > :not(.status-slot)")).toContain("flex: none");
+  expect(rule(".status-slot")).toMatch(/flex: 1 1 0; min-width: 0;.*overflow: hidden; container-type: inline-size/);
+  expect(rule(".status")).toMatch(/min-width: 0; max-width: 100%/);
+  expect(rule(".status-text")).toMatch(/min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis/);
+  expect(css).toMatch(/@container \(max-width: 96px\) \{\s*\.status \{ padding: 6px 2px; \}\s*\.status-text \{ display: none; \}/);
+  // Nothing in the header row is positioned out of the flow.
+  for (const s of [".toolbar", ".tabs", ".toolbar-right", ".status-slot", ".status", ".status-text", ".window-controls"]) expect(rule(s)).not.toMatch(/position: (absolute|fixed)/);
+});

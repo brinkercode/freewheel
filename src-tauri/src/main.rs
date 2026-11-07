@@ -370,10 +370,10 @@ fn main() {
             let (manual, manual_rx) = mpsc::channel();
             app.manage(app_windows::Lifecycle::default());
             app.manage(
-                settings::Settings::new(store, config.clone(), commands.clone(), manual.clone())
+                settings::Settings::new(store, config.clone(), commands.clone(), manual)
                     .with_logger(logger.clone()),
             );
-            spawn_resolve_watch(app.handle().clone(), &config, manual_rx, commands.clone());
+            spawn_resolve_watch(app.handle().clone(), &config, manual_rx, commands);
             // What the last update left behind: the old version, the download.
             if !simulate {
                 std::thread::spawn(selfupdate::cleanup_current);
@@ -381,13 +381,7 @@ fn main() {
             // The tray's update item works in a release build (it has the
             // updater pubkey), or in --simulate with the simulated source; else it says this
             // build can't update itself, as the General tab does.
-            let tray = tray::build(
-                app.handle(),
-                commands,
-                manual,
-                updater || simulate,
-                tray::LOW_BATTERY,
-            )?;
+            let tray = tray::build(app.handle(), updater || simulate, tray::LOW_BATTERY)?;
             if simulate {
                 simulate::attach(
                     app.handle().clone(),
