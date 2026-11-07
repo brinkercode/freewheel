@@ -115,6 +115,7 @@ async function main() {
   };
   const click = async (css, text = "") => {
     const el = await waitFor(`${css} "${text}"`, FIND_JS, [css, text]);
+    await d.exec("arguments[0].scrollIntoView({ block: 'center' })", [el]);
     await d.click(Object.values(el)[0]);
   };
   const invoke = (command, args = {}) =>

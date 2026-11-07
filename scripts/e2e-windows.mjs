@@ -184,6 +184,8 @@ async function main() {
   /** Clicks the element matching css (+ text) in window `name`, with a real WebDriver click. */
   const click = async (name, css, text = "") => {
     const el = await waitFor(name, `${css} "${text}"`, FIND_JS, [css, text]);
+    // Below the fold of a scrolling panel (the Simulator's Jump to) WebDriver may not scroll it in itself.
+    await d.exec("arguments[0].scrollIntoView({ block: 'center' })", [el]);
     const id = Object.values(el)[0];
     await d.click(id);
     return id;

@@ -1,4 +1,5 @@
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { checkWorkflow } from "./check-workflow.mjs";
@@ -40,7 +41,7 @@ test("latest.json has the shape the updater reads, for Windows", () => {
 });
 
 test("the local release server fails, then has nothing, then offers the bundle, streamed in chunks", async () => {
-  const dir = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fw-upd-"));
+  const dir = mkdtempSync(join(tmpdir(), "fw-upd-"));
   const bundle = join(dir, "freewheel_0.2.0_x64-setup.exe");
   writeFileSync(bundle, Buffer.alloc(300 * 1024, 7));
   const server = await startUpdateServer({ bundle, signature: "SIG", version: "0.2.0", notes: "n", downloadMs: 200 });
