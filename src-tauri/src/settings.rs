@@ -540,6 +540,33 @@ pub fn app_version(app: tauri::AppHandle) -> String {
     app.package_info().version.to_string()
 }
 
+/// What the window should tell this desktop's user: on Linux, a missing
+/// tray host (GNOME without the AppIndicator extension).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct DesktopHints {
+    pub tray: Option<&'static str>,
+}
+
+/// The General tab's desktop hints. Async: it asks D-Bus off the main thread.
+#[tauri::command]
+pub async fn desktop_hints() -> DesktopHints {
+    #[cfg(target_os = "linux")]
+    {
+        let host = tauri::async_runtime::spawn_blocking(crate::linux_desktop::tray_host)
+            .await
+            .ok()
+            .flatten();
+        tracing::info!(?host, "tray host");
+        DesktopHints {
+            tray: crate::linux_desktop::tray_hint(host),
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        DesktopHints { tray: None }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

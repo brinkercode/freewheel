@@ -1,8 +1,9 @@
-# Live Speed Editor test (Windows): USB, then Bluetooth
+# Live Speed Editor test (Windows, then Linux): USB, then Bluetooth
 
 What to do, what should happen, and what to send back when it does not.
 Takes about 20 minutes. You need the Speed Editor, its USB-C cable, a
-Windows PC with Bluetooth, and a freewheel build from `main`.
+Windows PC with Bluetooth (and for section 4 a Linux desktop), and a
+freewheel build from `main`.
 
 Everything you see is also in **Help & backup → More → Device test**: the
 connection, the unlock (auth) handshake, the battery, the keys held and
@@ -67,6 +68,27 @@ Unplug the cable first. The Speed Editor pairs as a Bluetooth LE device.
 Privacy: the diagnostics and logs hold the device's report bytes and key
 names. They never hold the unlock (auth) bytes, what you type, your
 shortcuts, or the apps you open.
+
+## 4. Linux (X11 and Wayland)
+
+Run steps 0 to 3 on a Linux desktop too (GNOME or KDE; one X11 and one
+Wayland session if you can), with freewheel's AppImage, plus these first:
+
+| # | Do this | This should happen |
+|---|---------|--------------------|
+| 4.1 | Plug in the Speed Editor **before** installing the device rule; open **Help & backup → More → Open device test** | *Last open error* says `permission denied: freewheel's device rule is not installed`, with an **Install the device rule** button |
+| 4.2 | Click **Install the device rule** (or the first run's / Permissions' button) | One password prompt (pkexec); the line says *Installed freewheel's device rule*; `/etc/udev/rules.d/60-freewheel.rules` exists |
+| 4.3 | Unplug the Speed Editor and plug it in again | *Status* Connected, *Connected by* USB, the handshake passes |
+| 4.4 | Pair it in the desktop's Bluetooth settings (the first run's **Open Bluetooth settings**), unplug the cable | *Connected by* Bluetooth (BlueZ HID, a hidraw node too) |
+| 4.5 | Map a key to Ctrl+C and press it in a text editor, on X11 and on Wayland | It copies in both (X11: XTest; Wayland: freewheel's uinput virtual keyboard) |
+| 4.6 | Wheel tab: Change the volume / Change screen brightness, turn the wheel | The desktop's volume / brightness sliders move (PipeWire or PulseAudio; laptop backlight through logind, monitors over DDC/CI when `/dev/i2c-*` is open to you) |
+| 4.7 | GNOME without the AppIndicator extension | **General** says *No tray icon* and how to get it; launching freewheel again opens its settings |
+| 4.8 | Quit from the tray while a key is held or latched | Nothing stays pressed (the virtual keyboard is destroyed, which releases every key) |
+
+In CI (ubuntu-latest) the unit tests, the rule's syntax (`udevadm verify`),
+a real XTest key press into an X11 window under Xvfb, and a real uinput key
+press into the kernel are proven; the steps above need a real desktop and
+device.
 
 ## What the lines mean
 

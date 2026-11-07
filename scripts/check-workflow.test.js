@@ -33,9 +33,9 @@ const job = (name) => {
   return m ? m[1] : "";
 };
 
-test("ci.yml matrix is exactly the hosted Windows and macOS runners, after a Linux lint job", () => {
+test("ci.yml matrix is exactly the hosted Windows, macOS and Linux runners, after a Linux lint job", () => {
   const test_ = job("test");
-  expect(test_).toMatch(/os: \[windows-2025, macos-15, macos-15-intel\]/);
+  expect(test_).toMatch(/os: \[windows-2025, macos-15, macos-15-intel, ubuntu-latest\]/);
   expect(test_).toMatch(/^    runs-on: \$\{\{ matrix\.os \}\}$/m);
   expect(test_).toMatch(/^    needs: lint$/m);
   expect(job("lint")).toMatch(/^    runs-on: ubuntu-latest$/m);
@@ -61,9 +61,19 @@ test("the lint job needs no system packages: no apt step and no clippy", () => {
   expect(lint).not.toMatch(/cargo clippy/);
 });
 
+test("the Linux test job installs WebKitGTK and proves real key injection", () => {
+  const test_ = job("test");
+  expect(test_).toMatch(/- name: Install Tauri Linux dependencies\n\s+if: runner\.os == 'Linux'\n/);
+  expect(test_).toContain("libwebkit2gtk-4.1-dev libayatana-appindicator3-dev");
+  expect(test_).toMatch(/- name: Real key injection \(Linux\)\n\s+if: runner\.os == 'Linux'\n/);
+  expect(test_).toContain("udevadm verify --resolve-names=never src-tauri/linux/60-freewheel.rules");
+  expect(test_).toContain("sudo modprobe uinput");
+  expect(test_).toContain("xvfb-run -a cargo test -p freewheel --locked -- --ignored --nocapture xtest_ uinput_");
+});
+
 test("clippy runs in the test job on every matrix runner, windows-2025 included", () => {
   const test_ = job("test");
-  expect(test_).toMatch(/os: \[windows-2025, macos-15, macos-15-intel\]/);
+  expect(test_).toMatch(/os: \[windows-2025, macos-15, macos-15-intel, ubuntu-latest\]/);
   expect(test_).toMatch(/^      - run: cargo clippy --workspace --all-targets -- -D warnings$/m);
   expect(test_).not.toMatch(/if: .*\r?\n\s+run: cargo clippy/);
 });
@@ -73,7 +83,7 @@ test("the required job names stay exactly", () => {
   expect(job("test")).toMatch(/^    name: test \(\$\{\{ matrix\.os \}\}\)$/m);
   const names = job("test").match(/os: \[(.*)\]/)[1].split(", ").map((os) => `test (${os})`);
   expect(["lint (ubuntu-latest)", ...names]).toEqual([
-    "lint (ubuntu-latest)", "test (windows-2025)", "test (macos-15)", "test (macos-15-intel)",
+    "lint (ubuntu-latest)", "test (windows-2025)", "test (macos-15)", "test (macos-15-intel)", "test (ubuntu-latest)",
   ]);
 });
 

@@ -18,6 +18,16 @@ mod hidapi_transport;
 mod inject;
 mod key_names;
 mod launch;
+#[cfg(target_os = "linux")]
+mod linux_audio;
+#[cfg(target_os = "linux")]
+mod linux_brightness;
+#[cfg(target_os = "linux")]
+mod linux_desktop;
+#[cfg(target_os = "linux")]
+mod linux_inject;
+#[cfg(target_os = "linux")]
+mod linux_udev;
 #[cfg(target_os = "macos")]
 mod mac_app_volume;
 #[cfg(target_os = "macos")]
@@ -106,7 +116,7 @@ fn spawn_device(
     use freewheel_core::overrides::{OverrideRunner, OverrideWorker};
 
     std::thread::spawn(move || {
-        let (mut injector, mut api) = match (inject::EnigoInjector::new(), hidapi::HidApi::new()) {
+        let (mut injector, mut api) = match (inject::os_injector(), hidapi::HidApi::new()) {
             (Ok(injector), Ok(api)) => (injector, api),
             (Err(e), _) => return tracing::error!(error = %e, "no key injection"),
             (_, Err(e)) => return tracing::error!(error = %e, "no HID access"),
@@ -133,7 +143,7 @@ fn spawn_device(
             Engine::new(&config),
             &SystemClock,
             device::Outputs {
-                injector: &mut injector,
+                injector: &mut *injector,
                 launcher: &mut launch::ProcessLauncher,
                 overrides: &overrides,
             },
@@ -164,14 +174,14 @@ fn spawn_device(
     });
 }
 
-/// How often the tray re-checks the macOS permissions.
+/// How often the tray re-checks the permissions.
 const PERMISSION_POLL: Duration = Duration::from_secs(2);
 
 /// Keeps the status event's permissions (and so the tray's 'Needs
-/// permission' line) current, checking every [`PERMISSION_POLL`] (macOS only;
-/// elsewhere nothing is needed).
+/// permission' line) current, checking every [`PERMISSION_POLL`] (macOS's
+/// privacy grants, Linux's device rule; Windows needs nothing).
 fn spawn_permission_watch(app: tauri::AppHandle<tauri::Wry>) {
-    if !cfg!(target_os = "macos") {
+    if cfg!(windows) {
         return;
     }
     std::thread::spawn(move || {
@@ -218,8 +228,8 @@ fn spawn_resolve_watch(
 /// The injector "send for real" uses in simulator mode.
 #[cfg(not(test))]
 fn real_injector() -> Box<dyn KeyInjector> {
-    match inject::EnigoInjector::new() {
-        Ok(i) => Box::new(i),
+    match inject::os_injector() {
+        Ok(i) => i,
         Err(e) => {
             tracing::warn!(error = %e, "no key injector, send for real records only");
             Box::new(MockInjector::new())
@@ -264,6 +274,7 @@ fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::
             permissions::open_bluetooth_settings,
             settings::export_logs,
             settings::set_detailed_logs,
+            settings::desktop_hints,
             updates::open_release_page,
             selfupdate::update_check,
             selfupdate::update_download,
@@ -344,6 +355,7 @@ fn main() {
             permissions::open_bluetooth_settings,
             settings::export_logs,
             settings::set_detailed_logs,
+            settings::desktop_hints,
             settings::show_logs_file,
             settings::exit_wheel_override,
             apps::list_apps,

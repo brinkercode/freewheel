@@ -163,6 +163,8 @@ mod tests {
     fn default_process_name_matches_the_os() {
         let expected = if cfg!(windows) {
             "Resolve.exe"
+        } else if cfg!(target_os = "linux") {
+            "resolve"
         } else {
             "Resolve"
         };

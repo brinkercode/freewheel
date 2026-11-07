@@ -6,7 +6,7 @@ import Icon from "./Icon.jsx";
 
 /** Resolve's program name on this OS, as Settings::default (config.rs) has it. */
 export const resolveDefault = (userAgent = globalThis.navigator?.userAgent ?? "") =>
-  /Windows/.test(userAgent) ? "Resolve.exe" : "Resolve";
+  /Windows/.test(userAgent) ? "Resolve.exe" : /Linux/.test(userAgent) && !/Android/.test(userAgent) ? "resolve" : "Resolve";
 
 export const validateResolve = (name) => (name.trim() ? {} : { name: "Enter Resolve's program name." });
 

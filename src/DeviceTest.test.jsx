@@ -166,3 +166,24 @@ test("Help & backup > More opens the Device test view and Back returns", () => {
   fireEvent.click(screen.getByText("Help & backup"));
   expect(document.querySelector('[data-screen-label="Help and backup"]')).toBeTruthy();
 });
+
+test("on Linux a refused open offers the device rule, and says what installing it did", async () => {
+  const install = vi.fn((name, say) => say("Installed freewheel's device rule."));
+  render(
+    <DeviceTest
+      initial={diag({ status: "Absent", last_open_error: "HID I/O error: permission denied: freewheel's device rule is not installed (Permissions: Install the device rule)" })}
+      get={() => new Promise(() => {})}
+      listen={() => Promise.resolve(() => {})}
+      install={install}
+    />,
+  );
+  expect(screen.getByText(/needs freewheel’s device rule/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Install the device rule" }));
+  expect(install.mock.calls[0][0]).toBe("DeviceAccess");
+  expect(screen.getByText("Installed freewheel's device rule.")).toBeTruthy();
+});
+
+test("no device rule hint for other open errors", () => {
+  render(<DeviceTest initial={diag({ last_open_error: "no Speed Editor (1edb:da0e) listed by the OS" })} get={() => new Promise(() => {})} listen={() => Promise.resolve(() => {})} />);
+  expect(screen.queryByRole("button", { name: "Install the device rule" })).toBeNull();
+});

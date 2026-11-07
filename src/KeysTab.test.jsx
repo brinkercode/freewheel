@@ -3,7 +3,7 @@ import { renderToString } from "react-dom/server";
 import { expect, test, vi } from "vitest";
 import KeysTab, { ButtonList, KIND_TEXT, KeyEditor, PageSelector, handlePress, saveKey } from "./KeysTab.jsx";
 import Status from "./Status.jsx";
-import { DRAWING, KEYS, LABELS, addPage, comboError, comboFromEvent, deletePage, formatCombo, renamePage } from "./keys.js";
+import { DRAWING, KEYS, LABELS, addPage, appName, comboError, comboFromEvent, deletePage, formatCombo, launchName, renamePage } from "./keys.js";
 import { saveErrorText } from "./settingsApi.js";
 
 const combo = (key, ...modifiers) => ({ modifiers, key });
@@ -222,4 +222,12 @@ test("the drawing lights what the device lights while connected: latched key, pa
   // not connected: only the wheel button the config starts in, as before
   const absent = renderToString(<KeysTab initial={config} status={{ connection: "Absent", layer: "base", lit: [] }} />);
   expect(lit(absent)).toEqual(["Scrl"]);
+});
+
+test("Linux apps are named by their desktop entry, and xdg-open names what it opens", () => {
+  expect(appName("/usr/share/applications/org.gnome.Nautilus.desktop")).toBe("Nautilus");
+  expect(appName("/home/a/.local/share/applications/spotify.desktop")).toBe("Spotify");
+  expect(appName("/home/a/Apps/Krita.AppImage")).toBe("Krita");
+  expect(launchName({ path: "xdg-open", args: ["https://example.com"] })).toBe("example.com");
+  expect(launchName({ path: "xdg-open", args: ["/home/a/notes.txt"] })).toBe("Notes.txt");
 });

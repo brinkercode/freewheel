@@ -142,3 +142,10 @@ test("'Update automatically' is on by default and its change is saved in the con
   await changeSetting({ config, key: "auto_update", value: false, setConfig: () => {}, save });
   expect(save).toHaveBeenCalledWith({ ...config, settings: { ...settings, auto_update: false } });
 });
+
+test("Linux without a tray host says where the tray menu went", () => {
+  expect(general({})).not.toContain("No tray icon");
+  const html = general({ trayHint: "On GNOME, add the AppIndicator extension." });
+  expect(html).toContain("No tray icon");
+  expect(html).toContain("AppIndicator extension");
+});

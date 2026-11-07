@@ -1,7 +1,8 @@
 //! The key panel's app picker: the installed apps (`list_apps`: the Start
-//! Menu shortcuts on Windows, the .app bundles on macOS) and 'Choose
-//! file…' (`choose_app`, the OS file dialog filtered to programs). Each
-//! answer is the LaunchApp the key saves: what to run and its arguments.
+//! Menu shortcuts on Windows, the .app bundles on macOS, the .desktop
+//! entries on Linux) and 'Choose file…' (`choose_app`, the OS file dialog
+//! filtered to programs). Each answer is the LaunchApp the key saves: what
+//! to run and its arguments.
 
 use std::path::{Path, PathBuf};
 
@@ -132,19 +133,57 @@ pub fn mac_launch(path: &Path) -> (String, Vec<String>) {
     )
 }
 
+/// Linux's opener: `xdg-open` opens a file or a website in the user's
+/// default app.
+pub const LINUX_OPENER: &str = "xdg-open";
+
+/// A file opens through `xdg-open`, as a double-click does.
+pub fn linux_open(path: &Path) -> (String, Vec<String>) {
+    (
+        LINUX_OPENER.into(),
+        vec![path.to_string_lossy().into_owned()],
+    )
+}
+
+/// True for a file this user may run (any execute bit; Unix only).
+fn executable(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        false
+    }
+}
+
 /// A file picked with 'Choose file…': an .exe runs as it is; a macOS .app
-/// (or any other file) opens through the OS opener.
+/// (or any other file) opens through the OS opener; on Linux a .desktop
+/// entry is kept (freewheel runs its Exec line), a program or an AppImage
+/// runs as it is and anything else opens with `xdg-open`.
 pub fn chosen(path: &Path) -> AppChoice {
+    chosen_on(path, std::env::consts::OS)
+}
+
+/// [`chosen`] as `os` would answer.
+pub fn chosen_on(path: &Path, os: &str) -> AppChoice {
     let name = path.file_stem().map_or_else(
         || path.to_string_lossy().into_owned(),
         |s| s.to_string_lossy().into_owned(),
     );
-    let is_exe = path
-        .extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case("exe"));
-    let (program, args) = if is_exe {
-        (path.to_string_lossy().into_owned(), Vec::new())
-    } else if cfg!(windows) {
+    let has_ext = |x: &str| path.extension().is_some_and(|e| e.eq_ignore_ascii_case(x));
+    let as_is = || (path.to_string_lossy().into_owned(), Vec::new());
+    let (program, args) = if os == "linux" {
+        if has_ext("desktop") || has_ext("appimage") || executable(path) {
+            as_is()
+        } else {
+            linux_open(path)
+        }
+    } else if has_ext("exe") {
+        as_is()
+    } else if os == "windows" {
         windows_launch(path)
     } else {
         mac_launch(path)
@@ -168,8 +207,35 @@ pub fn installed() -> Vec<AppChoice> {
         let home = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf());
         scan(&mac_app_dirs(home.as_deref()), "app", 0, mac_launch)
     } else {
-        Vec::new()
+        linux_installed()
     }
+}
+
+/// The Linux menus' apps: each .desktop entry, saved as its path (the
+/// launcher runs its Exec line; the picker shows its Icon).
+#[cfg(target_os = "linux")]
+fn linux_installed() -> Vec<AppChoice> {
+    let home = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf());
+    let dirs = crate::linux_desktop::application_dirs(|n| std::env::var(n).ok(), home.as_deref());
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let mut apps: Vec<AppChoice> = Vec::new();
+    for app in crate::linux_desktop::installed_apps(&dirs, &path) {
+        if is_clutter(&app.name) || apps.iter().any(|a| a.name.eq_ignore_ascii_case(&app.name)) {
+            continue;
+        }
+        apps.push(AppChoice {
+            name: app.name,
+            path: app.desktop.to_string_lossy().into_owned(),
+            args: Vec::new(),
+        });
+    }
+    apps.sort_by_key(|a| a.name.to_lowercase());
+    apps
+}
+
+#[cfg(not(target_os = "linux"))]
+fn linux_installed() -> Vec<AppChoice> {
+    Vec::new()
 }
 
 /// The installed apps for the key panel's list. Async: the folders are read
@@ -183,12 +249,15 @@ pub async fn list_apps() -> Vec<AppChoice> {
     apps
 }
 
-/// The file dialog's filter for programs on this OS.
-pub fn program_filter() -> (&'static str, &'static [&'static str]) {
-    if cfg!(target_os = "macos") {
-        ("Apps", &["app"])
+/// The file dialog's filter for programs on this OS (none on Linux, where
+/// programs have no extension: any file, a .desktop, an AppImage).
+pub fn program_filter() -> Option<(&'static str, &'static [&'static str])> {
+    if cfg!(target_os = "linux") {
+        None
+    } else if cfg!(target_os = "macos") {
+        Some(("Apps", &["app"]))
     } else {
-        ("Programs", &["exe"])
+        Some(("Programs", &["exe"]))
     }
 }
 
@@ -200,10 +269,11 @@ pub async fn choose_app(app: tauri::AppHandle) -> Result<Option<AppChoice>, Stri
     let picked = match crate::e2e::dialog(&app, crate::e2e::Dialog::ChooseApp) {
         Some(stub) => stub,
         None => {
-            let (name, ext) = program_filter();
-            app.dialog()
-                .file()
-                .add_filter(name, ext)
+            let mut dialog = app.dialog().file();
+            if let Some((name, ext)) = program_filter() {
+                dialog = dialog.add_filter(name, ext);
+            }
+            dialog
                 .blocking_pick_file()
                 .map(|p| p.into_path().map_err(|e| e.to_string()))
                 .transpose()?
@@ -274,12 +344,43 @@ mod tests {
 
     #[test]
     fn a_chosen_exe_runs_as_it_is() {
-        let c = chosen(Path::new("C:/Tools/My Editor.exe"));
+        let c = chosen_on(Path::new("C:/Tools/My Editor.exe"), "windows");
         assert_eq!(c.name, "My Editor");
         assert_eq!(c.path, "C:/Tools/My Editor.exe");
         assert!(c.args.is_empty());
-        let app = chosen(Path::new("/Applications/Notes.app"));
+        let app = chosen_on(Path::new("/Applications/Notes.app"), "macos");
         assert_eq!(app.name, "Notes");
         assert_eq!(app.args, ["/Applications/Notes.app"]);
+        let lnk = chosen_on(Path::new("C:/x/Spotify.lnk"), "windows");
+        assert_eq!((lnk.path.as_str(), lnk.args.len()), ("explorer.exe", 1));
+    }
+
+    #[test]
+    fn on_linux_a_chosen_entry_or_program_runs_and_a_file_opens() {
+        let dir = tempfile::tempdir().unwrap();
+        let entry = chosen_on(
+            Path::new("/usr/share/applications/org.gnome.Calculator.desktop"),
+            "linux",
+        );
+        assert_eq!(
+            entry.path,
+            "/usr/share/applications/org.gnome.Calculator.desktop"
+        );
+        assert!(entry.args.is_empty());
+        let img = chosen_on(Path::new("/home/a/Apps/Krita-5.2.AppImage"), "linux");
+        assert_eq!((img.name.as_str(), img.args.len()), ("Krita-5.2", 0));
+        let doc = dir.path().join("notes.txt");
+        std::fs::write(&doc, "x").unwrap();
+        let opened = chosen_on(&doc, "linux");
+        assert_eq!(opened.path, LINUX_OPENER);
+        assert_eq!(opened.args, [doc.to_string_lossy()]);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let tool = dir.path().join("tool");
+            std::fs::write(&tool, "#!/bin/sh\n").unwrap();
+            std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+            assert_eq!(chosen_on(&tool, "linux").path, tool.to_string_lossy());
+        }
     }
 }

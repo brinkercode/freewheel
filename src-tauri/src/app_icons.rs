@@ -5,6 +5,9 @@
 //!   .lnk to its target) or the .exe, through `IShellItemImageFactory`.
 //! - macOS: `NSWorkspace iconForFile:` drawn into a bitmap, or else the
 //!   bundle's .icns converted with `sips`.
+//! - Linux: the .desktop entry's `Icon`, looked up in the icon theme
+//!   (linux_desktop.rs) and drawn as a PNG by gdk-pixbuf (an SVG as it is
+//!   when no SVG loader is installed).
 //!
 //! Icons are cached in memory and on disk (`<cache dir>/app-icons`, keyed by
 //! path, size and modified time), so the picker opens fast after the first time.
@@ -46,9 +49,14 @@ pub fn base64(bytes: &[u8]) -> String {
     out
 }
 
-/// A PNG as a data URL the webview shows in an `<img>`.
-pub fn data_url(png: &[u8]) -> String {
-    format!("data:image/png;base64,{}", base64(png))
+/// A PNG (or an SVG) as a data URL the webview shows in an `<img>`.
+pub fn data_url(image: &[u8]) -> String {
+    let mime = if is_svg(image) {
+        "image/svg+xml"
+    } else {
+        "image/png"
+    };
+    format!("data:{mime};base64,{}", base64(image))
 }
 
 /// Whether `bytes` start like a PNG file.
@@ -56,8 +64,21 @@ pub fn is_png(bytes: &[u8]) -> bool {
     bytes.starts_with(b"\x89PNG\r\n\x1a\n")
 }
 
+/// Whether `bytes` look like an SVG document (Linux icon themes).
+pub fn is_svg(bytes: &[u8]) -> bool {
+    let head = String::from_utf8_lossy(&bytes[..bytes.len().min(1024)]).to_ascii_lowercase();
+    let head = head.trim_start();
+    (head.starts_with("<?xml") || head.starts_with("<svg") || head.starts_with("<!--"))
+        && head.contains("<svg")
+}
+
+/// An icon the cache keeps: a PNG, or an SVG.
+fn is_image(bytes: &[u8]) -> bool {
+    is_png(bytes) || is_svg(bytes)
+}
+
 /// Encodes `rgba` (width × height × 4 bytes, straight alpha) as a PNG.
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
 pub fn encode_png(width: u32, height: u32, rgba: &[u8]) -> Option<Vec<u8>> {
     if width == 0 || height == 0 || rgba.len() != (width * height * 4) as usize {
         return None;
@@ -154,9 +175,9 @@ impl IconCache {
         let cached = file
             .as_ref()
             .and_then(|f| std::fs::read(f).ok())
-            .filter(|b| is_png(b));
+            .filter(|b| is_image(b));
         let png = cached.or_else(|| {
-            let png = extract(path).filter(|b| is_png(b))?;
+            let png = extract(path).filter(|b| is_image(b))?;
             if let (Some(dir), Some(file)) = (&self.dir, &file) {
                 let _ = std::fs::create_dir_all(dir);
                 if let Err(e) = std::fs::write(file, &png) {
@@ -205,7 +226,8 @@ pub fn prune(dir: &Path, keep: usize) {
     tracing::info!(removed, "old app icons removed from the cache");
 }
 
-/// The OS icon of an app (.lnk, .exe, .app) as PNG bytes.
+/// The OS icon of an app (.lnk, .exe, .app, .desktop) as PNG bytes (Linux:
+/// or SVG).
 pub fn extract(path: &Path) -> Option<Vec<u8>> {
     #[cfg(windows)]
     {
@@ -216,7 +238,15 @@ pub fn extract(path: &Path) -> Option<Vec<u8>> {
     {
         mac::workspace_icon(path, ICON_PX).or_else(|| mac::sips_icon(path, ICON_PX))
     }
-    #[cfg(not(any(windows, target_os = "macos")))]
+    #[cfg(target_os = "linux")]
+    {
+        if path.extension().is_some_and(|e| e == "desktop") {
+            crate::linux_desktop::icon_bytes(path, ICON_PX)
+        } else {
+            None
+        }
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
     {
         let _ = path;
         None

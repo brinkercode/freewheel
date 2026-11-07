@@ -8,14 +8,17 @@ use freewheel_core::overrides::{
 };
 
 /// The error of a control this OS has no backend for.
-#[cfg_attr(any(windows, target_os = "macos"), allow(dead_code))] // Windows has every backend; macOS uses its own reasons
+#[cfg_attr(
+    any(windows, target_os = "macos", target_os = "linux"),
+    allow(dead_code)
+)] // these have their own reasons
 pub const UNAVAILABLE: &str = "not available on this system";
 
 /// A control that is not there: every step fails with `self.0`.
-#[cfg_attr(windows, allow(dead_code))]
+#[cfg_attr(any(windows, target_os = "linux"), allow(dead_code))]
 pub struct Unavailable(pub &'static str);
 
-#[cfg_attr(windows, allow(dead_code))]
+#[cfg_attr(any(windows, target_os = "linux"), allow(dead_code))]
 impl Unavailable {
     fn fail(&self) -> Result<(), ControlError> {
         Err(ControlError(self.0.into()))
@@ -49,12 +52,11 @@ impl BrightnessControl for Unavailable {
     }
 }
 
-/// Steps every brightness backend (macOS: the built-in panel and DDC
-/// monitors). It fails only when every backend fails, with all their errors.
-#[cfg(any(target_os = "macos", test))]
+/// Steps every brightness backend (the built-in panel and DDC monitors). It fails only when every backend fails, with all their errors.
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 pub struct EveryDisplay(pub Vec<Box<dyn BrightnessControl>>);
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 impl EveryDisplay {
     fn each(
         &mut self,
@@ -74,7 +76,7 @@ impl EveryDisplay {
     }
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 impl BrightnessControl for EveryDisplay {
     fn step_up(&mut self, step: u8) -> Result<(), ControlError> {
         self.each(|c| c.step_up(step))
@@ -108,8 +110,21 @@ pub fn os_controls() -> Controls {
     }
 }
 
-/// This OS's controls: none yet.
-#[cfg(not(any(windows, target_os = "macos")))]
+/// This OS's controls: PipeWire/PulseAudio volume, the focused app's
+/// streams (X11), the backlight and DDC monitors (linux_audio.rs,
+/// linux_brightness.rs).
+#[cfg(target_os = "linux")]
+pub fn os_controls() -> Controls {
+    use crate::linux_audio::{PulseAppVolume, PulseVolume, run_command};
+    Controls {
+        volume: Box::new(PulseVolume::new(run_command())),
+        app_volume: Box::new(PulseAppVolume::new(run_command())),
+        brightness: Box::new(crate::linux_brightness::brightness()),
+    }
+}
+
+/// This OS's controls: none.
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 pub fn os_controls() -> Controls {
     Controls {
         volume: Box::new(Unavailable(UNAVAILABLE)),
@@ -146,7 +161,7 @@ mod tests {
     #[test]
     fn a_control_without_a_backend_says_so() {
         let mut controls = os_controls();
-        if cfg!(not(any(windows, target_os = "macos"))) {
+        if cfg!(not(any(windows, target_os = "macos", target_os = "linux"))) {
             assert_eq!(
                 controls.volume.step_up(0.1),
                 Err(ControlError(UNAVAILABLE.into()))

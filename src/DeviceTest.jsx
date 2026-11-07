@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Icon from "./Icon.jsx";
+import { openPane } from "./Permissions.jsx";
 import { getDeviceDiagnostics, onDeviceDiagnostics } from "./settingsApi.js";
 
 // Help & backup > More > Device test: a read-only view of what the Speed
@@ -94,8 +95,10 @@ export default function DeviceTest({
   get = getDeviceDiagnostics,
   listen = onDeviceDiagnostics,
   copy = copyText,
+  install = openPane,
 }) {
   const [d, setD] = useState(initial);
+  const [ruleSaid, setRuleSaid] = useState(null);
   const [copied, setCopied] = useState(null);
   useEffect(() => {
     if (!globalThis.window?.__TAURI__) return undefined;
@@ -154,6 +157,15 @@ export default function DeviceTest({
               </Row>
               <Row label="Tries">{`${d.open_attempts} opens · ${d.connects} connects · ${d.disconnects} disconnects`}</Row>
               {d.last_open_error && <Row label="Last open error">{d.last_open_error}</Row>}
+              {/* Linux without freewheel's udev rule: the device is there but not open to this user. */}
+              {d.last_open_error?.includes("device rule") && (
+                <div className="row">
+                  <span className="card-sub grow">{ruleSaid ?? "Linux needs freewheel\u2019s device rule to open the Speed Editor."}</span>
+                  <button className="btn-primary" onClick={() => install("DeviceAccess", setRuleSaid)}>
+                    Install the device rule
+                  </button>
+                </div>
+              )}
             </section>
             <section className="card card-stack" aria-label="Unlock">
               <div className="card-title">Unlock (auth)</div>

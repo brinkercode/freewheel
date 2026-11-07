@@ -31,6 +31,7 @@ export const JOG_MODES = { Jog: "Jog", Shuttle: "Shuttle", Scroll: "Scroll" };
 export const OVERRIDE_MODES = { SystemVolume: "System volume", AppVolume: "App volume", Brightness: "Brightness" };
 
 const MAC = /Mac/.test(globalThis.navigator?.userAgent ?? "");
+const LINUX = /Linux/.test(globalThis.navigator?.userAgent ?? "") && !/Android/.test(globalThis.navigator?.userAgent ?? "");
 const kindOf = (action) => (action ? Object.keys(action)[0] : null);
 
 /** A new action of `kind`, preset to its first valid choice. */
@@ -101,11 +102,13 @@ export async function saveAction({ config, layerId, key, action, save = saveConf
 }
 
 // A website opens in the default browser through the OS opener.
-const OPENER = MAC ? "/usr/bin/open" : "explorer.exe";
+const OPENER = MAC ? "/usr/bin/open" : LINUX ? "xdg-open" : "explorer.exe";
+/** The OS opener for a user agent: open on a Mac, xdg-open on Linux, Explorer on Windows. */
+export const openerFor = (ua) => (/Mac/.test(ua) ? "/usr/bin/open" : /Linux/.test(ua) && !/Android/.test(ua) ? "xdg-open" : "explorer.exe");
 /** The LaunchApp that opens `url` (like "youtube.com") in the default browser. */
-export const websiteAction = (url) => {
+export const websiteAction = (url, opener = OPENER) => {
   const u = url.trim().replace(/^https?:\/\//, "").replace(/\/$/, "");
-  return { LaunchApp: { path: OPENER, args: [`https://${u}`], enabled: true } };
+  return { LaunchApp: { path: opener, args: [`https://${u}`], enabled: true } };
 };
 
 /** An app's avatar colour, one of 12 hues (the stylesheet’s .app-initial[data-hue]), from its name. */
@@ -121,7 +124,7 @@ export const filterApps = (apps, query) => {
   return q ? apps.filter((a) => a.name.toLowerCase().includes(q)) : apps;
 };
 
-/** The file whose icon an app shows: the .lnk / .app it opens, or the program itself. */
+/** The file whose icon an app shows: the .lnk / .app it opens, or the program itself (a Linux .desktop entry). */
 export const iconSource = (app) => app.args[0] ?? app.path;
 
 const sameLaunch = (v, app) => v.path === app.path && (v.args[0] ?? "") === (app.args[0] ?? "");

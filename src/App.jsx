@@ -17,6 +17,7 @@ import { NoticeBar, Toast, Toolbar } from "./SettingsWindow.jsx";
 import { TitleBar, isMac } from "./TitleBar.jsx";
 import {
   getConfig,
+  getDesktopHints,
   getStartAtLogin,
   getStatus,
   getVersion,
@@ -54,6 +55,7 @@ function Settings({ autoUpdate, storage }) {
   const [status, setStatus] = useState(null);
   const [config, setConfig] = useState(null);
   const [login, setLogin] = useState(null);
+  const [trayHint, setTrayHint] = useState(null);
   const [version, setVersion] = useState(null);
   const [firstRun, setFirstRun] = useState(() => !firstRunDone(storage));
   const [fixing, setFixing] = useState(false);
@@ -99,6 +101,7 @@ function Settings({ autoUpdate, storage }) {
   useEffect(() => {
     if (!globalThis.window?.__TAURI__) return undefined;
     getStartAtLogin().then(setLogin, () => {});
+    getDesktopHints().then((h) => setTrayHint(h?.tray ?? null), () => {});
     getVersion().then(setVersion, () => {});
     getStatus().then(setStatus, () => {});
     // --simulate only (src/simulateEvents.js): the Simulator's "Record a key" and "New version".
@@ -288,6 +291,7 @@ function Settings({ autoUpdate, storage }) {
               onCheck={onCheck}
               onDownload={onDownload}
               onRestart={onRestart}
+              trayHint={trayHint}
             />
           )}
           {!newsOpen && tab === "Help & backup" && <Backup version={shownVersion} detailedLogs={config?.settings?.detailed_logs} onDetailedLogs={onDetailedLogs} trayLogs={trayLogs} />}
