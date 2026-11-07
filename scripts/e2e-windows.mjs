@@ -1670,6 +1670,11 @@ async function main() {
     writeFileSync(join(out, "e2e-log.txt"), log.join("\n") + "\n");
   } catch (e) {
     say(`e2e: FAIL: ${e.message}`);
+    // A frozen main thread (a deadlock) looks like a missing UI change: say which it was.
+    await responsive("the failure").then(
+      () => say("  the app still answers IPC from both windows"),
+      (err) => say(`  the app is frozen: ${err.message}`),
+    );
     for (const name of ["settings", "simulator"])
       if (win[name]) await shot(name, "failure").catch((err) => say(`  no failure screenshot of ${name}: ${err.message}`));
     writeFileSync(join(out, "e2e-log.txt"), log.join("\n") + "\n");

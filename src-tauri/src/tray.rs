@@ -504,13 +504,21 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 
 impl<R: Runtime> TrayMenu<R> {
     pub fn state(&self) -> TrayMenuState {
-        let live = lock(&self.live);
+        // The menu first, then `live`, never both: off the main thread (the
+        // async sim_tray) a menu getter waits for the main thread, and the
+        // main thread may be waiting for `live` (show_update from
+        // tray_update_state, show_status): holding it across the getter
+        // deadlocked the app.
+        let on = self.toggle.is_checked().unwrap_or(true);
+        let start_at_login = self.login.is_checked().unwrap_or(false);
+        let update = self.update.text().unwrap_or_default();
+        let live = lock(&self.live).clone();
         TrayMenuState {
-            on: self.toggle.is_checked().unwrap_or(true),
-            start_at_login: self.login.is_checked().unwrap_or(false),
-            status_line: live.status.line.clone(),
+            on,
+            start_at_login,
+            status_line: live.status.line,
             status_fix: live.status.fix,
-            update: self.update.text().unwrap_or_default(),
+            update,
             update_enabled: live.update_action != UpdateAction::Nothing,
             icon: live.status.icon,
         }
@@ -871,6 +879,48 @@ mod tests {
         let js = include_str!("../../src/simulateEvents.js");
         assert!(js.contains(&format!("SIM_TRAY_EVENT = \"{SIM_TRAY_EVENT}\"")));
         assert!(include_str!("../../src/Simulator.jsx").contains("SIM_TRAY_EVENT"));
+    }
+
+    /// No lock on the menu's live state is held across a menu call: off the
+    /// main thread a menu call waits for the main thread, which may be
+    /// waiting for that lock (the tray's Restart to update froze the app).
+    #[test]
+    fn no_menu_call_runs_under_the_live_lock() {
+        let src = include_str!("tray.rs");
+        let src = &src[..src.find("#[cfg(test)]").unwrap()];
+        let menu_call = [
+            ".is_checked()",
+            ".set_checked(",
+            ".text()",
+            ".set_text(",
+            ".set_enabled(",
+            "set_icon",
+        ];
+        for (i, line) in src.lines().enumerate() {
+            let t = line.trim();
+            // A guard kept in a binding lives to the end of its block.
+            if t.starts_with("let") && t.contains("= lock(&self.live)") && !t.contains(".clone()") {
+                let rest: Vec<&str> = src
+                    .lines()
+                    .skip(i + 1)
+                    .take_while(|l| !l.trim().starts_with('}'))
+                    .collect();
+                for l in rest {
+                    assert!(
+                        !menu_call.iter().any(|c| l.contains(c)),
+                        "line {}: a menu call under the live lock: {l}",
+                        i + 1
+                    );
+                }
+            }
+            if t.contains("lock(&self.live)") {
+                assert!(
+                    !menu_call.iter().any(|c| t.contains(c)),
+                    "line {}: {t}",
+                    i + 1
+                );
+            }
+        }
     }
 
     #[test]
