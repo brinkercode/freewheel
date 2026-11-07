@@ -25,6 +25,12 @@ pub enum Dialog {
     ChooseApp,
 }
 
+/// When this file is in the folder, Restore's open dialog answers with the
+/// path written in it (once: the file is removed), so the e2e can restore
+/// someone else's file or a broken one.
+#[cfg_attr(not(feature = "e2e"), allow(dead_code))]
+pub const NEXT_OPEN_FILE: &str = "next-open.txt";
+
 /// The program 'Choose file…' answers with in the e2e.
 #[cfg_attr(not(feature = "e2e"), allow(dead_code))]
 pub const CHOSEN_APP: &str = "E2E Example App.exe";
@@ -41,6 +47,20 @@ pub fn answer(dialog: Dialog, dir: &std::path::Path) -> PathBuf {
     }
 }
 
+/// What the stub answers in `dir`: Restore's open dialog takes the path in
+/// [`NEXT_OPEN_FILE`] once, if it is there; else [`answer`].
+#[cfg_attr(not(feature = "e2e"), allow(dead_code))]
+pub fn stub_answer(dialog: Dialog, dir: &std::path::Path) -> PathBuf {
+    let next = dir.join(NEXT_OPEN_FILE);
+    match std::fs::read_to_string(&next) {
+        Ok(chosen) if dialog == Dialog::OpenMappings => {
+            let _ = std::fs::remove_file(&next);
+            PathBuf::from(chosen.trim())
+        }
+        _ => answer(dialog, dir),
+    }
+}
+
 /// The stubbed answer for `dialog`, when stubs are on: `Some(Some(path))`.
 /// `None` (always, without the `e2e` feature): open the real dialog.
 #[cfg(feature = "e2e")]
@@ -52,7 +72,7 @@ pub fn dialog<R: tauri::Runtime>(
         return None;
     }
     let dir = std::env::var_os(DIALOG_DIR_ENV)?;
-    let path = answer(dialog, std::path::Path::new(&dir));
+    let path = stub_answer(dialog, std::path::Path::new(&dir));
     tracing::info!(?dialog, "e2e: dialog stubbed");
     crate::simulate::note(
         app,
@@ -85,6 +105,27 @@ mod tests {
             answer(Dialog::SaveMappings, dir)
         );
         assert_eq!(answer(Dialog::ChooseApp, dir), dir.join(CHOSEN_APP));
+    }
+
+    #[test]
+    fn restore_opens_the_file_named_next_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let theirs = dir.path().join("someone-else.json");
+        std::fs::write(
+            dir.path().join(NEXT_OPEN_FILE),
+            format!("{}\n", theirs.display()),
+        )
+        .unwrap();
+        // Only Restore's open dialog takes it.
+        assert_eq!(
+            stub_answer(Dialog::SaveMappings, dir.path()),
+            answer(Dialog::SaveMappings, dir.path())
+        );
+        assert_eq!(stub_answer(Dialog::OpenMappings, dir.path()), theirs);
+        assert_eq!(
+            stub_answer(Dialog::OpenMappings, dir.path()),
+            answer(Dialog::OpenMappings, dir.path())
+        );
     }
 
     /// Shipped builds never stub: the release workflow builds without the

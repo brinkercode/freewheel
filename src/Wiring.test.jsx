@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, expect, test, vi } from "vitest";
 import { KeyPanel } from "./ActionEditor.jsx";
 import Backup from "./Backup.jsx";
+import KeysTab from "./KeysTab.jsx";
 import Simulator, { TRAY_ITEMS } from "./Simulator.jsx";
 import WheelTab, { overrideNotice } from "./WheelTab.jsx";
 import { createSimFake } from "./dev/simFake.js";
@@ -102,4 +103,25 @@ test("a Quick pick saves while the record box listens (it keeps focus, so nothin
   expect(fireEvent.mouseDown(shift)).toBe(false);
   fireEvent.click(shift);
   expect(onSave).toHaveBeenCalledWith("Held", { modifiers: ["Shift"], key: "" });
+});
+
+test("a key restored without 'Let restored keys open apps' reads as off, and says how to turn it on", () => {
+  const off = { LaunchApp: { path: "C:/Their/Tool.exe", args: [], enabled: false } };
+  const c = config({ Cam1: off });
+  expect(shortLabel(off, c)).toBe("Opens Tool (off)");
+  expect(longLabel(off, c)).toBe("Opens Tool (off: restored from a file)");
+  render(<KeyPanel keyName="Cam1" action={off} config={c} layerId="base" initialMode="LaunchApp" />);
+  expect(screen.getByRole("note").textContent).toContain("so it is off and opens nothing");
+});
+
+test("a page key on the Speed Editor switches the Keys tab to that page", () => {
+  const c = config({ Cam5: { LayerPush: { target: "studio" } } });
+  c.layers.push({ id: "studio", name: "Edit Bay", bindings: {} });
+  const active = () => document.querySelector(".pill.is-active button[role=tab]").textContent;
+  const { rerender } = render(<KeysTab initial={c} status={{ connection: "Connected", layer: "base" }} />);
+  expect(active()).toBe("Base".replace("Base", c.layers[0].name));
+  rerender(<KeysTab initial={c} status={{ connection: "Connected", layer: "studio" }} />);
+  expect(active()).toBe("Edit Bay");
+  rerender(<KeysTab initial={c} status={{ connection: "Connected", layer: "base" }} />);
+  expect(active()).toBe("Main");
 });

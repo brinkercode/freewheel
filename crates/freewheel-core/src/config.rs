@@ -1170,6 +1170,127 @@ mod tests {
         ));
     }
 
+    /// A backup keeps everything a user set up: page names and order, every
+    /// kind of key, the wheel modes and the dial steps.
+    #[test]
+    fn a_backup_restores_every_page_key_wheel_mode_and_dial_step() {
+        let mut config = with_launch_apps();
+        config.layers[1].name = "Edit Bay (renamed)".into();
+        let base = &mut config.layers[0].bindings;
+        let combo = |modifiers: Vec<Modifier>, key: &str| KeyCombo {
+            modifiers,
+            key: key.into(),
+        };
+        base.insert(
+            "Trans".into(),
+            Action::Held {
+                combo: combo(vec![Modifier::Shift], ""),
+            },
+        );
+        base.insert(
+            "Snap".into(),
+            Action::Latched {
+                combo: combo(vec![Modifier::Alt], ""),
+            },
+        );
+        base.insert(
+            "StopPlay".into(),
+            Action::Hotkey {
+                combo: combo(vec![], "PlayPause"),
+            },
+        );
+        base.insert(
+            "Shtl".into(),
+            Action::SetJogMode {
+                mode: JogMode::Volume,
+            },
+        );
+        base.insert(
+            "FullView".into(),
+            Action::OverrideToggle {
+                mode: OverrideMode::Brightness,
+            },
+        );
+        config.jog.default_mode = JogMode::Jog;
+        if let Some(jog) = config.jog.per_mode.get_mut(&JogMode::Jog) {
+            jog.threshold = 7;
+        }
+        config.overrides.brightness_step = 3;
+        config.overrides.system_volume_step = 0.07;
+        let file = config.export_mappings();
+        let restored = Config::default().import_mappings(&file, true).unwrap();
+        assert_eq!(restored.layers, config.layers);
+        assert_eq!(restored.base_layer, config.base_layer);
+        assert_eq!(restored.jog, config.jog);
+        assert_eq!(restored.overrides, config.overrides);
+        // The file itself carries the renamed page and every binding.
+        let text = String::from_utf8(file).unwrap();
+        for part in [
+            "Edit Bay (renamed)",
+            "PlayPause",
+            "Volume",
+            "Latched",
+            "Held",
+        ] {
+            assert!(text.contains(part), "{part}");
+        }
+    }
+
+    /// Someone else's file never brings a key that runs a program unless
+    /// the user lets it, on pages and on the wheel alike.
+    #[test]
+    fn someone_elses_launch_keys_and_wheel_actions_come_in_off() {
+        let mut theirs = with_launch_apps();
+        let launch = Action::LaunchApp {
+            path: "C:/Their/Tool.exe".into(),
+            args: vec!["--x".into()],
+            enabled: true,
+        };
+        if let Some(jog) = theirs.jog.per_mode.values_mut().next() {
+            jog.left = Some(launch.clone());
+        }
+        let file = theirs.export_mappings();
+        let off = Config::default().import_mappings(&file, false).unwrap();
+        assert_eq!(enabled_launch_apps(&off), 0);
+        let on = Config::default().import_mappings(&file, true).unwrap();
+        assert_eq!(enabled_launch_apps(&on), enabled_launch_apps(&theirs));
+        // Turning them off changes nothing else.
+        let mut expected = theirs.clone();
+        expected.disable_launch_apps();
+        assert_eq!(off.layers, expected.layers);
+        assert_eq!(off.jog, expected.jog);
+    }
+
+    #[test]
+    fn import_rejects_unknown_keys_fields_and_leaves_the_current_config_alone() {
+        let current = with_launch_apps();
+        let before = current.clone();
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&current.export_mappings()).unwrap();
+        value["layers"][0]["bindings"]["NoSuchKey"] =
+            serde_json::json!({"Hotkey": {"combo": {"modifiers": [], "key": "A"}}});
+        assert!(matches!(
+            current.import_mappings(&serde_json::to_vec(&value).unwrap(), true),
+            Err(SaveError::UnknownKey { .. })
+        ));
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&current.export_mappings()).unwrap();
+        value["surprise"] = true.into();
+        assert!(matches!(
+            current.import_mappings(&serde_json::to_vec(&value).unwrap(), true),
+            Err(SaveError::UnknownField { .. })
+        ));
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&current.export_mappings()).unwrap();
+        value["layers"][0]["bindings"]["Cut"] =
+            serde_json::json!({"LayerPush": {"target": "gone"}});
+        assert!(matches!(
+            current.import_mappings(&serde_json::to_vec(&value).unwrap(), true),
+            Err(SaveError::BadLayerReference { .. })
+        ));
+        assert_eq!(current, before);
+    }
+
     #[test]
     fn import_rejects_a_newer_version_before_reading_the_rest() {
         let bytes = br#"{"version": 2, "layers": "from the future"}"#;

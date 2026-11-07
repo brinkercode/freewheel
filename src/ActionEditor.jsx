@@ -152,6 +152,11 @@ export function ActionForm({ action, errors = {}, onUse, initialApps = null, loa
   };
   return (
     <>
+      {v.enabled === false && v.path && (
+        <div className="panel-note small" role="note">
+          This key came from a restored file, so it is off and opens nothing. Pick the app again to turn it on.
+        </div>
+      )}
       <div className="input-icon-box app-search">
         <Icon name="search" />
         <input aria-label="Search your apps" value={query} placeholder="Search your apps" onChange={(e) => setQuery(e.target.value)} />

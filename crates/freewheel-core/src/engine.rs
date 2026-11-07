@@ -273,6 +273,19 @@ impl Engine {
                     }
                     Ok(())
                 }
+                Some(Action::LaunchApp {
+                    path,
+                    enabled: false,
+                    ..
+                }) => {
+                    // Restored from a file without 'Let restored keys open
+                    // apps' (T1): nothing runs, and the user is told why.
+                    info!(%path, "app launch is off (restored from a file)");
+                    self.launch_errors.push(LaunchError(format!(
+                        "{path} is off: it came from a restored file. Pick the app again to turn it on."
+                    )));
+                    Ok(())
+                }
                 _ => Ok(()),
             },
             // Held keys release on the physical release, whatever the layer.
@@ -895,7 +908,9 @@ mod tests {
             .handle(&Release(Key::Cam1), &mut mock, &mut launcher)
             .unwrap();
         assert!(launcher.calls().is_empty());
-        assert!(engine.take_launch_errors().is_empty());
+        let errors = engine.take_launch_errors();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].0.contains("/usr/bin/app is off"), "{errors:?}");
     }
 
     #[test]

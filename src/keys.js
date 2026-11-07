@@ -175,8 +175,10 @@ export function shortLabel(action, config) {
       return `Hold ${comboText(v.combo)}`;
     case "Latched":
       return `${comboText(v.combo)} on/off`;
-    case "LaunchApp":
-      return `Opens ${launchName(v).replace(/^(Google|Microsoft) /, "").replace(" Studio", "")}`;
+    case "LaunchApp": {
+      const opens = `Opens ${launchName(v).replace(/^(Google|Microsoft) /, "").replace(" Studio", "")}`;
+      return v.enabled === false ? `${opens} (off)` : opens;
+    }
     case "LayerPush":
       return `→ ${pageName(config, v.target)}`;
     case "OverrideToggle":
@@ -204,7 +206,7 @@ export function longLabel(action, config) {
     case "Latched":
       return `Turns ${comboText(v.combo, " + ")} on and off`;
     case "LaunchApp":
-      return `Opens ${launchName(v)}`;
+      return v.enabled === false ? `Opens ${launchName(v)} (off: restored from a file)` : `Opens ${launchName(v)}`;
     case "LayerPush":
       return `Goes to the ${pageName(config, v.target)} page`;
     case "OverrideToggle":
