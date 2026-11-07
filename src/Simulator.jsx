@@ -135,8 +135,8 @@ export default function Simulator({ initial = null }) {
       {/* The window's header (no OS title bar): drag it to move the window. */}
       <header className="fw-sim-head" data-tauri-drag-region="deep">
         <h1>Simulator controls</h1>
-        <p>Pretend to be the computer and the Speed Editor.</p>
         <WindowControls />
+        <p>Pretend to be the computer and the Speed Editor.</p>
       </header>
 
       <section className="fw-sim-group fw-sim-press">
