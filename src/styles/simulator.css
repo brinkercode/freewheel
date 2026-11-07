@@ -24,14 +24,13 @@ html:has(.fw-sim) body { background: #151618; color-scheme: dark; }
   .fw-sim { font-family: var(--font-mac); }
 }
 
-/* the window's own title bar (TitleBar.jsx): the header drags the window,
-   the controls hug the top-right corner in the column's colours */
-.fw-sim { position: relative; }
-.fw-sim-head { user-select: none; -webkit-user-select: none; }
-.fw-sim-head h1 { padding-right: 130px; }
+/* the window's own title bar (TitleBar.jsx): the header drags the window;
+   the controls sit at the right end of the heading's row, vertically
+   centred on it (G Hub), in the column's colours; the line below spans */
+.fw-sim-head { user-select: none; -webkit-user-select: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 8px; }
+.fw-sim-head p { grid-column: 1 / -1; }
 .fw-sim.is-mac { padding-top: 40px; }
-.fw-sim.is-mac .fw-sim-head h1 { padding-right: 0; }
-.fw-sim .window-controls { position: absolute; top: 0; right: 0; display: flex; height: 32px; }
+.fw-sim .window-controls { display: flex; align-items: center; height: 32px; margin: -8px -10px -8px 0; }
 .fw-sim .window-control {
   width: 46px;
   height: 32px;

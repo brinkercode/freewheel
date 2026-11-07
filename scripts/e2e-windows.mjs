@@ -242,6 +242,15 @@ async function main() {
       if (decorated !== false) throw new Error(`${name}: the window has OS decorations (${JSON.stringify(decorated)})`);
       const drag = await d.exec(`return document.querySelector('[data-tauri-drag-region="deep"] .window-controls') ? "ok" : "none"`);
       if (drag !== "ok") throw new Error(`${name}: no draggable header with window controls`);
+      // One header row: the controls' vertical centre is the On switch's (settings) or the heading's (simulator).
+      const mid = await d.exec(
+        `const c = (s) => { const e = document.querySelector(s); if (!e) return null; const r = e.getBoundingClientRect(); return r.top + r.height / 2; };
+         return [c(".window-controls"), c(arguments[0])];`,
+        [name === "settings" ? ".toolbar .switch" : ".fw-sim-head h1"],
+      );
+      if (mid[0] == null || mid[1] == null || Math.abs(mid[0] - mid[1]) > 4)
+        throw new Error(`${name}: window controls not in line with the header row (centres ${JSON.stringify(mid)})`);
+      say(`  controls centre ${mid[0]}, row centre ${mid[1]}`);
     }, [name]);
     await step(`${name}: maximise`, async () => {
       await click(name, ".window-control[aria-label=Maximise]");
