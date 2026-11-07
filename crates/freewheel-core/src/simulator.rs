@@ -13,7 +13,7 @@ use crate::clock::Clock;
 use crate::config::{Action, Config, ConfigStore, JogMode, OverrideMode};
 use crate::connection::{ConnectionEvent, ConnectionManager, ConnectionStatus, RETRY_INTERVAL};
 use crate::diagnostics::{DeviceDiagnostics, DeviceInfo};
-use crate::engine::Engine;
+use crate::engine::{Engine, LedWriter};
 use crate::first_run::{FakeFirstRun, FirstRun};
 use crate::hid::{FakeTransport, HidError, HidTransport};
 use crate::inject::{InjectError, KeyCombo, KeyInjector, Keystroke};
@@ -342,6 +342,9 @@ pub struct Simulator {
     shuttle_clock: SimClock,
     manager: ConnectionManager<SimDevice, Opener, SimClock, fn(u64) -> u64>,
     engine: Engine,
+    /// The LEDs written to the simulated device, as the device loop does.
+    leds: LedWriter,
+    led_session: Option<u64>,
     injector: Box<dyn KeyInjector>,
     launcher: Box<dyn Launcher>,
     send_for_real: bool,
@@ -381,6 +384,8 @@ impl Simulator {
         let mut sim = Simulator {
             manager: ConnectionManager::new(open, clock.clone(), (|c: u64| !c) as fn(u64) -> u64),
             engine: Engine::new(&config),
+            leds: LedWriter::default(),
+            led_session: None,
             resolve: ResolveWatcher::from_settings(&config.settings),
             processes: FakeProcessLister::new(),
             permissions: Permissions::Granted,
@@ -498,6 +503,11 @@ impl Simulator {
     }
 
     fn set_enabled(&mut self, on: bool) {
+        if !on && self.connection == Some(ConnectionStatus::Connected) {
+            // As the device loop: dark before the handle closes.
+            self.led_session = None;
+            let _ = self.leds.clear(&mut |r| self.manager.write(r));
+        }
         let events = self.manager.set_enabled(on);
         self.feed(events);
         if on && self.connection != Some(ConnectionStatus::Connected) {
@@ -508,6 +518,18 @@ impl Simulator {
 
     fn status(&mut self) -> SimStatus {
         let connected = self.connection == Some(ConnectionStatus::Connected);
+        // The LEDs go to the simulated device too, so the Device test view
+        // lists them as the real one would (all again on each connect/re-auth).
+        if connected {
+            if self.led_session != Some(self.manager.session()) {
+                self.led_session = Some(self.manager.session());
+                self.leds.reset();
+            }
+            let leds = self.engine.leds();
+            let _ = self.leds.sync(&leds, &mut |r| self.manager.write(r));
+        } else {
+            self.led_session = None;
+        }
         let jog_mode = self.engine.jog_mode();
         let leds = self.engine.leds();
         let threshold = self.config.settings.low_battery_threshold;
@@ -1396,9 +1418,22 @@ mod tests {
         assert_eq!(d.device.as_ref().and_then(|i| i.bus), Some(Bus::Bluetooth));
         assert_eq!(d.auth.state, crate::diagnostics::AuthState::Passed);
         assert_eq!(d.auth.session_s, Some(600));
-        // The connect set the device wheel mode.
-        assert_eq!(d.reports[0].direction, crate::diagnostics::Direction::Out);
-        assert_eq!(d.reports[0].hex, "03 00 00 00 00 00 ff");
+        // The connect set the device wheel mode, then its LEDs (newest
+        // first): every key dark, SCRL lit.
+        let out: Vec<_> = d.reports[..3]
+            .iter()
+            .map(|r| (r.direction, r.decoded.as_str()))
+            .collect();
+        let o = crate::diagnostics::Direction::Out;
+        assert_eq!(
+            out,
+            [
+                (o, "wheel LEDs 0x04"),
+                (o, "key LEDs mask 0x00000"),
+                (o, "set wheel mode 0 (relative)")
+            ]
+        );
+        assert_eq!(d.reports[2].hex, "03 00 00 00 00 00 ff");
 
         key(&mut sim, "Cut", true);
         sim.apply(Control::Wheel { value: -3 });
@@ -1419,8 +1454,9 @@ mod tests {
             mode: JogMode::Shuttle,
         });
         let d = sim.diagnostics();
+        assert_eq!(d.reports[0].decoded, "wheel LEDs 0x02");
         assert_eq!(
-            d.reports[0].decoded,
+            d.reports[1].decoded,
             "set wheel mode 3 (absolute, dead zero)"
         );
 
@@ -1429,5 +1465,12 @@ mod tests {
         assert_eq!(d.status, Some(ConnectionStatus::Absent));
         assert_eq!(d.disconnects, 1);
         assert!(d.held.is_empty());
+
+        // Off: everything dark before the handle closes.
+        sim.apply(Control::Connect { bus: Bus::Usb });
+        sim.apply(Control::SetEnabled { on: false });
+        let d = sim.diagnostics();
+        assert_eq!(d.reports[0].decoded, "wheel LEDs 0x00");
+        assert_eq!(d.reports[1].decoded, "key LEDs mask 0x00000");
     }
 }
