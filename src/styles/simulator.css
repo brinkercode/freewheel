@@ -5,6 +5,8 @@
 
 html:has(.fw-sim),
 html:has(.fw-sim) body { background: #151618; color-scheme: dark; }
+/* The column is taller than the window: it scrolls (the settings window's body does not). */
+html:has(.fw-sim) body { overflow-y: auto; }
 
 .fw-sim {
   min-height: 100%;
