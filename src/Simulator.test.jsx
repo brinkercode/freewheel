@@ -149,3 +149,17 @@ test("the simulator's styles live in their own stylesheet, scoped to its window"
   for (const s of selectors) expect(s).toMatch(/fw-sim|fw-tray-icon/);
   expect(readFileSync(join(SRC, "Simulator.jsx"), "utf8")).toContain('import "./styles/simulator.css"');
 });
+
+test("the quick keys light as the device does: the wheel button, then the page key", async () => {
+  await mount();
+  await click(group("Speed Editor").getByText("USB"));
+  const lit = () => [...document.querySelectorAll(".fw-sim-quick button.is-lit")].map((b) => b.textContent);
+  expect(lit()).toEqual(["SCRL"]);
+  expect(document.querySelector(".fw-sim-quick button.is-lit .fw-sim-led")).toBeTruthy();
+  const shtl = screen.getByRole("button", { name: "SHTL" });
+  await act(async () => fireEvent.pointerDown(shtl));
+  await act(async () => fireEvent.pointerUp(shtl));
+  expect(lit()).toEqual(["SHTL"]);
+  await click(group("freewheel").getByText("Off"));
+  expect(lit()).toEqual([]);
+});

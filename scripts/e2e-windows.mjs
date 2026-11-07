@@ -899,6 +899,37 @@ async function main() {
       await gone("settings", ".override-notice");
       await click("settings", "nav.toolbar button.tab", "Keys");
     }, ["simulator", "settings"]);
+    await step("LEDs: the wheel button and a latched TRANS light in the drawing and the Simulator", async () => {
+      // As the device: the drawing's lit LEDs (status.lit) and the Simulator's lit quick keys.
+      const drawingLit = (keys) =>
+        waitFor("settings", `the drawing lights ${keys}`, `const want = [...arguments[0]].sort().join();
+          const lit = [...document.querySelectorAll(".keys-tab .device .key.is-lit")];
+          const got = [...new Set(lit.map((k) => k.dataset.binding))].sort().join();
+          const fills = [...new Set(lit.map((k) => getComputedStyle(k.querySelector(".key-led")).fill.replace(/ /g, "")))].join();
+          if (got === want && fills === "rgb(255,181,71)") return true;
+          throw new Error("lit " + got + " fill " + fills);`, [keys]);
+      const simLit = (labels) =>
+        waitFor("simulator", `the Simulator lights ${labels}`, `return [...document.querySelectorAll(".fw-sim-quick button.is-lit")].map((b) => b.textContent).join() === arguments[0].join()`, [labels]);
+      await press("SCRL");
+      await drawingLit(["Scrl"]);
+      await simLit(["SCRL"]);
+      await press("JOG");
+      await drawingLit(["Jog"]);
+      await simLit(["JOG"]);
+      await keyIn("Trans");
+      await toChoices();
+      await choice("Turn a key on and off");
+      await click("settings", ".side-panel button.preset", "Ctrl");
+      await configShows("TRANS latches Ctrl", (c) => basePage(c).bindings.Trans?.Latched?.combo.modifiers[0] === "Ctrl");
+      await press("TRANS");
+      await drawingLit(["Trans", "Jog"]);
+      await simLit(["TRANS", "JOG"]);
+      await press("TRANS");
+      await drawingLit(["Jog"]);
+      await press("SCRL");
+      await drawingLit(["Scrl"]);
+      await simLit(["SCRL"]);
+    }, ["settings", "simulator"]);
     await step("simulator: macOS permission missing, tray's Needs permission line", async () => {
       await click("simulator", `[role=group][aria-label="macOS permission"] button`, "Missing");
       await shows("settings", "freewheel needs your permission.");

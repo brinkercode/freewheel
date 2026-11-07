@@ -162,6 +162,7 @@ export default function Simulator({ initial = null }) {
 
   const keys = status?.keys ?? Object.keys(LABELS);
   const held = status?.held_keys ?? [];
+  const lit = status?.lit_leds ?? [];
   const update = status?.update;
   const trayIcon = trayState(status);
 
@@ -181,11 +182,13 @@ export default function Simulator({ initial = null }) {
             <button
               key={key}
               aria-pressed={held.includes(key)}
+              className={lit.includes(key) ? "is-lit" : undefined}
               onPointerDown={() => keyDown(key)}
               onPointerUp={() => keyUp(key)}
               onPointerLeave={() => keyUp(key)}
             >
               {label(key)}
+              {lit.includes(key) && <span className="fw-sim-led" aria-hidden="true" />}
             </button>
           ))}
         </div>

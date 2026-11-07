@@ -10,7 +10,7 @@ use freewheel_core::clock::Clock;
 use freewheel_core::config::{Config, OverrideMode};
 use freewheel_core::connection::{ConnectionEvent, ConnectionManager, ConnectionStatus};
 use freewheel_core::diagnostics::DeviceDiagnostics;
-use freewheel_core::engine::Engine;
+use freewheel_core::engine::{Engine, LedWriter};
 use freewheel_core::hid::{HidError, HidTransport};
 use freewheel_core::inject::KeyInjector;
 use freewheel_core::launch::Launcher;
@@ -59,6 +59,9 @@ pub enum Update {
     Override(Option<OverrideMode>),
     /// The Help & backup Device test view's data changed.
     Diagnostics(Box<DeviceDiagnostics>),
+    /// The keys lit on the device, by binding name (empty: none, or not
+    /// connected), for the Keys tab drawing.
+    Leds(Vec<String>),
 }
 
 impl From<ConnectionStatus> for TrayState {
@@ -106,6 +109,7 @@ pub fn run<T, O, C, F>(
         overrides,
     } = outputs;
     let mut diagnostics_at: Option<std::time::Instant> = None;
+    let mut device = DeviceOutput::default();
     loop {
         // While connected the read itself waits; otherwise the command wait does.
         let wait = if manager.status() == Some(ConnectionStatus::Connected) {
@@ -114,7 +118,14 @@ pub fn run<T, O, C, F>(
             POLL
         };
         let mut events = match commands.recv_timeout(wait) {
-            Ok(Command::SetEnabled(on)) => manager.set_enabled(on),
+            Ok(Command::SetEnabled(on)) => {
+                if !on {
+                    // Off and the step aside for Resolve: dark before the
+                    // handle closes.
+                    device.clear(&mut manager);
+                }
+                manager.set_enabled(on)
+            }
             Ok(Command::ExitOverride) => {
                 let dial = engine.active_override();
                 if engine.exit_override() {
@@ -129,17 +140,24 @@ pub fn run<T, O, C, F>(
                 }
                 release(&mut engine, injector, overrides);
                 overrides.set_steps(config.overrides.clone());
+                // The wheel stays in the mode it is in (as the Simulator's
+                // sync_config); the device hears it and the LEDs again.
+                let mode = engine.jog_mode();
                 engine = Engine::new(&config);
+                engine.set_jog_mode(mode);
+                device.resend();
                 on_update(Update::Layer(engine.current_layer().to_string()));
                 Vec::new()
             }
             Ok(Command::Quit(done)) => {
                 release(&mut engine, injector, overrides);
+                device.clear(&mut manager);
                 let _ = done.send(());
                 return;
             }
             Err(RecvTimeoutError::Timeout) => Vec::new(),
             Err(RecvTimeoutError::Disconnected) => {
+                device.clear(&mut manager);
                 return release(&mut engine, injector, overrides);
             }
         };
@@ -191,6 +209,9 @@ pub fn run<T, O, C, F>(
                 warn!(error = %e, "output report not written");
             }
         }
+        if let Some(lit) = device.sync(&mut manager, &engine) {
+            on_update(Update::Leds(lit));
+        }
         engine.take_launch_errors();
         let now = std::time::Instant::now();
         let since = diagnostics_at.map(|t| now.saturating_duration_since(t));
@@ -199,6 +220,75 @@ pub fn run<T, O, C, F>(
         {
             diagnostics_at = Some(now);
             on_update(Update::Diagnostics(Box::new(manager.diagnostics())));
+        }
+    }
+}
+
+/// The key and wheel LEDs (bmd.py output reports 0x02 and 0x04, see
+/// [`LedWriter`]): written only while the device is connected and
+/// authenticated, all again after every connect and re-auth (a device that
+/// slept or was reset comes back dark), cleared on Off / step aside / quit.
+#[derive(Default)]
+struct DeviceOutput {
+    leds: LedWriter,
+    /// The manager session the LEDs were last sent in.
+    session: Option<u64>,
+    /// The lit keys the UI was last told about.
+    shown: Option<Vec<String>>,
+}
+
+impl DeviceOutput {
+    /// Writes the LEDs that changed; returns the lit keys when they changed
+    /// for the UI.
+    fn sync<T, O, C, F>(
+        &mut self,
+        manager: &mut ConnectionManager<T, O, C, F>,
+        engine: &Engine,
+    ) -> Option<Vec<String>>
+    where
+        T: HidTransport,
+        O: FnMut() -> Result<T, HidError>,
+        C: Clock + Clone,
+        F: Fn(u64) -> u64,
+    {
+        let lit = if manager.status() == Some(ConnectionStatus::Connected) {
+            if self.session != Some(manager.session()) {
+                self.session = Some(manager.session());
+                self.leds.reset();
+            }
+            let leds = engine.leds();
+            if let Err(e) = self.leds.sync(&leds, &mut |r| manager.write(r)) {
+                warn!(error = %e, "setting the key lights failed");
+            }
+            leds.names()
+        } else {
+            self.session = None;
+            Vec::new()
+        };
+        (self.shown.as_ref() != Some(&lit)).then(|| {
+            self.shown = Some(lit.clone());
+            lit
+        })
+    }
+
+    /// Sends every LED again on the next sync.
+    fn resend(&mut self) {
+        self.session = None;
+    }
+
+    /// Turns every LED off while the device is still open.
+    fn clear<T, O, C, F>(&mut self, manager: &mut ConnectionManager<T, O, C, F>)
+    where
+        T: HidTransport,
+        O: FnMut() -> Result<T, HidError>,
+        C: Clock + Clone,
+        F: Fn(u64) -> u64,
+    {
+        self.session = None;
+        if manager.status() == Some(ConnectionStatus::Connected)
+            && let Err(e) = self.leds.clear(&mut |r| manager.write(r))
+        {
+            warn!(error = %e, "turning the key lights off failed");
         }
     }
 }
@@ -237,10 +327,10 @@ mod tests {
 
     const WAIT: Duration = Duration::from_secs(5);
 
-    /// Passes every update but the Device test view's on to `f`.
+    /// Passes every update but the Device test view's and the LEDs' on to `f`.
     fn skip_diagnostics(mut f: impl FnMut(Update)) -> impl FnMut(Update) {
         move |u| {
-            if !matches!(u, Update::Diagnostics(_)) {
+            if !matches!(u, Update::Diagnostics(_) | Update::Leds(_)) {
                 f(u)
             }
         }
@@ -630,6 +720,378 @@ mod tests {
             assert_eq!(updates.recv_timeout(WAIT), Ok(Update::Layer("edit".into())));
             assert!(shutdown(&tx, WAIT));
         });
+    }
+
+    /// A device the test keeps a handle to: reads replay `inputs`, then
+    /// time out (staying connected) until `unplug`; every write is recorded.
+    #[derive(Clone, Default)]
+    struct Dev(std::sync::Arc<std::sync::Mutex<DevState>>);
+
+    #[derive(Default)]
+    struct DevState {
+        inputs: std::collections::VecDeque<Vec<u8>>,
+        features: std::collections::VecDeque<Vec<u8>>,
+        written: Vec<freewheel_core::hid::Written>,
+        unplugged: bool,
+        closed: bool,
+    }
+
+    impl Dev {
+        fn authenticating() -> Dev {
+            let dev = Dev::default();
+            dev.handshake();
+            dev
+        }
+        fn handshake(&self) {
+            let mut s = self.0.lock().unwrap();
+            for (sub, payload) in [(0u8, 0x1234u64), (2, 0), (4, 300)] {
+                let mut r = vec![0x06, sub];
+                r.extend_from_slice(&payload.to_le_bytes());
+                s.features.push_back(r);
+            }
+        }
+        fn input(&self, report: Vec<u8>) {
+            self.0.lock().unwrap().inputs.push_back(report);
+        }
+        fn unplug(&self) {
+            self.0.lock().unwrap().unplugged = true;
+        }
+        /// The output reports written, in order (features left out).
+        fn outputs(&self) -> Vec<Vec<u8>> {
+            use freewheel_core::hid::Written::Output;
+            let s = self.0.lock().unwrap();
+            s.written
+                .iter()
+                .filter_map(|w| match w {
+                    Output(r) => Some(r.clone()),
+                    _ => None,
+                })
+                .collect()
+        }
+        fn closed(&self) -> bool {
+            self.0.lock().unwrap().closed
+        }
+    }
+
+    impl HidTransport for Dev {
+        fn read_timeout(&mut self, buf: &mut [u8], _: Duration) -> Result<usize, HidError> {
+            let mut s = self.0.lock().unwrap();
+            if s.closed || s.unplugged {
+                return Err(HidError::Disconnected);
+            }
+            match s.inputs.pop_front() {
+                Some(r) => {
+                    buf[..r.len()].copy_from_slice(&r);
+                    Ok(r.len())
+                }
+                None => {
+                    drop(s);
+                    thread::sleep(Duration::from_millis(1));
+                    Ok(0)
+                }
+            }
+        }
+        fn write(&mut self, data: &[u8]) -> Result<usize, HidError> {
+            let mut s = self.0.lock().unwrap();
+            if s.closed || s.unplugged {
+                return Err(HidError::Disconnected);
+            }
+            s.written
+                .push(freewheel_core::hid::Written::Output(data.to_vec()));
+            Ok(data.len())
+        }
+        fn get_feature_report(&mut self, buf: &mut [u8]) -> Result<usize, HidError> {
+            let mut s = self.0.lock().unwrap();
+            let r = s.features.pop_front().ok_or(HidError::Disconnected)?;
+            buf[..r.len()].copy_from_slice(&r);
+            Ok(r.len())
+        }
+        fn send_feature_report(&mut self, data: &[u8]) -> Result<(), HidError> {
+            let mut s = self.0.lock().unwrap();
+            s.written
+                .push(freewheel_core::hid::Written::Feature(data.to_vec()));
+            Ok(())
+        }
+        fn close(&mut self) {
+            self.0.lock().unwrap().closed = true;
+        }
+    }
+
+    /// A clock the test moves forward, for the re-auth.
+    #[derive(Clone)]
+    struct TestClock(std::sync::Arc<std::sync::Mutex<std::time::Instant>>);
+
+    impl Clock for TestClock {
+        fn now(&self) -> std::time::Instant {
+            *self.0.lock().unwrap()
+        }
+    }
+
+    type DevOpener = Box<dyn FnMut() -> Result<Dev, HidError> + Send>;
+
+    /// A manager that opens `devs` in order (then nothing is plugged in).
+    fn manager_of(
+        devs: &[&Dev],
+        clock: TestClock,
+    ) -> ConnectionManager<Dev, DevOpener, TestClock, fn(u64) -> u64> {
+        let mut queue: std::collections::VecDeque<Dev> =
+            devs.iter().map(|d| (*d).clone()).collect();
+        let open: DevOpener = Box::new(move || queue.pop_front().ok_or(HidError::Disconnected));
+        ConnectionManager::new(open, clock, (|c: u64| !c) as fn(u64) -> u64)
+    }
+
+    fn test_clock() -> TestClock {
+        TestClock(std::sync::Arc::new(std::sync::Mutex::new(
+            std::time::Instant::now(),
+        )))
+    }
+
+    /// A key report with `key` down, then all keys up.
+    fn tap(dev: &Dev, key: Key) {
+        dev.input(key_report(key));
+        let mut up = vec![0u8; 13];
+        up[0] = 0x04;
+        dev.input(up);
+    }
+
+    const SCROLL_MODE: [u8; 7] = [0x03, 0, 0, 0, 0, 0, 0xff];
+    const SHUTTLE_MODE: [u8; 7] = [0x03, 3, 0, 0, 0, 0, 0xff];
+    const KEYS_OFF: [u8; 5] = [0x02, 0, 0, 0, 0];
+    const JOG_OFF: [u8; 2] = [0x04, 0];
+    const SCRL_LIT: [u8; 2] = [0x04, 0x04];
+
+    /// The config the LED tests run: SNAP latches Ctrl, CAM 1 goes to page
+    /// "edit" (SHTL, JOG, SCRL unbound: their printed modes).
+    fn led_config() -> Config {
+        use freewheel_core::config::{Layer, Modifier};
+        let mut config = with_binding(
+            Key::Snap,
+            Action::Latched {
+                combo: KeyCombo {
+                    modifiers: vec![Modifier::Ctrl],
+                    key: String::new(),
+                },
+            },
+        );
+        config.layers[0].bindings.insert(
+            "Cam1".into(),
+            Action::LayerPush {
+                target: "edit".into(),
+            },
+        );
+        config.layers.push(Layer {
+            id: "edit".into(),
+            name: "Edit".into(),
+            bindings: Default::default(),
+        });
+        config
+    }
+
+    /// Runs the loop on `manager` and `led_config()` while `body` drives it;
+    /// returns every LED update the UI heard.
+    fn with_loop<M>(
+        manager: M,
+        body: impl FnOnce(&Sender<Command>, &dyn Fn(&[&str])),
+    ) -> Vec<Vec<String>>
+    where
+        M: Send + 'static,
+        M: RunManager,
+    {
+        let (tx, rx) = mpsc::channel();
+        let (update_tx, updates) = mpsc::channel();
+        let mut injector = MockInjector::new();
+        let heard = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        thread::scope(|s| {
+            let injector = &mut injector;
+            s.spawn(move || {
+                manager.run_with(
+                    Engine::new(&led_config()),
+                    Outputs {
+                        injector,
+                        launcher: &mut MockLauncher::new(),
+                        overrides: &idle_overrides(),
+                    },
+                    rx,
+                    move |u| {
+                        let _ = update_tx.send(u);
+                    },
+                );
+            });
+            let heard2 = std::sync::Arc::clone(&heard);
+            let wait_lit = move |want: &[&str]| {
+                let end = std::time::Instant::now() + WAIT;
+                loop {
+                    let h = heard2.lock().unwrap();
+                    if h.last().is_some_and(|l: &Vec<String>| l == want) {
+                        return;
+                    }
+                    drop(h);
+                    assert!(std::time::Instant::now() < end, "never lit {want:?}");
+                    if let Ok(Update::Leds(l)) = updates.recv_timeout(Duration::from_millis(5)) {
+                        heard2.lock().unwrap().push(l);
+                    }
+                }
+            };
+            body(&tx, &wait_lit);
+            assert!(shutdown(&tx, WAIT));
+        });
+        std::sync::Arc::try_unwrap(heard)
+            .unwrap()
+            .into_inner()
+            .unwrap()
+    }
+
+    /// Lets [`with_loop`] take any manager type.
+    trait RunManager {
+        fn run_with(
+            self,
+            engine: Engine,
+            outputs: Outputs<'_>,
+            commands: Receiver<Command>,
+            on_update: impl FnMut(Update),
+        );
+    }
+
+    impl<T, O, C, F> RunManager for ConnectionManager<T, O, C, F>
+    where
+        T: HidTransport,
+        O: FnMut() -> Result<T, HidError>,
+        C: Clock + Clone,
+        F: Fn(u64) -> u64,
+    {
+        fn run_with(
+            self,
+            engine: Engine,
+            outputs: Outputs<'_>,
+            commands: Receiver<Command>,
+            on_update: impl FnMut(Update),
+        ) {
+            run(self, engine, &SystemClock, outputs, commands, on_update);
+        }
+    }
+
+    #[test]
+    fn connecting_sends_the_wheel_mode_and_lights_scrl_then_off_and_quit_go_dark() {
+        let dev = Dev::authenticating();
+        let heard = with_loop(manager_of(&[&dev], test_clock()), |tx, lit| {
+            lit(&["Scrl"]);
+            // After the handshake: the wheel mode, every key dark, SCRL lit.
+            assert_eq!(dev.outputs(), [&SCROLL_MODE[..], &KEYS_OFF, &SCRL_LIT]);
+            tx.send(Command::SetEnabled(false)).unwrap();
+            lit(&[]);
+            // Off (and the step aside for Resolve, which sends the same
+            // command) turns everything off before the handle closes.
+            assert_eq!(dev.outputs()[3..], [&KEYS_OFF[..], &JOG_OFF]);
+            assert!(dev.closed());
+        });
+        assert_eq!(heard, [vec!["Scrl".to_string()], vec![]]);
+    }
+
+    #[test]
+    fn quit_turns_the_lights_off_before_acknowledging() {
+        let dev = Dev::authenticating();
+        with_loop(manager_of(&[&dev], test_clock()), |_, lit| lit(&["Scrl"]));
+        // with_loop ends with the quit hook.
+        assert_eq!(dev.outputs()[3..], [&KEYS_OFF[..], &JOG_OFF]);
+    }
+
+    #[test]
+    fn wheel_buttons_latched_keys_and_the_page_key_light_on_the_device() {
+        let dev = Dev::authenticating();
+        let heard = with_loop(manager_of(&[&dev], test_clock()), |_, lit| {
+            lit(&["Scrl"]);
+            tap(&dev, Key::Shtl);
+            lit(&["Shtl"]);
+            tap(&dev, Key::Snap);
+            lit(&["Snap", "Shtl"]);
+            tap(&dev, Key::Cam1);
+            lit(&["Cam1", "Snap", "Shtl"]);
+            tap(&dev, Key::Cam1);
+            lit(&["Snap", "Shtl"]);
+            tap(&dev, Key::Snap);
+            lit(&["Shtl"]);
+            tap(&dev, Key::Jog);
+            lit(&["Jog"]);
+        });
+        assert_eq!(heard.len(), 7);
+        assert_eq!(
+            dev.outputs()[3..],
+            [
+                // SHTL: the wheel reads the dial position, its LED lights.
+                &SHUTTLE_MODE[..],
+                &[0x04, 0x02],
+                // SNAP latched: bit 5.
+                &[0x02, 0x20, 0, 0, 0],
+                // CAM 1 goes to its page: + bit 14.
+                &[0x02, 0x20, 0x40, 0, 0],
+                // and back.
+                &[0x02, 0x20, 0, 0, 0],
+                // SNAP unlatched.
+                &KEYS_OFF,
+                // JOG (counts ticks, as Scroll does).
+                &SCROLL_MODE,
+                &[0x04, 0x01],
+                // The quit hook.
+                &KEYS_OFF,
+                &JOG_OFF,
+            ]
+        );
+    }
+
+    #[test]
+    fn a_reconnect_and_a_reauth_send_the_wheel_mode_and_leds_again() {
+        let clock = test_clock();
+        let (first, second) = (Dev::authenticating(), Dev::authenticating());
+        let manager = manager_of(&[&first, &second], clock.clone());
+        with_loop(manager, |_, lit| {
+            lit(&["Scrl"]);
+            tap(&first, Key::Shtl);
+            tap(&first, Key::Snap);
+            lit(&["Snap", "Shtl"]);
+            // Unplugged: the latch is released (release all), nothing lit.
+            first.unplug();
+            lit(&[]);
+            // Plugged back in (the retry is 3 s): the wheel mode the engine
+            // still has, and its LEDs, on the new handle.
+            *clock.0.lock().unwrap() += freewheel_core::connection::RETRY_INTERVAL;
+            lit(&["Shtl"]);
+            wait_until(|| second.outputs().len() == 3);
+            assert_eq!(
+                second.outputs(),
+                [&SHUTTLE_MODE[..], &KEYS_OFF, &[0x04, 0x02]]
+            );
+            // The re-auth (300 s timeout, 10 s early) sends the LEDs again.
+            second.handshake();
+            *clock.0.lock().unwrap() += Duration::from_secs(290);
+            wait_until(|| second.outputs().len() == 5);
+            assert_eq!(second.outputs()[3..], second.outputs()[1..3]);
+        });
+    }
+
+    #[test]
+    fn a_saved_config_keeps_the_wheel_mode_and_sends_it_and_the_leds_again() {
+        let dev = Dev::authenticating();
+        with_loop(manager_of(&[&dev], test_clock()), |tx, lit| {
+            lit(&["Scrl"]);
+            tap(&dev, Key::Shtl);
+            lit(&["Shtl"]);
+            tx.send(Command::Reload(Box::new(led_config()))).unwrap();
+            wait_until(|| dev.outputs().len() == 8);
+            assert_eq!(
+                dev.outputs()[5..],
+                [&SHUTTLE_MODE[..], &KEYS_OFF, &[0x04, 0x02]]
+            );
+        });
+    }
+
+    #[test]
+    fn the_ui_hears_no_lit_keys_while_the_device_is_absent_or_off() {
+        let heard = with_loop(absent_manager(), |tx, lit| {
+            tx.send(Command::SetEnabled(false)).unwrap();
+            tx.send(Command::SetEnabled(true)).unwrap();
+            lit(&[]);
+        });
+        assert_eq!(heard, [Vec::<String>::new()]);
     }
 
     #[test]
