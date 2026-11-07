@@ -239,6 +239,7 @@ fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::
         .invoke_handler(tauri::generate_handler![
             simulate::simulate,
             simulate::sim_jump,
+            simulate::sim_notes,
             tray::sim_tray,
             tray::tray_update_state,
             app_icons::app_icons,

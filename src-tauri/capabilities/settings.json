@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "settings",
-  "description": "The settings window reads and saves the config, exports and imports the mappings, switches freewheel On and Off and start at login, reads the app version, hears the status, key-pressed and device-diagnostics events, reads the Device test diagnostics, shows the macOS permissions, draws its own title bar (minimise, maximise, close, drag), opens the Bluetooth settings, saves the support log bundle, switches detailed logs, opens a release's GitHub page (What's new), shows the saved log file in its folder, puts the wheel back to normal, lists the installed apps with their icons, picks a program file for a key tells the tray its update state, and checks for, downloads (signature verified) and installs updates, then restarts.",
+  "description": "The settings window reads and saves the config, exports and imports the mappings, switches freewheel On and Off and start at login, reads the app version, hears the status, key-pressed and device-diagnostics events, reads the Device test diagnostics, shows the macOS permissions, draws its own title bar (minimise, maximise, close, drag), opens the Bluetooth settings, saves the support log bundle, switches detailed logs, opens a release's GitHub page and the release notes' GitHub links in the browser (What's new), shows the saved log file in its folder, puts the wheel back to normal, lists the installed apps with their icons, picks a program file for a key tells the tray its update state, and checks for, downloads (signature verified) and installs updates, then restarts.",
   "windows": [
     "main"
   ],
@@ -40,6 +40,14 @@
     "allow-tray-update-state",
     "allow-update-check",
     "allow-update-download",
-    "allow-update-install"
+    "allow-update-install",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "https://github.com/*"
+        }
+      ]
+    }
   ]
 }

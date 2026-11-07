@@ -15,7 +15,7 @@ const invoked = (files) =>
 const allowed = (capability) =>
   new Set(
     JSON.parse(read(`../src-tauri/capabilities/${capability}`))
-      .permissions.filter((p) => p.startsWith("allow-"))
+      .permissions.filter((p) => typeof p === "string" && p.startsWith("allow-"))
       .map((p) => p.slice("allow-".length).replaceAll("-", "_")),
   );
 
@@ -61,6 +61,15 @@ test("the simulator window may call exactly the commands its UI invokes", () => 
 test("build.rs declares exactly the commands the UI invokes", () => {
   const declared = [...read("../src-tauri/build.rs").matchAll(/^\s+"([a-z_]+)",$/gm)].map((m) => m[1]);
   expect(declared.sort()).toEqual(sorted(invoked(uiSources)));
+});
+
+test("What's new's notes links open in the browser, to GitHub only", () => {
+  const settings = JSON.parse(read("../src-tauri/capabilities/settings.json")).permissions;
+  const scoped = settings.filter((p) => typeof p !== "string");
+  expect(scoped).toEqual([{ identifier: "opener:allow-open-url", allow: [{ url: "https://github.com/*" }] }]);
+  expect(settings.filter((p) => typeof p === "string" && p.startsWith("opener:"))).toEqual([]);
+  expect(JSON.parse(read("../src-tauri/capabilities/simulator.json")).permissions.some((p) => String(p.identifier ?? p).startsWith("opener:"))).toBe(false);
+  expect(read("./notesMarkdown.js")).toContain('export const LINK_PREFIX = "https://github.com/";');
 });
 
 test("every capability file is checked", () => {

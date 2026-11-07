@@ -263,8 +263,16 @@ input[type="range"] { accent-color: var(--accent); border: none; background: tra
 .update-sub { font-size: 12.5px; color: var(--ink2); }
 .update-banner.is-error { background: var(--warn-soft); }
 .update-banner.is-error .logo-disc { background: var(--warn); }
-.whats-new-notes ul { margin: 6px 0 0; padding-left: 20px; }
+/* What's new: the release notes (src/notesMarkdown.js), long ones scroll inside the card */
+.whats-new-notes { gap: 6px; max-height: calc(100vh - 240px); min-height: 120px; overflow-y: auto; }
+.whats-new-notes h3, .whats-new-notes h4 { margin: 10px 0 0; }
+.whats-new-notes > :first-child { margin-top: 0; }
+.whats-new-notes .whats-new-h2 { font-size: var(--fs-section); }
+.whats-new-notes p { margin: 0; }
+.whats-new-notes ul { margin: 0; padding-left: 20px; }
 .whats-new-notes li + li { margin-top: 4px; }
+.whats-new-notes strong { color: var(--ink); font-weight: var(--fw-semibold); }
+.whats-new-code { font-family: ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace; font-size: 12px; padding: 1px 5px; border-radius: 4px; background: var(--panel); border: 1px solid var(--line2); color: var(--ink); }
 .toast {
   position: absolute;
   bottom: 24px;

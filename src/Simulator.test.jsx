@@ -3,8 +3,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test } from "vitest";
-import Simulator, { QUICK_KEYS, deviceOption, trayState } from "./Simulator.jsx";
-import { createSimFake } from "./dev/simFake.js";
+import Simulator, { NOTES_CHOICES, QUICK_KEYS, deviceOption, notesPreview, trayState } from "./Simulator.jsx";
+import { SIM_NEXT, SIM_SAMPLE, createSimFake } from "./dev/simFake.js";
 import { LABELS } from "./keys.js";
 
 // jsdom gives import.meta.url an http scheme; vitest runs from the repo root.
@@ -118,6 +118,41 @@ test("Jump to opens the settings window's screens", async () => {
   expect(pressed("Computer appearance")).toEqual(["Dark"]);
   await click(screen.getByRole("button", { name: "New version" }));
   expect(screen.getByText(/New version published: freewheel finds it by itself/)).toBeTruthy();
+});
+
+test("New version's notes: the next release's real notes, the sample or pasted ones", async () => {
+  await mount();
+  const notes = () => fake.invoke("sim_notes", { choice: "State", text: null });
+  // A build with the next release's notes starts on them.
+  await waitFor(() => expect(pressed("New version’s notes")).toEqual(["Next release (real notes)"]));
+  expect(group("New version’s notes").getAllByRole("button").map((b) => b.textContent)).toEqual(NOTES_CHOICES.map(([, t]) => t));
+  expect(document.querySelector("[data-notes-preview]").textContent).toBe("1 change: keys: the next release's change");
+  expect((await notes()).notes).toBe(SIM_NEXT);
+  await click(group("New version’s notes").getByText("Sample notes"));
+  expect(pressed("New version’s notes")).toEqual(["Sample notes"]);
+  expect((await notes()).notes).toBe(SIM_SAMPLE);
+  expect(log()).toContain("New version's notes: Sample notes");
+  await click(group("New version’s notes").getByText("Paste notes…"));
+  const box = screen.getByRole("textbox", { name: "Pasted notes" });
+  fireEvent.change(box, { target: { value: "### Bug Fixes\n\n* pasted fix\n* another" } });
+  await click(screen.getByRole("button", { name: "Use these notes" }));
+  expect(await notes()).toEqual({ choice: "Paste", notes: "### Bug Fixes\n\n* pasted fix\n* another", next_available: true });
+  expect(document.querySelector("[data-notes-preview]").textContent).toBe("2 changes: pasted fix");
+});
+
+test("a build without the next release's notes can't pick them", async () => {
+  fake = createSimFake({ next: "" });
+  window.__TAURI__ = { core: { invoke: fake.invoke } };
+  await mount();
+  await waitFor(() => expect(pressed("New version’s notes")).toEqual(["Sample notes"]));
+  expect(group("New version’s notes").getByText("Next release (real notes)").disabled).toBe(true);
+  expect(document.querySelector("[data-notes-preview]").textContent).toMatch(/^This build has no next-release notes\. 1 change: wheel: smoother/);
+});
+
+test("the notes preview counts the bullets", () => {
+  expect(notesPreview("")).toBe("No notes: What’s new links to GitHub only.");
+  expect(notesPreview("Just a line")).toBe("Notes without bullets.");
+  expect(notesPreview("* **a:** [b](https://github.com/x) `c`\n- d")).toBe("2 changes: a: b c");
 });
 
 test("send keys for real is a switch", async () => {

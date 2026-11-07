@@ -14,7 +14,8 @@
 //   -> Download and install: rejected (bad signature), A untouched and still
 //   running -> (B published) Try again: downloading with progress -> ready
 //   -> Restart to update -> A swaps B in and starts it -> the same path now
-//   runs B, What's new in B shows, the config is exactly as before, and
+//   runs B, What's new in B shows B's notes (the next release's real notes,
+//   scripts/release-notes.mjs preview) verbatim, the config is exactly as before, and
 //   freewheel.exe.old and the temp download are gone.
 // Every state is screenshotted into the output dir.
 //
@@ -25,23 +26,12 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEVTOOLS_PORT_ENV, Driver, FIND_JS, shotName } from "./e2e-windows.mjs";
+import { notesText } from "../src/notesMarkdown.js";
+import { DEVTOOLS_PORT_ENV, Driver, FIND_JS, NOTES_ON_PAGE_JS, shotName } from "./e2e-windows.mjs";
 import { startUpdateServer } from "./update-server.mjs";
 
 /** The e2e builds' manifest override (src-tauri/src/selfupdate.rs, `e2e` feature only). */
 export const UPDATE_URL_ENV = "FREEWHEEL_E2E_UPDATE_URL";
-
-/** B's release notes, release-please style: What's new must show them. */
-export const NOTES = `## [{to}](https://github.com/brinkercode/freewheel/compare/v{from}...v{to}) (e2e)
-
-### Features
-
-* **updates:** this version arrived through the portable updater in CI
-
-### Bug Fixes
-
-* nothing was broken; this is the update e2e
-`;
 
 /** The config the update must keep: a shortcut, a page and a key that opens it. */
 export function populate(config) {
@@ -206,7 +196,12 @@ async function main() {
 
   try {
     const manifest = JSON.parse(readFileSync(resolve(opts.manifest), "utf8"));
-    manifest.notes = NOTES.replaceAll("{from}", opts.from).replaceAll("{to}", opts.to);
+    // B's notes: the next release's real notes from the repo's history
+    // (scripts/release-notes.mjs preview, the release's own filter), as the
+    // job wrote them into latest.json; What's new must show exactly them.
+    const expectedNotes = notesText(manifest.notes);
+    if (!expectedNotes.length) throw new Error(`B's latest.json has no notes: ${JSON.stringify(manifest.notes)}`);
+    say(`B's notes (${expectedNotes.length} lines): ${expectedNotes.slice(0, 4).join(" | ")}${expectedNotes.length > 4 ? " | …" : ""}`);
     server = await startUpdateServer({ manifest, package: resolve(opts.package), port: Number(opts["server-port"]), mode: "fail" });
     say(`update server on ${server.url} offering ${opts.to} (${opts.package}), mode fail`);
     const before = { exe: sha(app), files: folderFiles(), version: fileVersion(app) };
@@ -319,8 +314,12 @@ async function main() {
     await waitFor("the What's new notice", `return document.body.innerText.includes("freewheel is updated to " + arguments[0])`, [opts.to], 20000);
     await shot(`B ${opts.to}: what's new notice`);
     await click(".update-banner button", "What’s new in v");
-    await waitFor("the notes page", `return document.body.innerText.includes("this version arrived through the portable updater in CI")`);
+    await waitFor("the notes page with B's notes, verbatim", NOTES_ON_PAGE_JS, [JSON.stringify(expectedNotes)]);
+    say(`  What's new shows all ${expectedNotes.length} lines of B's notes`);
     await shot(`B ${opts.to}: what's new page`);
+    // Long notes scroll inside their card: its end is reachable.
+    await d.exec(`const c = document.querySelector(".whats-new-notes"); c.scrollTop = c.scrollHeight;`);
+    await shot(`B ${opts.to}: what's new page, notes scrolled to the end`);
 
     say("step: settings kept, nothing left behind");
     const kept = (await invoke("get_config")).ok;

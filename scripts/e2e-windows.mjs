@@ -18,6 +18,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { notesText } from "../src/notesMarkdown.js";
 
 /** The env var that opens the app's DevTools port (src-tauri/src/simulate.rs). */
 export const DEVTOOLS_PORT_ENV = "FREEWHEEL_E2E_DEVTOOLS_PORT";
@@ -33,7 +34,7 @@ export const DIALOG_DIR_ENV = "FREEWHEEL_E2E_DIALOG_DIR";
 export const RESPONSIVE_MS = 5000;
 
 export function parseArgs(argv) {
-  const opts = { driver: "http://127.0.0.1:4444", app: null, out: "e2e-shots", port: null };
+  const opts = { driver: "http://127.0.0.1:4444", app: null, out: "e2e-shots", port: null, "next-notes": null };
   for (let i = 0; i < argv.length; i++) {
     const name = argv[i].replace(/^--/, "");
     if (!(name in opts)) throw new Error(`unknown option ${argv[i]}`);
@@ -176,6 +177,32 @@ export const HEADER_JS = `const box = (e) => e.getBoundingClientRect();
 
 
 // In-page helper: the first element matching `css` whose text contains `text`.
+/**
+ * What's new's notes as the page shows them, in order (headings, bullets,
+ * paragraphs: src/notesMarkdown.js notesText of the same markdown); throws
+ * what it saw unless that equals arguments[0] (a JSON string).
+ */
+export const NOTES_ON_PAGE_JS = `const card = document.querySelector(".whats-new-notes");
+if (!card) throw new Error("no notes card");
+const got = JSON.stringify([...card.querySelectorAll("h3, h4, li, p")].map((e) => e.textContent));
+if (got === arguments[0]) return true;
+throw new Error("the page shows " + got.slice(0, 600));`;
+
+/** What the e2e pastes into the Simulator's "Paste notes…": every part of the markdown subset. */
+export const PASTED_NOTES = `## Pasted in the e2e
+
+### Features
+
+* **keys:** a pasted change with \`code\` and a [link](https://github.com/brinkercode/freewheel/pull/1)
+* a second pasted change
+
+A closing paragraph.
+`;
+
+/** The notes the Simulator's "New version's notes" picks, read back from the app (sim_notes). */
+export const SIM_NOTES_STATE_JS = `const done = arguments[arguments.length - 1];
+window.__TAURI__.core.invoke("sim_notes", { choice: "State", text: null }).then((n) => done(JSON.stringify(n)), (e) => done("error: " + e));`;
+
 export const FIND_JS = `const [css, text] = arguments;
   return [...document.querySelectorAll(css)].find((e) => !text || e.textContent.replace(/\\s+/g, " ").includes(text)) ?? null;`;
 
@@ -558,6 +585,28 @@ async function main() {
       await click("settings", '[aria-label="Update automatically"]');
       await waitFor("settings", "Update automatically off", `return document.querySelector('[aria-label="Update automatically"]').getAttribute("aria-checked") === "false"`);
     });
+    // The simulated update carries the notes the Simulator picked: first the
+    // next release's real notes, embedded at build (--next-notes is the same
+    // file, scripts/release-notes.mjs preview), shown verbatim in What's new.
+    const nextNotes = opts["next-notes"] ? readFileSync(opts["next-notes"], "utf8") : null;
+    const NOTES_GROUP = "New version’s notes";
+    const simNotesState = async () => {
+      await use("simulator");
+      const r = await d.execAsync(SIM_NOTES_STATE_JS);
+      if (String(r).startsWith("error")) throw new Error(`sim_notes: ${r}`);
+      return JSON.parse(r);
+    };
+    const firstChoice = nextNotes ? "Next release (real notes)" : "Sample notes";
+    await sim(NOTES_GROUP, firstChoice);
+    let expectedNotes;
+    {
+      const state = await simNotesState();
+      if (nextNotes) {
+        if (!state.next_available || state.notes !== nextNotes) throw new Error(`the build's next-release notes are not ${opts["next-notes"]}: ${JSON.stringify(state).slice(0, 300)}`);
+        say(`  next release notes embedded: ${notesText(nextNotes).length} lines`);
+      }
+      expectedNotes = notesText(state.notes);
+    }
     await step("simulator: New version, available (dark)", async () => {
       await click("simulator", ".fw-sim-grid button", "New version");
       await updateState("available");
@@ -582,8 +631,47 @@ async function main() {
     });
     await step("updates: What's new page", async () => {
       await click("settings", ".update-banner button", "What’s new in v");
-      await waitFor("settings", "the notes", `return document.body.innerText.includes("smoother scrolling")`);
+      await waitFor("settings", `the notes (${firstChoice}), verbatim`, NOTES_ON_PAGE_JS, [JSON.stringify(expectedNotes)]);
+      say(`  What's new shows all ${expectedNotes.length} lines of the ${firstChoice}`);
     });
+    // Then the sample notes and pasted ones, each through the whole update.
+    for (const [choice, label] of [["Sample", "Sample notes"], ["Paste", "Paste notes…"]]) {
+      await step(`simulator: ${NOTES_GROUP}: ${label}`, async () => {
+        await click("simulator", `[role=group][aria-label="${NOTES_GROUP}"] button`, label);
+        if (choice === "Paste") {
+          // A paste into the textarea (React's value setter + input), then Use these notes.
+          await waitFor("simulator", "the paste box", `return document.querySelector('[aria-label="Pasted notes"]')`);
+          await d.exec(`const ta = document.querySelector('[aria-label="Pasted notes"]');
+            Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(ta, arguments[0]);
+            ta.dispatchEvent(new Event("input", { bubbles: true }));`, [PASTED_NOTES]);
+          await click("simulator", ".fw-sim-paste button", "Use these notes");
+        }
+        await waitFor("simulator", `${label} picked`, `return document.querySelector("[data-notes-preview]") && [...document.querySelectorAll('[role=group][aria-label="' + arguments[0] + '"] button')].some((b) => b.textContent === arguments[1] && b.getAttribute("aria-pressed") === "true")`, [NOTES_GROUP, label]);
+        const state = await simNotesState();
+        if (state.choice !== choice) throw new Error(`picked ${choice}, the app has ${JSON.stringify(state).slice(0, 200)}`);
+        if (choice === "Paste" && state.notes !== PASTED_NOTES) throw new Error(`the app kept other notes: ${JSON.stringify(state.notes)}`);
+        if (choice === "Sample" && !state.notes.includes("smoother scrolling")) throw new Error(`not the sample notes: ${state.notes}`);
+        expectedNotes = notesText(state.notes);
+      }, ["simulator"]);
+      await step(`updates (${label}): New version, available`, async () => {
+        await click("settings", "nav.toolbar button.tab", "General");
+        await click("simulator", ".fw-sim-grid button", "New version");
+        await updateState("available");
+      });
+      await step(`updates (${label}): downloaded, ready`, async () => {
+        await click("settings", ".version-card .update-button", "Download and install");
+        await updateState("ready", 15000);
+      });
+      await step(`updates (${label}): Restart to update`, async () => {
+        await click("settings", ".update-banner button", "Restart to update");
+        await waitFor("settings", "What's new after the restart", `return document.querySelector(".update-banner button") && [...document.querySelectorAll(".update-banner button")].some((b) => b.textContent.startsWith("What’s new in v")) && document.body.innerText.includes("freewheel is updated to")`, [], 15000);
+      });
+      await step(`updates (${label}): What's new shows exactly those notes`, async () => {
+        await click("settings", ".update-banner button", "What’s new in v");
+        await waitFor("settings", `the notes (${label}), verbatim`, NOTES_ON_PAGE_JS, [JSON.stringify(expectedNotes)]);
+        say(`  What's new shows all ${expectedNotes.length} lines of the ${label}`);
+      });
+    }
     await step("updates: Update automatically back on", async () => {
       await click("settings", "nav.toolbar button.tab", "General");
       await click("settings", '[aria-label="Update automatically"]');

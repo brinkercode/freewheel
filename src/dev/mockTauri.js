@@ -12,7 +12,8 @@
 //   ?appearance=Light|Dark|System  the Appearance setting (default System)
 //   ?empty=1               an empty setup: one page, nothing set
 //   ?simulate=1            as in --simulate: the Simulator harness drives it (__fwEmit)
-//   ?updated=0.1.1         just updated from 0.1.0 to that version: What's new shows
+//   ?updated=0.1.1         just updated (from 0.0.0) to that version: What's new shows
+//   &notes=<markdown>      ... with these notes instead of the sample
 
 import { compareVersions } from "../whatsNew.js";
 
@@ -256,20 +257,23 @@ export function installMockTauri(win = window) {
   else storage.setItem("freewheel.first-run-done", "1");
   const updated = params.get("updated");
   if (updated) {
-    storage.setItem("freewheel.last-seen-version", "0.1.0");
-    storage.setItem("freewheel.update-notes", JSON.stringify({ version: updated, notes: sampleNotes(updated) }));
+    storage.setItem("freewheel.last-seen-version", "0.0.0");
+    storage.setItem("freewheel.update-notes", JSON.stringify({ version: updated, notes: params.get("notes") ?? sampleNotes(updated) }));
   }
 }
 
-/** Release-please's notes for a small patch, as latest.json carries them. */
+/** A small patch's notes as latest.json carries them (release-please's, after scripts/release-notes.mjs filter). */
 function sampleNotes(version) {
   return [
     `## [${version}](https://github.com/brinkercode/freewheel/compare/v0.1.0...v${version}) (2026-11-07)`,
     "",
+    "### Features",
+    "",
+    "* **keys:** a key can open a folder, like `C:\\Music` ([#133](https://github.com/brinkercode/freewheel/issues/133))",
     "",
     "### Bug Fixes",
     "",
-    "* **keys:** a held Shift is released when freewheel turns Off ([#131](https://github.com/brinkercode/freewheel/issues/131)) ([1a2b3c4](https://github.com/brinkercode/freewheel/commit/1a2b3c4))",
-    "* the wheel scrolls again after waking from sleep ([#132](https://github.com/brinkercode/freewheel/issues/132)) ([5d6e7f8](https://github.com/brinkercode/freewheel/commit/5d6e7f8))",
+    "* **keys:** a held Shift is released when freewheel turns Off ([#131](https://github.com/brinkercode/freewheel/issues/131))",
+    "* the wheel scrolls again after waking from sleep ([#132](https://github.com/brinkercode/freewheel/issues/132))",
   ].join("\n");
 }
