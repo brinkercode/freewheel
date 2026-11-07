@@ -117,6 +117,8 @@ test("the default save goes through the save_config command", async () => {
 test("the Resolve tab: the step-aside switch, the tip and, under More, the program name with Reset", () => {
   expect(resolveDefault("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")).toBe("Resolve.exe");
   expect(resolveDefault("Mozilla/5.0 (Macintosh; Intel Mac OS X 15_0)")).toBe("Resolve");
+  // /opt/resolve/bin/resolve on Linux.
+  expect(resolveDefault("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15")).toBe("resolve");
   const onSetting = vi.fn();
   const c = config();
   render(<ResolveTab settings={{ ...c.settings, resolve_process_name: "MyResolve" }} onSetting={onSetting} osDefault="Resolve.exe" />);
