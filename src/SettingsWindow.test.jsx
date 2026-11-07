@@ -71,7 +71,7 @@ test("stepped aside for Resolve the status says Paused, never Off or Turn on", (
 test("the update banner shows available, downloading, ready and restarting", () => {
   const banner = (status) => renderToString(<UpdateBanner update={{ status, version: "0.2.0", progress: 10 }} />);
   expect(banner("available")).toMatch(/Download and install.*Later/);
-  expect(banner("downloading")).toContain("<progress");
+  expect(banner("downloading")).toMatch(/role="progressbar"[^>]*aria-valuenow="10"/);
   expect(banner("ready")).toMatch(/Restart to update.*Later/);
   expect(banner("restarting")).toContain("Restarting");
 });

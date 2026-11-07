@@ -79,9 +79,8 @@ export function createSimFake() {
         s.permissions = c.state;
         break;
       case "StepUpdate": {
-        const v = "99.0.0";
-        const next = { undefined: "available", available: "downloading", downloading: "ready", ready: null }[s.update?.status];
-        s.update = next ? { status: next, version: v, ...(next === "downloading" ? { progress: 50 } : {}) } : null;
+        // As simulator.rs: each press publishes a newer version (src/simUpdate.js runs the rest).
+        s.update = { status: "available", version: "99.0.0" };
         break;
       }
       default:
