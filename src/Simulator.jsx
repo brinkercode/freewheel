@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { LABELS } from "./keys.js";
+import { WindowControls, isMac } from "./TitleBar.jsx";
 import "./styles/simulator.css";
 
 // The `freewheel --simulate` window: the prototype's dark "Prototype controls"
@@ -130,10 +131,12 @@ export default function Simulator({ initial = null }) {
   const tray = trayState(status);
 
   return (
-    <main className="fw-sim">
-      <header className="fw-sim-head">
+    <main className={`fw-sim${isMac() ? " is-mac" : ""}`}>
+      {/* The window's header (no OS title bar): drag it to move the window. */}
+      <header className="fw-sim-head" data-tauri-drag-region="deep">
         <h1>Simulator controls</h1>
         <p>Pretend to be the computer and the Speed Editor.</p>
+        <WindowControls />
       </header>
 
       <section className="fw-sim-group fw-sim-press">

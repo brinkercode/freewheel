@@ -14,6 +14,7 @@ import KeysTab from "./KeysTab.jsx";
 import ResolveTab from "./ResolveTab.jsx";
 import WheelTab from "./WheelTab.jsx";
 import { NoticeBar, Toast, Toolbar } from "./SettingsWindow.jsx";
+import { TitleBar, isMac } from "./TitleBar.jsx";
 import {
   getConfig,
   getStartAtLogin,
@@ -123,6 +124,7 @@ function Settings({ autoUpdate, storage }) {
       <FirstRun
         state={state}
         permissions={status?.permissions}
+        onToast={say}
         onFinish={() => {
           finishFirstRun(storage);
           console.info("freewheel: first run finished");
@@ -135,7 +137,7 @@ function Settings({ autoUpdate, storage }) {
   else if (fixing)
     content = (
       <div className="setup">
-        <PermissionsScreen initial={asked(status?.permissions)} button="Done" onDone={() => setFixing(false)} />
+        <PermissionsScreen initial={asked(status?.permissions)} button="Done" onDone={() => setFixing(false)} onToast={say} />
       </div>
     );
   else
@@ -196,7 +198,8 @@ function Settings({ autoUpdate, storage }) {
       </>
     );
   return (
-    <div className="app">
+    <div className={`app${isMac() ? " is-mac" : ""}`}>
+      {(firstRun || fixing) && <TitleBar />}
       {content}
       <Toast text={toast} />
     </div>

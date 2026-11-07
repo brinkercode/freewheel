@@ -212,6 +212,52 @@ async function main() {
         throw new Error(`after "${after}": the ${name} window did not answer ${command} within ${RESPONSIVE_MS} ms (${ms} ms: ${r})`);
     }
   };
+  /** Runs `body` (an async function body; `arguments` as usual) in window `name` through the app; resolves to its value. */
+  const ask = async (name, body, args = []) => {
+    await use(name);
+    return d.execAsync(
+      `const done = arguments[arguments.length - 1];
+       (async (...args) => { ${body} })(...[...arguments].slice(0, -1)).then(done, (e) => done("error: " + e));`,
+      args,
+    );
+  };
+  /** Polls `body` (as for ask) in window `name` until it returns `want`. */
+  const waitAsk = async (name, what, body, want, ms = 10000) => {
+    const end = Date.now() + ms;
+    let last;
+    while (Date.now() < end) {
+      last = await ask(name, body).catch((e) => e.message);
+      if (last === want) return last;
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    throw new Error(`${name}: waited ${ms} ms for ${what} (last: ${JSON.stringify(last)})`);
+  };
+  const W = "const w = window.__TAURI__.window.getCurrentWindow();";
+  /** The window's own title bar: no OS decorations; its minimise, maximise / restore buttons act on the real window. */
+  const windowControls = async (name) => {
+    await step(`${name}: no OS title bar, the app's header and controls`, async () => {
+      const decorated = await ask(name, `${W} return await w.isDecorated();`);
+      if (decorated !== false) throw new Error(`${name}: the window has OS decorations (${JSON.stringify(decorated)})`);
+      const drag = await d.exec(`return document.querySelector('[data-tauri-drag-region="deep"] .window-controls') ? "ok" : "none"`);
+      if (drag !== "ok") throw new Error(`${name}: no draggable header with window controls`);
+    }, [name]);
+    await step(`${name}: maximise`, async () => {
+      await click(name, ".window-control[aria-label=Maximise]");
+      await waitAsk(name, "maximised", `${W} return await w.isMaximized();`, true);
+      await waitFor(name, "the Restore button", `return document.querySelector(".window-control[aria-label=Restore]")`);
+    }, [name]);
+    await step(`${name}: restore`, async () => {
+      await click(name, ".window-control[aria-label=Restore]");
+      await waitAsk(name, "restored", `${W} return await w.isMaximized();`, false);
+      await waitFor(name, "the Maximise button", `return document.querySelector(".window-control[aria-label=Maximise]")`);
+    }, [name]);
+    await step(`${name}: minimise, then back`, async () => {
+      await click(name, ".window-control[aria-label=Minimise]");
+      await waitAsk(name, "minimised", `${W} return await w.isMinimized();`, true);
+      await ask(name, `${W} await w.unminimize(); return true;`);
+      await waitAsk(name, "shown again", `${W} return await w.isMinimized();`, false);
+    }, [name]);
+  };
   /** One step: the action, then the responsiveness check, then the screenshots. */
   const step = async (title, action, shots = ["settings"]) => {
     say(`step: ${title}`);
@@ -269,6 +315,32 @@ async function main() {
         await click("settings", "button", "Start using freewheel");
         await waitFor("settings", "the settings tabs", `return document.querySelector("nav.toolbar")`);
       });
+
+    // The OS title bar is gone (Windows: decorations false); the app draws its own.
+    await windowControls("settings");
+    await windowControls("simulator");
+    // On Windows freewheel needs no permission: the notice shows only when the
+    // Simulator fakes a missing macOS permission, and Open System Settings says
+    // what it would open there; granting it in the Simulator clears it.
+    const noPermissionNotice = `return !document.querySelector(".notice-permission") && !document.body.innerText.includes("needs your permission")`;
+    await step("no permission notice on Windows", () => waitFor("settings", "no permission notice", noPermissionNotice));
+    await sim("macOS permission", "Missing");
+    await step("permission missing: the notice", () => waitFor("settings", "the permission notice", `return document.querySelector(".notice-permission")`));
+    await step("permission missing: Fix this", async () => {
+      await click("settings", ".notice-permission button", "Fix this");
+      await waitFor("settings", "the permission fix", `return document.body.innerText.includes("freewheel needs your permission")`);
+    });
+    await step("permission missing: Open System Settings", async () => {
+      await click("settings", ".permission-row button.btn-primary", "Open System Settings");
+      const toast = await waitFor("settings", "the simulated System Settings line", `return document.querySelector(".toast")?.textContent.includes("would open System Settings › Privacy & Security › Accessibility") && document.querySelector(".toast").textContent`);
+      say(`  toast: ${toast}`);
+    });
+    await sim("macOS permission", "Allowed");
+    await step("permission granted: Done", async () => {
+      await waitFor("settings", "Allowed", `return document.querySelector(".permission-row.granted") && !document.querySelector(".permission-row:not(.granted)")`);
+      await click("settings", ".permissions button.btn-lg", "Done");
+      await waitFor("settings", "the settings tabs, no notice", `return document.querySelector("nav.toolbar") && !document.querySelector(".notice-permission")`);
+    });
 
     await tab("Keys", "What each key does");
     await step("Keys: click CUT in the drawing", async () => {
