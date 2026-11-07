@@ -45,7 +45,7 @@ export function connectedShort(s) {
 }
 
 /**
- * The toolbar status, first match wins (the prototype's statusText):
+ * The toolbar status, first match wins:
  * `text` is the full sentence (the tooltip, and the notice bar says it in
  * full too), `short` the label the header has room for at the default
  * 1000px width.
