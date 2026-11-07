@@ -115,6 +115,30 @@ export function installMockTauri(win = window) {
       return null;
     },
     get_status: () => structuredClone(status),
+    // A made-up sample for the Device test view (not a hardware capture).
+    get_device_diagnostics: () => ({
+      simulated: params.get("simulate") === "1",
+      status: status.connection,
+      device: { bus: status.bus, vendor_id: 0x1edb, product_id: 0xda0e, usage_page: 0xff00, usage: 1, interface: 0, product: "DaVinci Resolve Speed Editor", release: 0x0100, candidates: 1, report_descriptor: null },
+      auth: { state: "Passed", passed: 2, failed: 0, session_s: 600, next_in_s: 4, last_error: null, last_passed_ms: 61000 },
+      battery: status.battery,
+      held: [],
+      presses: ["CUT", "IN", "CAM 1"],
+      wheel: { device_mode: 0, last_value: 2, total: -14, reports: 31 },
+      counts: { "0x03": 31, "0x04": 6, "0x07": 1 },
+      undecoded: 0,
+      open_attempts: 1,
+      connects: 1,
+      disconnects: 0,
+      last_open_error: null,
+      reports: [
+        { seq: 40, at_ms: 72110, direction: "In", id: 3, hex: "03 00 02 00 00 00 00", decoded: "wheel mode 0 (relative) value +2", failed: false },
+        { seq: 39, at_ms: 70420, direction: "In", id: 4, hex: "04 00 00 00 00 00 00 00 00 00 00 00 00", decoded: "keys held: none", failed: false },
+        { seq: 38, at_ms: 70300, direction: "In", id: 4, hex: "04 0f 00 00 00 00 00 00 00 00 00 00 00", decoded: "keys held: CUT", failed: false },
+        { seq: 1, at_ms: 120, direction: "Out", id: 3, hex: "03 00 00 00 00 00 ff", decoded: "set wheel mode 0 (relative)", failed: false },
+      ],
+      uptime_ms: 73000,
+    }),
     set_enabled: ({ on }) => {
       status.connection = on ? "Connected" : "Off";
       (listeners.status ?? []).forEach((f) => f({ payload: structuredClone(status) }));

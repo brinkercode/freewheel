@@ -20,6 +20,7 @@ use freewheel_core::status::StatusEvent;
 
 use crate::device::{Command, Update};
 use crate::resolve_watch::Message;
+use freewheel_core::diagnostics::DeviceDiagnostics;
 
 /// The config and status the settings window reads, managed by Tauri.
 pub struct Settings {
@@ -34,6 +35,8 @@ pub struct Settings {
     logger: Option<Logger>,
     /// The log bundle saved last, for Help & backup's 'Show file'.
     last_bundle: Mutex<Option<PathBuf>>,
+    /// The Device test view's data, latest first heard from the device loop.
+    diagnostics: Mutex<DeviceDiagnostics>,
 }
 
 impl Settings {
@@ -53,7 +56,13 @@ impl Settings {
             manual: Mutex::new(manual),
             logger: None,
             last_bundle: Mutex::new(None),
+            diagnostics: Mutex::new(DeviceDiagnostics::default()),
         }
+    }
+
+    /// The Device test view's data now.
+    pub fn diagnostics(&self) -> DeviceDiagnostics {
+        lock(&self.diagnostics).clone()
     }
 
     /// Uses `logger` for the detailed-logs switch and the log bundle, and
@@ -255,6 +264,7 @@ impl Settings {
             Update::Layer(layer) => status.layer.clone_from(layer),
             Update::KeyPressed(_) => {}
             Update::Override(mode) => status.wheel_override = *mode,
+            Update::Diagnostics(d) => *lock(&self.diagnostics) = (**d).clone(),
         })
     }
 
@@ -366,6 +376,13 @@ pub async fn import_mappings(
         crate::simulate::note(&app, format!("Restored the keys from {}", path.display()));
     }
     Ok(restored)
+}
+
+/// The Help & backup Device test view's data (also sent as the
+/// `device-diagnostics` event as it changes).
+#[tauri::command]
+pub fn get_device_diagnostics(settings: tauri::State<'_, Settings>) -> DeviceDiagnostics {
+    settings.diagnostics()
 }
 
 #[tauri::command]

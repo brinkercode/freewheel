@@ -30,6 +30,7 @@ test("the settings window may call exactly the commands its UI invokes", () => {
     "export_logs",
     "export_mappings",
     "get_config",
+    "get_device_diagnostics",
     "get_permissions",
     "get_start_at_login",
     "get_status",

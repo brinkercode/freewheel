@@ -45,6 +45,11 @@ const STATES = [
     await p.getByRole("button", { name: /^More/ }).click();
   }],
   ["14-pages", "", async (p) => p.getByRole("tab", { name: "Music" }).click()],
+  ["13b-device-test", "?conn=bt", async (p) => {
+    await tab("Help & backup")(p);
+    await p.getByRole("button", { name: /^More/ }).click();
+    await p.getByRole("button", { name: "Open device test" }).click();
+  }],
   ["15-keypanel-knob", "", async (p) => {
     await p.locator('[data-binding="FullView"]').click();
     await p.getByText("Turn the wheel into…", { exact: true }).click();

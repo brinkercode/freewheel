@@ -242,7 +242,7 @@ function Settings({ autoUpdate, storage }) {
               onRestart={onRestart}
             />
           )}
-          {!newsOpen && tab === "Help & backup" && <Backup detailedLogs={config?.settings?.detailed_logs} onDetailedLogs={onDetailedLogs} />}
+          {!newsOpen && tab === "Help & backup" && <Backup version={shownVersion} detailedLogs={config?.settings?.detailed_logs} onDetailedLogs={onDetailedLogs} />}
         </div>
       </>
     );

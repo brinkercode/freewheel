@@ -60,3 +60,109 @@ export type Grant = "Granted" | "Missing";
 export type KeyPressed = { key: string, label: string, };
 
 export type Bus = "Usb" | "Bluetooth";
+
+export type DeviceDiagnostics = { 
+/**
+ * The data comes from `--simulate`'s simulated Speed Editor.
+ */
+simulated: boolean, status: ConnectionStatus | null, device: DeviceInfo | null, auth: AuthDiagnostics, battery: Battery | null, 
+/**
+ * Printed labels of the keys held down now.
+ */
+held: Array<string>, 
+/**
+ * Printed labels of the latest presses, newest first.
+ */
+presses: Array<string>, wheel: WheelDiagnostics, 
+/**
+ * Input reports seen per report id (`"0x04"`).
+ */
+counts: Record<string, number>, 
+/**
+ * Input reports freewheel could not decode (unknown id, too short).
+ */
+undecoded: number, open_attempts: number, connects: number, disconnects: number, 
+/**
+ * Why the device could not be opened, last time it could not.
+ */
+last_open_error: string | null, 
+/**
+ * The latest raw reports, newest first.
+ */
+reports: Array<RawReport>, uptime_ms: number, };
+
+export type DeviceInfo = { bus: Bus | null, vendor_id: number, product_id: number, usage_page: number, usage: number, interface: number, product: string | null, release: number, 
+/**
+ * HID interfaces/collections with the Speed Editor's ids that the OS listed.
+ */
+candidates: number, 
+/**
+ * The HID report descriptor as spaced hex, when the OS gives it.
+ */
+report_descriptor: string | null, };
+
+export type AuthDiagnostics = { state: AuthState, 
+/**
+ * Handshakes passed since the app started (first auth and re-auths).
+ */
+passed: number, failed: number, 
+/**
+ * The session the device granted in its last status report (seconds).
+ */
+session_s: number | null, 
+/**
+ * Seconds until the next re-auth is due (timeout or idle check).
+ */
+next_in_s: number | null, 
+/**
+ * Why the last handshake failed, without any auth bytes.
+ */
+last_error: string | null, 
+/**
+ * When the last handshake passed (ms since the device loop started).
+ */
+last_passed_ms: number | null, };
+
+export type AuthState = "NotYet" | "Passed" | "Failed";
+
+export type WheelDiagnostics = { 
+/**
+ * The mode byte of the last wheel report (0/2 relative, 1/3 absolute).
+ */
+device_mode: number | null, 
+/**
+ * The value of the last wheel report.
+ */
+last_value: number | null, 
+/**
+ * The sum of relative values, or the last absolute position.
+ */
+total: number, reports: number, };
+
+export type RawReport = { 
+/**
+ * Counts every report recorded since the app started.
+ */
+seq: number, 
+/**
+ * Milliseconds since the device loop started.
+ */
+at_ms: number, direction: Direction, 
+/**
+ * The report id (first byte); 0 for an empty report.
+ */
+id: number, 
+/**
+ * Every byte, the report id included, as spaced hex (`04 0f 00 ...`).
+ */
+hex: string, 
+/**
+ * What freewheel made of it, e.g. `keys: CUT` or `unknown report id 0x09`.
+ */
+decoded: string, 
+/**
+ * Whether a write failed (output reports only).
+ */
+failed: boolean, };
+
+export type Direction = "In" | "Out";

@@ -12,6 +12,7 @@ use std::time::Duration;
 use freewheel_core::battery::Battery;
 use freewheel_core::config::{Config, ConfigStore};
 use freewheel_core::connection::ConnectionStatus;
+use freewheel_core::diagnostics::DeviceDiagnostics;
 use freewheel_core::inject::KeyInjector;
 use freewheel_core::permissions::{Grant, Permission, Permissions};
 use freewheel_core::report::Key;
@@ -112,6 +113,8 @@ pub enum Mirror {
     /// What a device command (from the settings window or the tray) did,
     /// for the Simulator window's log right away ([`SIM_LOG_EVENT`]).
     Log(Vec<String>),
+    /// The Device test view's data for the simulated Speed Editor changed.
+    Diagnostics(Box<DeviceDiagnostics>),
 }
 
 /// The device loop updates between two statuses, in the order the real
@@ -190,6 +193,7 @@ pub fn mirror(before: Option<&SimStatus>, now: &SimStatus) -> Vec<Mirror> {
 /// [`Mirror::Log`] at once.
 pub fn session(mut sim: Simulator, rx: Receiver<Msg>, mut sink: impl FnMut(Mirror)) {
     let mut last: Option<SimStatus> = None;
+    let mut last_diagnostics: Option<DeviceDiagnostics> = None;
     for msg in rx {
         let config_before = sim.config().clone();
         let (mut status, reply) = match msg {
@@ -209,6 +213,11 @@ pub fn session(mut sim: Simulator, rx: Receiver<Msg>, mut sink: impl FnMut(Mirro
         };
         for change in mirror(last.as_ref(), &status) {
             sink(change);
+        }
+        let diagnostics = sim.diagnostics();
+        if last_diagnostics.as_ref() != Some(&diagnostics) {
+            last_diagnostics = Some(diagnostics.clone());
+            sink(Mirror::Diagnostics(Box::new(diagnostics)));
         }
         let toasts = std::mem::take(&mut status.toasts);
         match reply {
@@ -273,6 +282,7 @@ pub fn attach(
     status_line: crate::tray::StatusLine<tauri::Wry>,
     commands: Receiver<Command>,
 ) {
+    use freewheel_core::diagnostics::DEVICE_DIAGNOSTICS_EVENT;
     use freewheel_core::status::{KEY_PRESSED_EVENT, STATUS_EVENT};
     use tauri::{Emitter, Manager};
 
@@ -323,6 +333,10 @@ pub fn attach(
                 Mirror::Log(lines) => {
                     let _ = app.emit_to(SIMULATOR_WINDOW, SIM_LOG_EVENT, lines);
                     None
+                }
+                Mirror::Diagnostics(d) => {
+                    let _ = app.emit(DEVICE_DIAGNOSTICS_EVENT, &d);
+                    settings.apply(&Update::Diagnostics(d))
                 }
             };
             if let Some(status) = status {

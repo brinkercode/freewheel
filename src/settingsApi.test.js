@@ -4,6 +4,9 @@ import {
   getConfig,
   getStatus,
   onKeyPressed,
+  onDeviceDiagnostics,
+  getDeviceDiagnostics,
+  DEVICE_DIAGNOSTICS_EVENT,
   onStatus,
   saveConfig,
   saveErrorText,
@@ -66,6 +69,18 @@ test("status and key-pressed events hand their payloads over", async () => {
   expect(presses).toEqual([{ key: "Cut", label: "CUT" }]);
   stop();
   expect(listeners.status).toBeUndefined();
+});
+
+test("the Device test view reads and hears the diagnostics by name", async () => {
+  const { calls, listeners } = fakeTauri();
+  await getDeviceDiagnostics();
+  expect(calls).toEqual([["get_device_diagnostics", undefined]]);
+  const seen = [];
+  const stop = await onDeviceDiagnostics((d) => seen.push(d));
+  listeners[DEVICE_DIAGNOSTICS_EVENT]({ payload: { status: "Connected" } });
+  expect(DEVICE_DIAGNOSTICS_EVENT).toBe("device-diagnostics");
+  expect(seen).toEqual([{ status: "Connected" }]);
+  stop();
 });
 
 test("every typed save error has its own message", () => {

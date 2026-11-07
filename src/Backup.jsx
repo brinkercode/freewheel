@@ -1,10 +1,11 @@
 import { useState } from "react";
+import DeviceTest from "./DeviceTest.jsx";
 import Icon from "./Icon.jsx";
 import { Switch } from "./ResolveTab.jsx";
 import { exportLogs, exportMappings, importErrorText, importMappings, showLogsFile } from "./settingsApi.js";
 
 // The Help & backup tab (screens-and-components 3f): Download logs, Back up /
-// Restore and, under More, the detailed logs switch.
+// Restore and, under More, the detailed logs switch and the Device test view.
 
 /** Back up: resolves to the confirmation, or null when the user cancelled. */
 export async function backUp(exportFn = exportMappings) {
@@ -53,6 +54,8 @@ export default function Backup({
   initialMessage = null,
   initialMore = false,
   initialLogs = null,
+  initialDeviceTest = false,
+  version = "",
   detailedLogs,
   onDetailedLogs,
   showFile = showLogsFile,
@@ -63,6 +66,7 @@ export default function Backup({
   const [logs, setLogs] = useState(initialLogs);
   const [logsError, setLogsError] = useState(null);
   const [more, setMore] = useState(initialMore);
+  const [deviceTest, setDeviceTest] = useState(initialDeviceTest);
   const run = (action) => {
     setError(null);
     action().then(
@@ -77,6 +81,7 @@ export default function Backup({
       setLogsError(`The logs could not be saved: ${String(e)}`);
     });
   };
+  if (deviceTest) return <DeviceTest version={version} onBack={() => setDeviceTest(false)} />;
   return (
     <div className="tab-page" data-screen-label="Help and backup">
       <div className="tab-column">
@@ -147,6 +152,13 @@ export default function Backup({
                 <div className="card-sub small">Leave this off for a file someone sent you: a key that opens an app can run any program.</div>
               </div>
               <Switch label="Let restored keys open apps" on={allowApps} onChange={setAllowApps} />
+            </section>
+            <section id="device-test" className="card card-row">
+              <div className="grow">
+                <div className="card-title">Device test</div>
+                <div className="card-sub small">See what your Speed Editor sends: connection, battery, keys and the wheel.</div>
+              </div>
+              <button onClick={() => setDeviceTest(true)}>Open device test</button>
             </section>
           </>
         )}
