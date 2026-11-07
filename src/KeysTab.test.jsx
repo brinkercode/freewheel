@@ -58,10 +58,14 @@ test("no rendered text says 'layer'", () => {
 test("the list has one row per Speed Editor key with its action on the selected page", () => {
   const base = renderToString(<ButtonList config={config} page="base" />);
   expect(rows(base)).toBe(43);
-  expect(base).toContain("<td>CUT</td><td>Ctrl+C</td>");
-  expect(base).toContain("<td>CAM 1</td><td>Go to page Editing</td>");
+  expect(base).toContain("<td>CUT</td><td>Copy (Ctrl + C)</td>");
+  expect(base).toContain("<td>CAM 1</td><td>Goes to the Editing page</td>");
+  expect(base).toContain("<td>JOG</td><td>Wheel button · Nothing</td>");
   expect(base).toContain("<td>STOP/PLAY</td><td>Not set</td>");
-  expect(renderToString(<ButtonList config={config} page="edit" />)).toContain("<td>CUT</td><td>Hold Space</td>");
+  const edit = renderToString(<ButtonList config={config} page="edit" />);
+  expect(edit).toContain("<td>CUT</td><td>Holds Space while held</td>");
+  // CAM 1 goes to Editing from Main, so on Editing it goes back
+  expect(edit).toContain("<td>CAM 1</td><td>Back to Main</td>");
 });
 
 test("the list groups the keys in three titled cards, as the prototype's listGroups", () => {
@@ -95,8 +99,8 @@ test("clicking a row opens the action editor for that key", () => {
   expect(renderToString(<KeysTab initial={config} />)).not.toContain("key-editor");
   const open = renderToString(<KeysTab initial={config} initialSelected="Cut" />);
   expect(open).not.toContain("What should CUT do?");
-  expect(open).toContain("When I press Cut…");
-  expect(open).toContain('value="Ctrl+C"');
+  expect(open).toContain("When I press CUT…");
+  expect(open).toContain("Right now: Copy (Ctrl + C)");
 });
 
 test("the drawing is the main view, with a Drawing/List toggle", () => {
@@ -144,7 +148,7 @@ test("capture records modifiers plus one key and shows it", () => {
   expect(comboFromEvent({ key: "Shift", shiftKey: true })).toEqual(combo("", "Shift"));
   expect(comboFromEvent({ key: "ArrowUp", altKey: true, metaKey: true })).toEqual(combo("Up", "Alt", "Meta"));
   expect(comboFromEvent({ key: " " })).toEqual(combo("Space"));
-  const html = renderToString(<KeyEditor keyName="Cut" action={{ Hotkey: { combo: recorded } }} />);
+  const html = renderToString(<KeyEditor keyName="Cut" action={{ Hotkey: { combo: recorded } }} initialMode="Hotkey" />);
   expect(html).toContain('value="Ctrl+Shift+K"');
 });
 

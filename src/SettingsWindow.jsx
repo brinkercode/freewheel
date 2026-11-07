@@ -19,15 +19,25 @@ export function Toolbar({ tab, onTab, state, onToggle, onFix }) {
           </button>
         ))}
       </div>
-      <button className={`status${fix ? " is-link" : ""}`} onClick={fix} tabIndex={fix ? 0 : -1}>
-        <span className={`status-dot dot-${status.dot}`} />
-        {status.text}
-      </button>
-      <span className="toolbar-sep" />
-      <strong className="switch-text">{state.enabled ? "On" : "Off"}</strong>
-      <button className="switch" role="switch" aria-checked={state.enabled} title="Turn freewheel on or off" disabled={!onToggle} onClick={onToggle}>
-        <span className="switch-knob" />
-      </button>
+      <div className="toolbar-right">
+        <button className={`status${fix ? " is-link" : ""}`} onClick={fix} tabIndex={fix ? 0 : -1}>
+          <span className={`status-dot dot-${status.dot}`} />
+          {status.text}
+        </button>
+        <span className="toolbar-sep" />
+        <strong className="switch-text">{state.enabled ? "On" : "Off"}</strong>
+        <button
+          className="switch"
+          role="switch"
+          aria-label="Turn freewheel on or off"
+          aria-checked={state.enabled}
+          title="Turn freewheel on or off"
+          disabled={!onToggle}
+          onClick={onToggle}
+        >
+          <span className="switch-knob" />
+        </button>
+      </div>
     </nav>
   );
 }

@@ -101,6 +101,109 @@ export function describeAction(action, config) {
   }
 }
 
+const MAC = /Mac/.test(globalThis.navigator?.userAgent ?? "");
+const MOD = MAC ? "Meta" : "Ctrl";
+// The prototype's named shortcuts: a combo shows by its name, like "Undo".
+const NAMED_COMBOS = [
+  ["Copy", [MOD], "C"],
+  ["Paste", [MOD], "V"],
+  ["Undo", [MOD], "Z"],
+  ["Redo", MAC ? [MOD, "Shift"] : [MOD], MAC ? "Z" : "Y"],
+  ["Save", [MOD], "S"],
+];
+const MAC_KEYS = { Meta: "⌘", Ctrl: "⌃", Shift: "⇧", Alt: "⌥" };
+/** A key as the prototype's kn() names it: ⌘ ⌃ ⇧ ⌥ on a Mac, Ctrl Shift Alt Win elsewhere. */
+export const keyName = (k) => (MAC ? MAC_KEYS[k] : { Meta: "Win" }[k]) ?? k;
+/** The combo's keys, each named as keyName does. */
+export const comboKeys = (combo) => [...combo.modifiers, combo.key].filter(Boolean).map(keyName);
+/** "Ctrl + Z" (the prototype's combo with a separator). */
+export const comboText = (combo, sep = MAC ? "" : "+") => comboKeys(combo).join(sep);
+
+/** The prototype's name for a combo ("Undo"), or null. */
+export function comboName(combo) {
+  const text = formatCombo(combo);
+  return NAMED_COMBOS.find(([, mods, key]) => formatCombo({ modifiers: mods, key }) === text)?.[0] ?? null;
+}
+
+/** An app's name from its path: "C:\\…\\Spotify.exe" is Spotify; a web address stays as it is. */
+export function appName(path) {
+  const p = (path ?? "").trim();
+  if (/^(https?:\/\/|www\.)|^[a-z0-9-]+(\.[a-z0-9-]+)+(\/.*)?$/i.test(p)) return p.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  const base = p.split(/[\\/]/).filter(Boolean).pop() ?? "";
+  const name = base.replace(/\.(exe|app|lnk|bat|cmd)$/i, "");
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+/** What a LaunchApp opens: the website it opens in the browser, else the app's name. */
+export function launchName(v) {
+  if (/(^|[\\/])(explorer\.exe|open)$/i.test(v.path) && /^https?:\/\//.test(v.args?.[0] ?? "")) return appName(v.args[0]);
+  return appName(v.path);
+}
+
+const WK = { SystemVolume: "a volume knob", AppVolume: "an app volume knob", Brightness: "a brightness knob" };
+const WKS = { SystemVolume: "Volume knob", AppVolume: "App volume", Brightness: "Brightness" };
+export const JOG_LABEL = { Jog: "JOG", Shuttle: "SHTL", Scroll: "SCRL", Volume: "Volume", Brightness: "Brightness" };
+
+/**
+ * The page a key on `pageId` takes you back to: a key that goes to this page
+ * from another page goes back when pressed again here (engine.rs push_layer).
+ */
+export function backTarget(config, pageId, key) {
+  const page = config.layers.find((l) => l.id === pageId);
+  if (!page || page.bindings[key]) return null;
+  return config.layers.find((l) => l.id !== pageId && l.bindings[key]?.LayerPush?.target === pageId) ?? null;
+}
+
+/** What a key does, short, for the drawing (the prototype's shortL). */
+export function shortLabel(action, config) {
+  if (!action) return "Not set";
+  const [kind, v] = Object.entries(action)[0];
+  switch (kind) {
+    case "Hotkey":
+      return comboName(v.combo) ?? comboText(v.combo);
+    case "Held":
+      return `Hold ${comboText(v.combo)}`;
+    case "Latched":
+      return `${comboText(v.combo)} on/off`;
+    case "LaunchApp":
+      return `Opens ${launchName(v).replace(/^(Google|Microsoft) /, "").replace(" Studio", "")}`;
+    case "LayerPush":
+      return `→ ${pageName(config, v.target)}`;
+    case "OverrideToggle":
+      return WKS[v.mode];
+    case "SetJogMode":
+      return `Wheel: ${JOG_LABEL[v.mode] ?? v.mode}`;
+    default:
+      return describeAction(action, config);
+  }
+}
+
+/** What a key does, in a sentence, for the list and the key panel (the prototype's longL). */
+export function longLabel(action, config) {
+  if (!action) return "Not set";
+  const [kind, v] = Object.entries(action)[0];
+  switch (kind) {
+    case "Hotkey": {
+      const name = comboName(v.combo);
+      return name ? `${name} (${comboText(v.combo, " + ")})` : `Presses ${comboText(v.combo, " + ")}`;
+    }
+    case "Held":
+      return `Holds ${comboText(v.combo, " + ")} while held`;
+    case "Latched":
+      return `Turns ${comboText(v.combo, " + ")} on and off`;
+    case "LaunchApp":
+      return `Opens ${launchName(v)}`;
+    case "LayerPush":
+      return `Goes to the ${pageName(config, v.target)} page`;
+    case "OverrideToggle":
+      return `Turns the wheel into ${WK[v.mode]}`;
+    case "SetJogMode":
+      return `Switches the wheel to ${JOG_LABEL[v.mode] ?? v.mode}`;
+    default:
+      return describeAction(action, config);
+  }
+}
+
 const withLayers = (config, layers) => ({ ...config, layers });
 
 /** Adds a page named "Page N"; returns the new config and the page's id. */

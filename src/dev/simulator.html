@@ -1,0 +1,23 @@
+<!doctype html>
+<!-- Dev only (`npm run dev`, then /src/dev/simulator.html): the Simulator window
+     on a fake `simulate` backend, next to the settings window (index.html in an
+     iframe) as `freewheel --simulate` opens them. Not part of the build. -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>freewheel (Simulator) — dev harness</title>
+    <style>
+      html, body { margin: 0; height: 100%; }
+      body { display: flex; background: #d7dce3; font-family: system-ui, sans-serif; }
+      #settings { flex: 1; min-width: 0; border: none; height: 100%; }
+      #root { width: 288px; flex: none; height: 100%; overflow: auto; }
+      body.solo #settings { display: none; }
+    </style>
+  </head>
+  <body>
+    <iframe id="settings" title="freewheel settings" src="/index.html?simulate=1"></iframe>
+    <div id="root"></div>
+    <script type="module" src="./simHarness.jsx"></script>
+  </body>
+</html>

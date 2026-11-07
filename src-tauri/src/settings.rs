@@ -1,21 +1,25 @@
 //! The settings window's commands (`get_config`, `save_config`,
-//! `get_status`) and the state behind the `status` event.
+//! `get_status`, `export_logs`, `set_detailed_logs`...) and the state behind
+//! the `status` event.
 //!
 //! `save_config` validates before it writes or applies anything (T8), then
 //! hands the config to the running device loop: no restart.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::mpsc::Sender;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use freewheel_core::config::{
     Config, ConfigError, ConfigStore, MAPPINGS_FILE, SaveError, parse_for_save,
 };
+use freewheel_core::logging::Logger;
 use freewheel_core::permissions::Permissions;
 use freewheel_core::simulator::Bus;
 use freewheel_core::status::StatusEvent;
 
 use crate::device::{Command, Update};
+use crate::resolve_watch::Message;
 
 /// The config and status the settings window reads, managed by Tauri.
 pub struct Settings {
@@ -23,8 +27,11 @@ pub struct Settings {
     config: Mutex<Config>,
     status: Mutex<StatusEvent>,
     commands: Sender<Command>,
-    /// Tells the Resolve watcher a switch was by hand, as the tray does.
-    manual: Mutex<Sender<bool>>,
+    /// Tells the Resolve watcher a switch was by hand, as the tray does,
+    /// and when the step-aside setting changes.
+    manual: Mutex<Sender<Message>>,
+    /// The session's file logger, when the log dir was usable.
+    logger: Option<Logger>,
 }
 
 impl Settings {
@@ -34,7 +41,7 @@ impl Settings {
         store: ConfigStore,
         config: Config,
         commands: Sender<Command>,
-        manual: Sender<bool>,
+        manual: Sender<Message>,
     ) -> Self {
         Settings {
             status: Mutex::new(StatusEvent::new(config.base_layer.clone())),
@@ -42,7 +49,60 @@ impl Settings {
             config: Mutex::new(config),
             commands,
             manual: Mutex::new(manual),
+            logger: None,
         }
+    }
+
+    /// Uses `logger` for the detailed-logs switch and the log bundle, and
+    /// applies the saved `detailed_logs` to it.
+    pub fn with_logger(mut self, logger: Option<Logger>) -> Self {
+        if let Some(logger) = &logger
+            && lock(&self.config).settings.detailed_logs
+        {
+            logger.set_detailed(true);
+        }
+        self.logger = logger;
+        self
+    }
+
+    /// Help & backup's Detailed logs switch: saves `detailed_logs` and
+    /// raises (DEBUG, for 24 h) or lowers (INFO) the log level now.
+    pub fn set_detailed_logs(&self, on: bool) -> Result<(), String> {
+        let mut config = lock(&self.config);
+        config.settings.detailed_logs = on;
+        self.apply_detailed(on);
+        lock(&self.store).save(&config).map_err(|e| {
+            tracing::error!(error = %e, on, "saving the detailed-logs switch failed");
+            e.to_string()
+        })
+    }
+
+    fn apply_detailed(&self, on: bool) {
+        match &self.logger {
+            Some(logger) => logger.set_detailed(on),
+            None => tracing::warn!(on, "no log file; detailed logs change nothing"),
+        }
+    }
+
+    /// Writes the support bundle (every log file and a redacted config
+    /// summary) to a new file in `out_dir` and returns its path.
+    pub fn export_logs(&self, out_dir: &Path, about: &str, stamp: &str) -> Result<PathBuf, String> {
+        let Some(logger) = &self.logger else {
+            return Err("freewheel has no log file this session".into());
+        };
+        let path = freewheel_core::support::write_bundle(
+            logger.dir(),
+            &self.config(),
+            about,
+            out_dir,
+            stamp,
+        )
+        .map_err(|e| {
+            tracing::error!(error = %e, "writing the log bundle failed");
+            format!("Saving the logs failed: {e}")
+        })?;
+        tracing::info!("log bundle saved");
+        Ok(path)
     }
 
     /// The settings window's On/Off switch: switches the device loop, like
@@ -50,7 +110,7 @@ impl Settings {
     /// `status` event then shows the new state.
     pub fn set_enabled(&self, on: bool) -> Result<(), String> {
         tracing::info!(on, "settings window switched freewheel");
-        let _ = lock(&self.manual).send(on);
+        let _ = lock(&self.manual).send(Message::Manual(on));
         self.commands.send(Command::SetEnabled(on)).map_err(|_| {
             tracing::error!(on, "device loop is gone; cannot switch freewheel");
             "freewheel's device loop is not running".to_string()
@@ -83,8 +143,14 @@ impl Settings {
         self.change(|status| status.paused = paused)
     }
 
+    /// The running config. `detailed_logs` reads false once the logger
+    /// turned them off by itself after 24 h.
     pub fn config(&self) -> Config {
-        lock(&self.config).clone()
+        let mut config = lock(&self.config).clone();
+        if let Some(logger) = &self.logger {
+            config.settings.detailed_logs &= logger.detailed();
+        }
+        config
     }
 
     pub fn status(&self) -> StatusEvent {
@@ -144,7 +210,14 @@ impl Settings {
             .map_err(|e| SaveError::SaveFailed {
                 message: e.to_string(),
             })?;
-        *lock(&self.config) = config.clone();
+        let before = std::mem::replace(&mut *lock(&self.config), config.clone()).settings;
+        let after = &config.settings;
+        if before.step_aside_for_resolve != after.step_aside_for_resolve {
+            let _ = lock(&self.manual).send(Message::StepAside(after.step_aside_for_resolve));
+        }
+        if before.detailed_logs != after.detailed_logs {
+            self.apply_detailed(after.detailed_logs);
+        }
         if self
             .commands
             .send(Command::Reload(Box::new(config)))
@@ -288,6 +361,47 @@ pub fn set_start_at_login(
     Ok(crate::tray::autostart_enabled(&app))
 }
 
+/// Where log bundles go: the user's Downloads folder, else their home.
+pub fn downloads_dir() -> PathBuf {
+    let dirs = directories::UserDirs::new();
+    dirs.as_ref()
+        .and_then(|d| d.download_dir().map(Path::to_path_buf))
+        .or_else(|| dirs.as_ref().map(|d| d.home_dir().to_path_buf()))
+        .unwrap_or_else(std::env::temp_dir)
+}
+
+/// Saves the log bundle to the Downloads folder; its absolute path. Help &
+/// backup's Download logs and the tray's 'Download logs for support...'.
+pub fn save_log_bundle<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<String, String> {
+    use tauri::Manager;
+    let settings = app.state::<Settings>();
+    let about = format!(
+        "freewheel {} on {} ({})",
+        app.package_info().version,
+        os_info::get(),
+        std::env::consts::ARCH
+    );
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let stamp = freewheel_core::support::stamp(secs);
+    let path = settings.export_logs(&downloads_dir(), &about, &stamp)?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// Saves the log bundle to the Downloads folder; resolves to its path.
+#[tauri::command]
+pub async fn export_logs(app: tauri::AppHandle) -> Result<String, String> {
+    save_log_bundle(&app)
+}
+
+/// Saves `detailed_logs` and raises or lowers the log level now.
+#[tauri::command]
+pub fn set_detailed_logs(settings: tauri::State<'_, Settings>, on: bool) -> Result<(), String> {
+    tracing::info!(on, "settings window switched detailed logs");
+    settings.set_detailed_logs(on)
+}
+
 /// The app's version, for 'freewheel <version>' on the General tab.
 #[tauri::command]
 pub fn app_version(app: tauri::AppHandle) -> String {
@@ -312,7 +426,7 @@ mod tests {
         tempfile::TempDir,
         Settings,
         Receiver<Command>,
-        Receiver<bool>,
+        Receiver<Message>,
     );
 
     fn settings_with_manual() -> WithManual {
@@ -356,7 +470,7 @@ mod tests {
         for on in [false, true] {
             settings.set_enabled(on).unwrap();
             assert!(matches!(commands.try_recv(), Ok(Command::SetEnabled(o)) if o == on));
-            assert_eq!(manual.try_recv(), Ok(on));
+            assert_eq!(manual.try_recv(), Ok(Message::Manual(on)));
         }
         drop(commands);
         assert!(settings.set_enabled(false).is_err());
@@ -548,5 +662,99 @@ mod tests {
         assert_eq!(settings.set_permissions(&missing), None);
         assert_eq!(settings.apply(&Update::Layer("edit".into())), None);
         assert_eq!(settings.status(), status);
+    }
+
+    fn logger_in(dir: &Path) -> Logger {
+        Logger::init(
+            dir,
+            None,
+            std::sync::Arc::new(freewheel_core::clock::SystemClock),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn the_detailed_logs_switch_persists_and_changes_the_level_now() {
+        let (dir, settings, _commands) = settings();
+        let logs = tempfile::tempdir().unwrap();
+        let logger = logger_in(logs.path());
+        let settings = settings.with_logger(Some(logger.clone()));
+        assert!(!logger.detailed());
+        settings.set_detailed_logs(true).unwrap();
+        assert!(logger.detailed());
+        assert!(settings.config().settings.detailed_logs);
+        assert!(
+            ConfigStore::new(dir.path())
+                .load()
+                .unwrap()
+                .settings
+                .detailed_logs
+        );
+        settings.set_detailed_logs(false).unwrap();
+        assert!(!logger.detailed());
+        assert!(
+            !ConfigStore::new(dir.path())
+                .load()
+                .unwrap()
+                .settings
+                .detailed_logs
+        );
+    }
+
+    #[test]
+    fn a_saved_detailed_logs_applies_at_launch_and_through_save_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let logs = tempfile::tempdir().unwrap();
+        let mut config = Config::default();
+        config.settings.detailed_logs = true;
+        let (tx, _rx) = mpsc::channel();
+        let (manual, _manual_rx) = mpsc::channel();
+        let logger = logger_in(logs.path());
+        let settings = Settings::new(ConfigStore::new(dir.path()), config.clone(), tx, manual)
+            .with_logger(Some(logger.clone()));
+        assert!(logger.detailed());
+        config.settings.detailed_logs = false;
+        settings
+            .save(&serde_json::to_value(&config).unwrap())
+            .unwrap();
+        assert!(!logger.detailed());
+    }
+
+    #[test]
+    fn saving_a_new_step_aside_tells_the_resolve_watcher() {
+        let (_dir, settings, _commands, manual) = settings_with_manual();
+        let mut config = Config::default();
+        settings
+            .save(&serde_json::to_value(&config).unwrap())
+            .unwrap();
+        assert!(manual.try_recv().is_err(), "unchanged, nothing sent");
+        config.settings.step_aside_for_resolve = false;
+        settings
+            .save(&serde_json::to_value(&config).unwrap())
+            .unwrap();
+        assert_eq!(manual.try_recv(), Ok(Message::StepAside(false)));
+    }
+
+    #[test]
+    fn export_logs_writes_a_bundle_and_returns_its_path() {
+        let (_dir, settings, _commands) = settings();
+        let out = tempfile::tempdir().unwrap();
+        assert!(settings.export_logs(out.path(), "about", "s").is_err());
+
+        let logs = tempfile::tempdir().unwrap();
+        let logger = logger_in(logs.path());
+        logger.log_startup("9.9.9", "TestOS");
+        let settings = settings.with_logger(Some(logger));
+        let path = settings
+            .export_logs(out.path(), "freewheel 9.9.9 on TestOS", "20261106-215800")
+            .unwrap();
+        assert!(path.is_absolute());
+        assert_eq!(path.parent(), Some(out.path()));
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains("freewheel 9.9.9 starting on TestOS"),
+            "{text}"
+        );
+        assert!(text.contains("== config (redacted) =="), "{text}");
     }
 }

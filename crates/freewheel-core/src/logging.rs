@@ -120,10 +120,13 @@ impl DetailedLogs {
     }
 }
 
-/// The file logger of one app session.
+/// The file logger of one app session. Clones share the file and the
+/// detailed-logs switch.
+#[derive(Clone)]
 pub struct Logger {
     dispatch: Dispatch,
     detailed: Arc<DetailedLogs>,
+    dir: PathBuf,
 }
 
 impl Logger {
@@ -146,7 +149,16 @@ impl Logger {
                 *meta.level() <= level.max_level()
             }));
         let dispatch = Dispatch::new(tracing_subscriber::registry().with(layer));
-        Ok(Self { dispatch, detailed })
+        Ok(Self {
+            dispatch,
+            detailed,
+            dir: dir.to_path_buf(),
+        })
+    }
+
+    /// The directory holding `freewheel.log` and its rotated files.
+    pub fn dir(&self) -> &Path {
+        &self.dir
     }
 
     /// Makes this logger the process-wide default.
@@ -177,7 +189,8 @@ impl Logger {
     }
 
     /// Turns detailed (DEBUG) logs on for [`DETAILED_LOGS_FOR`], or off.
-    /// The switch is never saved: every launch starts at INFO.
+    /// The logger itself keeps nothing: every launch starts at INFO until
+    /// the app applies the saved `settings.detailed_logs`.
     pub fn set_detailed(&self, on: bool) {
         *self
             .detailed

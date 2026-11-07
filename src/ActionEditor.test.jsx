@@ -1,8 +1,10 @@
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { renderToString } from "react-dom/server";
 import { expect, test, vi } from "vitest";
 import App from "./App.jsx";
 import KeysTab from "./KeysTab.jsx";
-import ActionEditor, { ActionForm, blank, saveAction, validate } from "./ActionEditor.jsx";
+import ActionEditor, { ActionForm, KeyPanel, blank, saveAction, validate, websiteAction } from "./ActionEditor.jsx";
 
 const config = (bindings = {}) => ({
   version: 1,
@@ -19,55 +21,57 @@ const config = (bindings = {}) => ({
 const editor = (action) => renderToString(<ActionEditor keyName="Cam1" initialConfig={config({ Cam1: action })} />);
 const text = (html) => html.replace(/<[^>]*>/g, " ");
 
-test("app launch takes a path, arguments one per line and an enabled toggle", () => {
-  const html = editor({ LaunchApp: { path: "/Applications/Notes.app", args: ["--new", "a b"], enabled: false } });
-  expect(html).toContain("When I press Cam1…");
-  expect(html).toContain('value="/Applications/Notes.app"');
-  expect(html).toMatch(/<textarea[^>]*>--new\na b<\/textarea>/);
-  expect(html).toMatch(/type="checkbox"(?![^>]*checked)/);
+test("Open an app or website: the app's path or a website, each with Use", () => {
+  const html = editor({ LaunchApp: { path: "/Applications/Notes.app", args: ["--new"], enabled: true } });
+  expect(html).toContain("When I press CAM 1…");
+  expect(html).toContain("Right now: Opens Notes");
   expect(blank("LaunchApp", config(), "base")).toEqual({ LaunchApp: { path: "", args: [], enabled: true } });
+  const form = renderToString(<ActionForm action={{ LaunchApp: { path: "/Applications/Notes.app", args: [], enabled: true } }} />);
+  expect(form).toContain('value="/Applications/Notes.app"');
+  expect(form).toContain('placeholder="like youtube.com"');
+  expect(form.match(/>Use<\/button>/g)).toHaveLength(2);
+  expect(websiteAction(" https://youtube.com/ ").LaunchApp.args).toEqual(["https://youtube.com"]);
 });
 
-const find = (node, type) => {
-  if (!node || typeof node !== "object") return null;
-  if (Array.isArray(node)) return node.map((n) => find(n, type)).find(Boolean) ?? null;
-  return node.type === type ? node : find(node.props?.children, type);
-};
+test("Use saves the app, keeping its arguments, and a website opens in the browser", () => {
+  const onUse = vi.fn();
+  const action = { LaunchApp: { path: "/bin/app", args: ["--new"], enabled: true } };
+  render(<ActionForm action={action} onUse={onUse} />);
+  fireEvent.click(screen.getAllByText("Use")[0]);
+  expect(onUse).toHaveBeenLastCalledWith(action);
+  fireEvent.change(screen.getByLabelText("Website"), { target: { value: "youtube.com" } });
+  fireEvent.click(screen.getAllByText("Use")[1]);
+  expect(onUse.mock.lastCall[0].LaunchApp.args).toEqual(["https://youtube.com"]);
+  cleanup();
+});
 
-test("pressing Enter in Arguments starts a new line, and saving drops empty lines", async () => {
+test("saving drops empty arguments", async () => {
   const c = config();
-  let action = blank("LaunchApp", c, "base");
-  const type = (value) =>
-    find(ActionForm({ action, config: c, layerId: "base", onChange: (a) => (action = a) }), "textarea").props.onChange({
-      target: { value },
-    });
-  type("--new");
-  type("--new\n");
-  expect(find(ActionForm({ action, config: c, layerId: "base", onChange: () => {} }), "textarea").props.value).toBe("--new\n");
-  type("--new\n\nb");
-  action = { LaunchApp: { ...action.LaunchApp, path: "/bin/app" } };
+  const action = { LaunchApp: { path: "/bin/app", args: ["--new", "", "b"], enabled: true } };
   const save = vi.fn(() => Promise.resolve(null));
   await saveAction({ config: c, layerId: "base", key: "Cam1", action, save });
   expect(save.mock.calls[0][0].layers[0].bindings.Cam1.LaunchApp.args).toEqual(["--new", "b"]);
 });
 
-test("page push picks one of the other existing pages", () => {
-  const html = editor({ LayerPush: { target: "edit" } });
-  expect(html).toMatch(/<option value="edit" selected="">Editing<\/option>/);
-  expect(html).not.toContain('value="base"');
+test("Switch to another set of keys lists the other pages, the current one checked", () => {
+  render(<KeyPanel keyName="Cam1" action={{ LayerPush: { target: "edit" } }} config={config()} layerId="base" initialMode="LayerPush" />);
+  const row = screen.getByText("Editing").closest("button");
+  expect(row.getAttribute("aria-pressed")).toBe("true");
+  expect(screen.queryByText("Main")).toBeNull();
+  expect(screen.getByText("On that page, CAM 1 becomes “Back”, so you can always return to Main.")).toBeTruthy();
+  expect(screen.getByText("Make a new page")).toBeTruthy();
   expect(blank("LayerPush", config(), "base")).toEqual({ LayerPush: { target: "edit" } });
+  cleanup();
 });
 
-test("set jog mode picks Jog, Shuttle or Scroll", () => {
-  const html = editor({ SetJogMode: { mode: "Shuttle" } });
-  for (const mode of ["Jog", "Shuttle", "Scroll"]) expect(html).toContain(`value="${mode}"`);
-  expect(html).toMatch(/value="Shuttle" selected=""/);
-});
-
-test("override toggle picks system volume, app volume or brightness", () => {
-  const html = editor({ OverrideToggle: { mode: "AppVolume" } });
-  for (const mode of ["SystemVolume", "AppVolume", "Brightness"]) expect(html).toContain(`value="${mode}"`);
-  expect(html).toMatch(/value="AppVolume" selected="">App volume/);
+test("Turn the wheel into… offers system volume, app volume and brightness; picking one saves it", () => {
+  const onSaveAction = vi.fn(() => Promise.resolve({}));
+  render(<KeyPanel keyName="Cam1" action={{ OverrideToggle: { mode: "AppVolume" } }} config={config()} layerId="base" initialMode="OverrideToggle" onSaveAction={onSaveAction} />);
+  expect(screen.getByText("Volume of the app I’m using").closest("button").getAttribute("aria-pressed")).toBe("true");
+  fireEvent.click(screen.getByText("Screen brightness"));
+  expect(onSaveAction).toHaveBeenCalledWith({ OverrideToggle: { mode: "Brightness" } });
+  expect(screen.getByText("Press CAM 1 again to put the wheel back to normal.")).toBeTruthy();
+  cleanup();
 });
 
 test("invalid input shows inline errors", () => {
@@ -78,9 +82,7 @@ test("invalid input shows inline errors", () => {
   expect(validate({ SetJogMode: { mode: "Fast" } }, c, "base")).toHaveProperty("mode");
   expect(validate({ OverrideToggle: { mode: "Bass" } }, c, "base")).toHaveProperty("mode");
   expect(validate({ SetJogMode: { mode: "Jog" } }, c, "base")).toEqual({});
-  const html = renderToString(
-    <ActionForm action={blank("LaunchApp", c, "base")} config={c} layerId="base" errors={{ path: "Choose the app to open." }} onChange={() => {}} />,
-  );
+  const html = renderToString(<ActionForm action={blank("LaunchApp", c, "base")} errors={{ path: "Choose the app to open." }} />);
   expect(html).toMatch(/aria-invalid="true"/);
   expect(html).toContain('<span role="alert">Choose the app to open.</span>');
 });
@@ -123,9 +125,9 @@ test("no rendered text says 'layer'; layers are pages", () => {
     { SetJogMode: { mode: "Jog" } },
     { OverrideToggle: { mode: "Brightness" } },
   ];
-  const pages = editor(actions[1]);
-  expect(text(pages)).toMatch(/Switch to another set of keys.*Pages are extra sets of keys/);
   for (const action of actions) expect(text(editor(action))).not.toMatch(/layer/i);
+  for (const mode of ["LaunchApp", "LayerPush", "OverrideToggle"])
+    expect(text(renderToString(<KeyPanel keyName="Cam1" config={config()} layerId="base" initialMode={mode} />))).not.toMatch(/layer/i);
   expect(text(renderToString(<App autoUpdate={false} />))).not.toMatch(/layer/i);
 });
 
@@ -135,10 +137,20 @@ test("the Keys tab says to pick a key until one is selected", () => {
 
 test("the Keys tab edits the selected key on the selected page", () => {
   const c = config();
-  c.layers[1].bindings = { Cam1: { SetJogMode: { mode: "Shuttle" } } };
+  c.layers[1].bindings = { Cam1: { OverrideToggle: { mode: "Brightness" } } };
   c.base_layer = "edit";
   const html = renderToString(<KeysTab initial={c} initialSelected="Cam1" />);
-  expect(html).toContain("When I press Cam1…");
-  expect(html).toMatch(/value="Shuttle" selected=""/);
+  expect(html).toContain("When I press CAM 1…");
+  expect(html).toContain("Right now: Turns the wheel into a brightness knob");
   expect(text(html)).not.toMatch(/layer/i);
+});
+
+test("the Simulator's Record a key opens the key panel on Press a shortcut, recording", () => {
+  const cfg = { version: 1, base_layer: "base", layers: [{ id: "base", name: "Main", bindings: {} }] };
+  const idle = renderToString(<ActionEditor keyName="Cut" initialConfig={cfg} />);
+  expect(idle).not.toContain("record-box");
+  const html = renderToString(<ActionEditor keyName="Cut" initialConfig={cfg} recording />);
+  expect(html).toContain("All choices");
+  expect(html).toContain("record-box");
+  expect(html).toContain("When you press CUT, freewheel presses this");
 });

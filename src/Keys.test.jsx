@@ -50,16 +50,18 @@ test("first launch shows Welcome in place of the content; once finished the Keys
   fireEvent.click(screen.getByText("Get started"));
   await screen.findByText("Found it!");
   fireEvent.click(screen.getByText("Continue"));
-  await waitFor(() => expect(screen.getAllByTitle("Not set")).toHaveLength(KEYS.length));
+  // every key but the three wheel buttons (which say what the wheel does) is Not set
+  await waitFor(() => expect(screen.getAllByTitle("Not set")).toHaveLength(KEYS.length - 3));
+  expect(await screen.findByText("You’re all set. Your wheel already scrolls — give it a spin.")).toBeTruthy();
   fireEvent.click(screen.getByText("List"));
-  expect(screen.getAllByText("Not set")).toHaveLength(KEYS.length);
+  expect(screen.getAllByText("Not set")).toHaveLength(KEYS.length - 3);
   expect(screen.getByRole("button", { name: "Keys", pressed: true })).toBeTruthy();
   // The first run leaves the default config (no bindings, the wheel scrolls) as it is.
   expect(calls).not.toContain("save_config");
   cleanup();
   render(<App autoUpdate={false} storage={storage} />);
   expect(screen.queryByText("Welcome to freewheel")).toBeNull();
-  expect(screen.getByText("freewheel settings")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Keys", pressed: true })).toBeTruthy();
 });
 
 test("the permission fix from the notice bar or the tray status line reuses the permissions screen with Done", async () => {

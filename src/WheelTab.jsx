@@ -1,48 +1,102 @@
 import { useEffect, useState } from "react";
-import { ActionForm, JOG_MODES, blank, validate } from "./ActionEditor.jsx";
-import { comboError, comboFromEvent, formatCombo } from "./keys.js";
+import { RecordBox } from "./ActionEditor.jsx";
+import Icon from "./Icon.jsx";
+import { comboError } from "./keys.js";
 import { getConfig, saveConfig, saveErrorText } from "./settingsApi.js";
 
-// What a wheel turn can do; LaunchApp reuses the key panel's form.
-export const SIDE_KINDS = { "": "Nothing", Scroll: "Scroll", Hotkey: "Send a shortcut", LaunchApp: "Open an app" };
+// The Wheel tab (screens-and-components 3c). The three buttons above the wheel
+// (SHTL, JOG, SCRL) each switch the wheel to a JogMode with a SetJogMode
+// binding on the first page; what the wheel does in a mode is jog.per_mode
+// (left and right actions), or a Volume / Brightness mode (the dial controls).
 
-// The dial steps: volume is a 0..1 fraction, brightness a percentage.
-export const STEPS = [
-  ["system_volume_step", "System volume", 100],
-  ["app_volume_step", "App volume", 100],
-  ["brightness_step", "Brightness", 1],
+/** [key, printed name, the JogMode it naturally switches to]. */
+export const WHEEL_BUTTONS = [
+  ["Shtl", "SHTL", "Shuttle"],
+  ["Jog", "JOG", "Jog"],
+  ["Scrl", "SCRL", "Scroll"],
+];
+
+/** What the wheel does, as the prototype's WMODE names it. */
+export const WHEEL_DOES = { scroll: "Scrolls", keys: "Shortcuts", volume: "Volume", brightness: "Brightness", none: "Nothing" };
+
+export const WHEEL_OPTIONS = [
+  ["scroll", "swap_vert", "Scroll up and down", "like a mouse wheel · usual choice"],
+  ["keys", "keyboard", "Press shortcuts", "one for left, one for right"],
+  ["volume", "volume_up", "Change the volume", ""],
+  ["brightness", "light_mode", "Change screen brightness", ""],
+  ["none", "block", "Nothing", ""],
 ];
 
 const NO_BINDING = { left: null, right: null, threshold: 1, shuttle_max_rate_hz: null };
-export const bindingOf = (config, mode) => config.jog.per_mode[mode] ?? NO_BINDING;
-const kindOf = (action) => (action ? Object.keys(action)[0] : "");
-const number = (e) => (e.target.value === "" ? NaN : Number(e.target.value));
+export const bindingOf = (config, mode) => config.jog?.per_mode?.[mode] ?? NO_BINDING;
+const basePage = (config) => config.layers.find((l) => l.id === config.base_layer) ?? config.layers[0];
 
-function sideError(action, config) {
-  const kind = kindOf(action);
-  if (kind === "Scroll" && (!Number.isInteger(action.Scroll.amount) || action.Scroll.amount === 0))
-    return "Enter how far to scroll, like 1 or -1.";
-  if (kind === "Hotkey") return comboError(action.Hotkey.combo);
-  if (kind === "LaunchApp") return validate(action, config, null).path ?? null;
-  return null;
+/** The JogMode wheel button `key` switches to. */
+export function buttonMode(config, key) {
+  const natural = WHEEL_BUTTONS.find(([k]) => k === key)[2];
+  return basePage(config)?.bindings?.[key]?.SetJogMode?.mode ?? natural;
 }
 
-/** Inline errors by field (`Jog.left`, `Shuttle.threshold`, `brightness_step`…); empty when it can be saved. */
-export function validateWheel(config) {
-  const errors = {};
-  for (const mode of Object.keys(JOG_MODES)) {
+/** What the wheel does in `mode`: scroll, keys, volume, brightness or none. */
+export function wheelKind(config, mode) {
+  if (mode === "Volume") return "volume";
+  if (mode === "Brightness") return "brightness";
+  const b = bindingOf(config, mode);
+  if (!b.left && !b.right) return "none";
+  if (b.left?.Scroll && b.right?.Scroll) return "scroll";
+  return "keys";
+}
+
+/** What wheel button `key` makes the wheel do, in the prototype's words. */
+export const buttonDoes = (config, key) => WHEEL_DOES[wheelKind(config, buttonMode(config, key))];
+
+/** The wheel button whose mode the wheel starts in (lit on the device). */
+export function liveButton(config) {
+  return WHEEL_BUTTONS.find(([k]) => buttonMode(config, k) === (config.jog?.default_mode ?? "Scroll"))?.[0] ?? null;
+}
+
+/** The config with the `mode` binding patched. */
+export const withJog = (config, mode, patch) => ({
+  ...config,
+  jog: { ...config.jog, per_mode: { ...config.jog.per_mode, [mode]: { ...bindingOf(config, mode), ...patch } } },
+});
+
+const withButton = (config, key, mode) => {
+  const base = basePage(config);
+  return {
+    ...config,
+    layers: config.layers.map((l) => (l.id === base.id ? { ...l, bindings: { ...l.bindings, [key]: { SetJogMode: { mode } } } } : l)),
+  };
+};
+
+/**
+ * The config with wheel button `key` set to `kind`: Volume and Brightness
+ * switch to their own JogMode; scroll, keys and none keep the button's own
+ * mode with its left and right actions. The wheel's start mode follows.
+ */
+export function setButtonKind(config, key, kind) {
+  const natural = WHEEL_BUTTONS.find(([k]) => k === key)[2];
+  const before = buttonMode(config, key);
+  const mode = kind === "volume" ? "Volume" : kind === "brightness" ? "Brightness" : natural;
+  let next = withButton(config, key, mode);
+  if (kind === "scroll") next = withJog(next, mode, { left: { Scroll: { amount: -1 } }, right: { Scroll: { amount: 1 } } });
+  if (kind === "none") next = withJog(next, mode, { left: null, right: null });
+  if (kind === "keys") {
     const b = bindingOf(config, mode);
-    for (const side of ["left", "right"]) {
-      const error = sideError(b[side], config);
-      if (error) errors[`${mode}.${side}`] = error;
-    }
-    if (!Number.isInteger(b.threshold) || b.threshold < 1) errors[`${mode}.threshold`] = "Enter a whole number of 1 or more.";
+    next = withJog(next, mode, { left: b.left?.Hotkey ? b.left : null, right: b.right?.Hotkey ? b.right : null });
   }
-  for (const [field, , scale] of STEPS) {
-    const percent = config.overrides[field] * scale;
-    if (!(percent >= 1 && percent <= 100)) errors[field] = "Enter a step from 1 to 100.";
-  }
-  return errors;
+  if (config.jog.default_mode === before) next = { ...next, jog: { ...next.jog, default_mode: mode } };
+  return next;
+}
+
+// Sensitivity: the slider is 0 (slow) .. 100 (fast); the wheel takes 10 .. 1 ticks per step.
+export const sensitivityOf = (threshold) => Math.round(((10 - Math.min(10, Math.max(1, threshold))) / 9) * 100);
+export const thresholdOf = (sensitivity) => Math.max(1, Math.min(10, Math.round(10 - (sensitivity / 100) * 9)));
+
+/** The config with every wheel mode's ticks per step set from `sensitivity`. */
+export function withSensitivity(config, sensitivity) {
+  const threshold = thresholdOf(sensitivity);
+  return Object.keys(config.jog.per_mode).reduce((c, mode) => withJog(c, mode, { threshold }), config);
 }
 
 /**
@@ -60,130 +114,115 @@ export async function saveWith(config, errors, save = saveConfig, what = "settin
   }
 }
 
-/** The config with the wheel binding of `mode` patched. */
-export const withJog = (config, mode, patch) => ({
-  ...config,
-  jog: { ...config.jog, per_mode: { ...config.jog.per_mode, [mode]: { ...bindingOf(config, mode), ...patch } } },
-});
+const comboOf = (action) => action?.Hotkey?.combo ?? null;
 
-// The Arguments box keeps empty lines while typing; they are no argument.
-const tidy = (action) => (action?.LaunchApp ? { LaunchApp: { ...action.LaunchApp, args: action.LaunchApp.args.filter(Boolean) } } : action);
-const tidied = (config) =>
-  Object.keys(config.jog.per_mode).reduce((c, mode) => {
-    const b = bindingOf(c, mode);
-    return withJog(c, mode, { left: tidy(b.left), right: tidy(b.right) });
-  }, config);
-
-/** One side of the wheel: what turning it this way does. */
-export function SideEditor({ label, action, sign, config, error, onChange }) {
-  const kind = kindOf(action);
-  const pick = (k) => {
-    if (!k) return onChange(null);
-    if (k === "Scroll") return onChange({ Scroll: { amount: sign } });
-    if (k === "Hotkey") return onChange({ Hotkey: { combo: { modifiers: [], key: "" } } });
-    return onChange(blank(k, config, null));
-  };
-  return (
-    <fieldset>
-      <label>
-        {label}
-        <select value={kind} aria-invalid={!!error} onChange={(e) => pick(e.target.value)}>
-          {Object.entries(SIDE_KINDS).map(([id, text]) => (
-            <option key={id} value={id}>
-              {text}
-            </option>
-          ))}
-        </select>
-      </label>
-      {kind === "Scroll" && (
-        <label>
-          Lines
-          <input
-            type="number"
-            value={action.Scroll.amount}
-            onChange={(e) => onChange({ Scroll: { amount: number(e) } })}
-          />
-        </label>
-      )}
-      {kind === "Hotkey" && (
-        <label>
-          Shortcut{" "}
-          <input
-            className="combo-capture"
-            readOnly
-            placeholder="Click here, then press the shortcut"
-            value={formatCombo(action.Hotkey.combo)}
-            onKeyDown={(e) => {
-              if (e.key === "Tab") return;
-              e.preventDefault();
-              onChange({ Hotkey: { combo: comboFromEvent(e) } });
-            }}
-          />
-        </label>
-      )}
-      {kind === "LaunchApp" && <ActionForm action={action} config={config} layerId={null} onChange={onChange} />}
-      {error && <span role="alert">{error}</span>}
-    </fieldset>
-  );
-}
-
-/** The Wheel tab: each mode's left and right actions and threshold, and the dial steps. */
+/** The Wheel tab: which button, what turning does with it lit, and the sensitivity. */
 export default function WheelTab({ initial = null, save = saveConfig }) {
   const [config, setConfig] = useState(initial);
+  const [button, setButton] = useState(null);
   const [errors, setErrors] = useState({});
+  const [listen, setListen] = useState(null);
+  // "Press shortcuts" picked, nothing recorded yet: both sides are still empty.
+  const [keysFor, setKeysFor] = useState(null);
   useEffect(() => {
     if (initial || !globalThis.window?.__TAURI__) return;
     getConfig().then(setConfig, (e) => console.error("freewheel: loading the config failed:", String(e)));
   }, [initial]);
   if (!config) return null;
-  const onSave = () => {
-    const next = tidied(config);
-    return saveWith(next, validateWheel(next), save, "wheel settings").then((r) => {
-      setErrors(r.errors);
-      if (r.config) setConfig(r.config);
-    });
+  const selected = button ?? liveButton(config) ?? "Jog";
+  const printed = WHEEL_BUTTONS.find(([k]) => k === selected)[1];
+  const live = liveButton(config);
+  const mode = buttonMode(config, selected);
+  const stored = wheelKind(config, mode);
+  const kind = stored === "none" && keysFor === selected ? "keys" : stored;
+  const binding = bindingOf(config, mode);
+  const apply = (next, error = {}) => {
+    setConfig(next);
+    return saveWith(next, error, save, "wheel settings").then((r) => setErrors(r.errors));
   };
+  const pickKind = (k) => {
+    const next = setButtonKind(config, selected, k);
+    const b = bindingOf(next, buttonMode(next, selected));
+    setListen(k === "keys" && !b.left ? "left" : null);
+    setKeysFor(k === "keys" ? selected : null);
+    return apply(next);
+  };
+  const recordSide = (side) => (combo) => {
+    const error = comboError(combo);
+    if (error) return setErrors({ [side]: error });
+    setListen(null);
+    return apply(withJog(config, mode, { [side]: { Hotkey: { combo } } }));
+  };
+  const sensitivity = sensitivityOf(bindingOf(config, config.jog.default_mode).threshold);
   return (
-    <section className="wheel-tab">
-      {Object.entries(JOG_MODES).map(([mode, name]) => {
-        const b = bindingOf(config, mode);
-        const set = (patch) => setConfig(withJog(config, mode, patch));
-        const thresholdError = errors[`${mode}.threshold`];
-        return (
-          <fieldset key={mode}>
-            <legend>{name}</legend>
-            <SideEditor label="Turn left" sign={-1} action={b.left} config={config} error={errors[`${mode}.left`]} onChange={(left) => set({ left })} />
-            <SideEditor label="Turn right" sign={1} action={b.right} config={config} error={errors[`${mode}.right`]} onChange={(right) => set({ right })} />
-            <label>
-              {mode === "Shuttle" ? "Sensitivity" : "Ticks per step"}
-              <input type="number" min="1" value={Number.isNaN(b.threshold) ? "" : b.threshold} aria-invalid={!!thresholdError} onChange={(e) => set({ threshold: number(e) })} />
-              {thresholdError && <span role="alert">{thresholdError}</span>}
-            </label>
-          </fieldset>
-        );
-      })}
-      <fieldset>
-        <legend>When the wheel is a dial, each step changes</legend>
-        {STEPS.map(([field, label, scale]) => {
-          const value = config.overrides[field] * scale;
-          return (
-            <label key={field}>
-              {`${label} (%)`}
-              <input
-                type="number"
-                min="1"
-                max="100"
-                value={Number.isNaN(value) ? "" : Math.round(value)}
-                aria-invalid={!!errors[field]}
-                onChange={(e) => setConfig({ ...config, overrides: { ...config.overrides, [field]: number(e) / scale } })}
-              />
-              {errors[field] && <span role="alert">{errors[field]}</span>}
-            </label>
-          );
-        })}
-      </fieldset>
-      {errors.save && <p role="alert">{errors.save}</p>}
-      <button onClick={onSave}>Save</button>
-    </section>
+    <div className="tab-page" data-screen-label="Wheel">
+      <div className="tab-column">
+        <h2 className="tab-title">When I turn the wheel…</h2>
+        <section className="card card-stack wheel-card">
+          <div className="card-text">
+            The three buttons above the wheel can each make it do something different. Press one on your Speed Editor to switch.
+          </div>
+          <div className="wheel-buttons" role="group" aria-label="Wheel buttons">
+            {WHEEL_BUTTONS.map(([key, label]) => (
+              <button key={key} className="wheel-button" aria-pressed={key === selected} onClick={() => (setButton(key), setListen(null))}>
+                <span className="wheel-button-label">
+                  {label}
+                  {key === live && <span className="led-dot" title="Lit on your Speed Editor" />}
+                </span>
+                <span className="wheel-button-does">{buttonDoes(config, key)}</span>
+              </button>
+            ))}
+          </div>
+          <div className="field-label">{`With ${printed} lit, turning the wheel…`}</div>
+          <div className="radio-rows" role="radiogroup" aria-label={`With ${printed} lit, turning the wheel…`}>
+            {WHEEL_OPTIONS.map(([k, icon, title, sub]) => (
+              <button key={k} role="radio" aria-checked={k === kind} className={`radio-row${k === kind ? " is-current" : ""}`} onClick={() => pickKind(k)}>
+                <span className="radio" />
+                <Icon name={icon} className="icon radio-icon" />
+                <span className="grow">
+                  <span className="radio-title">{title}</span> <span className="radio-sub">{sub}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+          {kind === "keys" && (
+            <div className="wheel-records">
+              {[
+                ["left", "rotate_left", "Turning left presses"],
+                ["right", "rotate_right", "Turning right presses"],
+              ].map(([side, icon, label]) => (
+                <div key={`${selected}-${side}`} className="wheel-record">
+                  <div className="wheel-record-label">
+                    <Icon name={icon} />
+                    {label}
+                  </div>
+                  <RecordBox compact label={label} combo={comboOf(binding[side])} error={errors[side]} autoListen={listen === side} onRecord={recordSide(side)} />
+                  {errors[side] && <span role="alert">{errors[side]}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+          {errors.save && <p role="alert">{errors.save}</p>}
+        </section>
+        <section className="card card-stack">
+          <div>
+            <div className="card-title">Sensitivity</div>
+            <div className="card-sub small">How much happens for each turn of the wheel.</div>
+          </div>
+          <div className="slider-row">
+            <span>Slow</span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              aria-label="Sensitivity"
+              value={sensitivity}
+              onChange={(e) => apply(withSensitivity(config, Number(e.target.value)))}
+            />
+            <span>Fast</span>
+          </div>
+        </section>
+      </div>
+    </div>
   );
 }

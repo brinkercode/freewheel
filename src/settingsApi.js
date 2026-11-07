@@ -55,6 +55,23 @@ export const exportMappings = () => invoke("export_mappings");
  */
 export const importMappings = (allowLaunch) => invoke("import_mappings", { allowLaunch });
 
+/**
+ * Saves the support log bundle (every log file and a redacted config
+ * summary, no shortcuts or paths) to the Downloads folder, as the tray's
+ * 'Download logs for support...' does. Resolves to the file's absolute path;
+ * rejects with a string when it cannot.
+ * @returns {Promise<string>}
+ */
+export const exportLogs = () => invoke("export_logs");
+
+/**
+ * Help & backup's Detailed logs switch: saves settings.detailed_logs and
+ * raises (DEBUG, auto-off after 24 hours) or lowers the log level now.
+ * Rejects with a string when the setting cannot be saved.
+ * @returns {Promise<void>}
+ */
+export const setDetailedLogs = (on) => invoke("set_detailed_logs", { on });
+
 /** What the UI says about a rejected import. */
 export function importErrorText(error) {
   if (error?.kind === "VersionMismatch" && error.found > error.expected)

@@ -6,6 +6,7 @@ mod app_volume;
 mod brightness;
 #[cfg(any(target_os = "macos", all(unix, test)))]
 mod builtin_brightness;
+mod controls;
 #[cfg(target_os = "macos")]
 mod ddc_macos;
 mod device;
@@ -79,6 +80,7 @@ fn spawn_device(
 ) {
     use freewheel_core::connection::{ConnectionManager, ConnectionStatus};
     use freewheel_core::engine::Engine;
+    use freewheel_core::overrides::{OverrideRunner, OverrideWorker};
 
     std::thread::spawn(move || {
         let (mut injector, api) = match (inject::EnigoInjector::new(), hidapi::HidApi::new()) {
@@ -98,12 +100,20 @@ fn spawn_device(
             }
         };
         let manager = ConnectionManager::new(open, SystemClock, auth_response as fn(u64) -> u64);
+        let overrides = OverrideWorker::spawn(OverrideRunner::new(
+            controls::os_controls(),
+            config.overrides.clone(),
+            SystemClock,
+        ));
         device::run(
             manager,
             Engine::new(&config),
             &SystemClock,
-            &mut injector,
-            &mut launch::ProcessLauncher,
+            device::Outputs {
+                injector: &mut injector,
+                launcher: &mut launch::ProcessLauncher,
+                overrides: &overrides,
+            },
             commands,
             {
                 let mut view = tray::TrayView::new(config.settings.low_battery_threshold);
@@ -155,7 +165,7 @@ fn spawn_permission_watch(app: tauri::AppHandle<tauri::Wry>, status: tray::Statu
 fn spawn_resolve_watch(
     app: tauri::AppHandle<tauri::Wry>,
     config: &Config,
-    manual: mpsc::Receiver<bool>,
+    manual: mpsc::Receiver<resolve_watch::Message>,
     commands: mpsc::Sender<device::Command>,
 ) {
     let watcher = ResolveWatcher::from_settings(&config.settings);
@@ -207,17 +217,14 @@ fn real_injector() -> Box<dyn KeyInjector> {
     Box::new(MockInjector::new())
 }
 
-/// `--simulate`: the simulator session on its own config.
+/// `--simulate`: the simulator session stands in for the device loop; it
+/// starts in `setup` ([`simulate::attach`]).
 fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
-    let real = ConfigStore::from_project_dirs()
-        .unwrap_or_else(|| ConfigStore::new(std::env::temp_dir().join(freewheel_core::APP_NAME)));
     builder
-        .manage(simulate::spawn(
-            simulator::simulator_store(&real),
-            real_injector,
-        ))
+        .manage(simulate::SimHandle::new())
         .invoke_handler(tauri::generate_handler![
             simulate::simulate,
+            simulate::sim_jump,
             settings::get_config,
             settings::save_config,
             settings::get_status,
@@ -229,26 +236,14 @@ fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::
             settings::import_mappings,
             permissions::get_permissions,
             permissions::open_permission_pane,
-            permissions::open_bluetooth_settings
+            permissions::open_bluetooth_settings,
+            settings::export_logs,
+            settings::set_detailed_logs
         ])
 }
 
-/// `--simulate`: the simulator window. Called from the one `setup` hook,
-/// since a second `Builder::setup` would replace the tray's.
-fn open_simulator(app: &tauri::App) -> tauri::Result<()> {
-    if let Some(settings) = app.get_webview_window("main") {
-        settings.set_title(&simulator::title("freewheel settings", true))?;
-    }
-    let url = tauri::WebviewUrl::App("index.html#simulator".into());
-    tauri::WebviewWindowBuilder::new(app, "simulator", url)
-        .title(simulator::title(freewheel_core::APP_NAME, true))
-        .inner_size(520.0, 720.0)
-        .build()?;
-    Ok(())
-}
-
 fn main() {
-    let _logger = init_logging();
+    let logger = init_logging();
     if permissions::probe_requested(std::env::args()) {
         let report = permissions::probe_report(&permissions::current());
         tracing::info!(%report, "permission probe");
@@ -294,7 +289,9 @@ fn main() {
             settings::import_mappings,
             permissions::get_permissions,
             permissions::open_permission_pane,
-            permissions::open_bluetooth_settings
+            permissions::open_bluetooth_settings,
+            settings::export_logs,
+            settings::set_detailed_logs
         ])
     };
     let app = builder
@@ -302,23 +299,37 @@ fn main() {
             let mut store = ConfigStore::from_project_dirs().unwrap_or_else(|| {
                 ConfigStore::new(std::env::temp_dir().join(freewheel_core::APP_NAME))
             });
+            if simulate {
+                // The settings window edits the simulator's config, never the real one.
+                store = simulator::simulator_store(&store);
+            }
+            let sim_store = ConfigStore::new(store.dir());
             let (config, error) = store.load_or_default();
             if let Some(e) = error {
                 tracing::warn!(error = %e, "config not loaded, running with defaults");
             }
             let (manual, manual_rx) = mpsc::channel();
-            app.manage(settings::Settings::new(
-                store,
-                config.clone(),
-                commands.clone(),
-                manual.clone(),
-            ));
+            app.manage(
+                settings::Settings::new(store, config.clone(), commands.clone(), manual.clone())
+                    .with_logger(logger.clone()),
+            );
             spawn_resolve_watch(app.handle().clone(), &config, manual_rx, commands.clone());
             let (tray, toggle, status) = tray::build(app.handle(), commands, manual)?;
-            spawn_device(app.handle().clone(), config, tray, toggle, receiver);
-            spawn_permission_watch(app.handle().clone(), status);
             if simulate {
-                open_simulator(app)?;
+                simulate::attach(
+                    app.handle().clone(),
+                    sim_store,
+                    config.settings.low_battery_threshold,
+                    real_injector,
+                    tray,
+                    toggle,
+                    status,
+                    receiver,
+                );
+                simulate::open_window(app)?;
+            } else {
+                spawn_device(app.handle().clone(), config, tray, toggle, receiver);
+                spawn_permission_watch(app.handle().clone(), status);
             }
             if smoke {
                 smoke::arm_timeout(app.handle().clone());
@@ -326,6 +337,12 @@ fn main() {
             Ok(())
         })
         .on_page_load(move |webview, payload| {
+            if simulate
+                && webview.label() == "main"
+                && payload.event() == tauri::webview::PageLoadEvent::Finished
+            {
+                let _ = webview.eval(simulate::SIMULATE_FLAG_SCRIPT);
+            }
             if smoke
                 && webview.label() == "main"
                 && payload.event() == tauri::webview::PageLoadEvent::Finished
