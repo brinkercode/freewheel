@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import { checkLatestJson } from "./check-latest-json.mjs";
 import { checkReleaseWorkflow } from "./check-workflow.mjs";
-import { PACKAGES, PLATFORMS as SERVED, manifest, parseArgs as packageArgs } from "./portable-release.mjs";
+import { PACKAGES, PLATFORMS as SERVED, WINDOWS_FILES, manifest, parseArgs as packageArgs } from "./portable-release.mjs";
 import { binaryProblems } from "./check-release-binary.mjs";
 import { appleEnv, releaseArgs } from "./tauri-release.mjs";
 import { pickReleases, versionOf } from "./update-e2e.mjs";
@@ -317,4 +317,10 @@ test("update-e2e updates from the release before the newest one (or the one aske
   expect(pickReleases([])).toBeNull();
   expect(pickReleases(tags, "v0.10.0")).toBeNull();
   expect(versionOf("v0.1.1")).toBe("0.1.1");
+});
+
+test("the Windows release zip holds freewheel.exe only: the simulator .cmd is for test builds", () => {
+  expect(WINDOWS_FILES).toEqual(["freewheel.exe"]);
+  expect(readFileSync(new URL("./portable-release.mjs", import.meta.url), "utf8")).not.toContain("freewheel-simulate.cmd");
+  expect(readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8")).not.toContain("freewheel-simulate.cmd");
 });
