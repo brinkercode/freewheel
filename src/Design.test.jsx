@@ -203,7 +203,7 @@ test("the toolbar has the prototype's tab icons; the status opens the permission
   expect(icons).toEqual(["keyboard", "trip_origin", "movie", "tune", "help"]);
   // each icon is a bundled SVG painted as a mask, never fetched
   for (const i of icons) expect(base).toContain(`.tab[data-icon="${i}"] { --mask: url("../assets/icons/${i}.svg"); }`);
-  fireEvent.click(screen.getByText("Needs permission (click to fix)"));
+  fireEvent.click(screen.getByText("Needs permission"));
   expect(onFix).toHaveBeenCalledTimes(1);
   cleanup();
   render(<Toolbar tab="Keys" onTab={() => {}} state={{ ...state, permissionMissing: false }} onFix={onFix} />);

@@ -459,7 +459,6 @@ pub async fn simulate(
     sim: tauri::State<'_, SimHandle>,
     app: tauri::AppHandle,
 ) -> Result<SimStatus, String> {
-    use tauri::Emitter;
     let steps_update = control == Control::StepUpdate;
     let tx = sim.sender();
     let status =
@@ -476,7 +475,13 @@ pub async fn simulate(
         {
             tracing::info!(%published, "simulate: new version published");
         }
-        let _ = app.emit_to("main", SIM_UPDATE_EVENT, &status.update);
+        // A closed settings window finds it by itself when it opens.
+        if app
+            .get_webview_window(crate::app_windows::SETTINGS_WINDOW)
+            .is_some()
+        {
+            crate::app_windows::emit_to_settings(&app, SIM_UPDATE_EVENT, &status.update);
+        }
     }
     Ok(status)
 }
@@ -608,24 +613,17 @@ pub fn sim_jump(to: String, app: tauri::AppHandle) -> Result<(), String> {
     }
     let script = jump_script(to);
     if matches!(to, Jump::Settings | Jump::FirstRun | Jump::RecordKey) {
-        // Built again first when it was closed (app_windows.rs).
-        let existed = crate::app_windows::show_settings(&app, move |window| {
-            if let Some(script) = script
-                && let Err(e) = window.eval(&script)
-            {
-                tracing::warn!(error = %e, "simulator jump script failed");
-            }
-        });
-        if to == Jump::RecordKey {
-            crate::app_windows::emit_to_settings(&app, SIM_RECORD_KEY_EVENT, RECORD_KEY, existed);
-        }
-        return Ok(());
+        // Built again first when it was closed (app_windows.rs); what the
+        // jump sends waits until the new page listens.
+        crate::app_windows::show_settings(&app);
+    } else if app.get_webview_window("main").is_none() {
+        return Err("the settings window is closed".into());
     }
-    let window = app
-        .get_webview_window("main")
-        .ok_or("the settings window is closed")?;
     if let Some(script) = script {
-        window.eval(&script).map_err(|e| e.to_string())?;
+        crate::app_windows::eval_in_settings(&app, script);
+    }
+    if to == Jump::RecordKey {
+        crate::app_windows::emit_to_settings(&app, SIM_RECORD_KEY_EVENT, RECORD_KEY);
     }
     Ok(())
 }

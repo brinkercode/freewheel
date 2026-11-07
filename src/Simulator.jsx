@@ -128,9 +128,11 @@ export default function Simulator({ initial = null }) {
   const [pasted, setPasted] = useState("");
   const turning = useRef(null);
   const down = useRef(new Set());
+  // Each log line's number, counting up: a new line is told from an old one with the same words.
+  const lineNo = useRef(0);
 
   const note = (lines, kind = "out") => {
-    if (lines.length) setLog((l) => [...lines.map((t) => ({ t, kind })).reverse(), ...l].slice(0, 40));
+    if (lines.length) setLog((l) => [...lines.map((t) => ({ t, kind, n: ++lineNo.current })).reverse(), ...l].slice(0, 40));
   };
 
   // Controls run in order; each answer's toasts go to the log.
@@ -263,8 +265,8 @@ export default function Simulator({ initial = null }) {
         </div>
         <ol className="fw-sim-log" aria-label="What the Speed Editor did" aria-live="polite">
           {log.length === 0 && <li className="is-empty">What the Speed Editor did shows up here.</li>}
-          {log.map((line, i) => (
-            <li key={log.length - i} className={`is-${line.kind}`}>
+          {log.map((line) => (
+            <li key={line.n} data-n={line.n} className={`is-${line.kind}`}>
               {line.t}
             </li>
           ))}

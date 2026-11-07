@@ -459,7 +459,7 @@ fn menu<R: Runtime>(
 /// When it was closed it is built again (app_windows.rs); returns whether it
 /// was there.
 pub fn show_settings<R: Runtime>(app: &AppHandle<R>) -> bool {
-    crate::app_windows::show_settings(app, |_| {})
+    crate::app_windows::show_settings(app)
 }
 
 /// What changes in the menu, kept to answer clicks and the Simulator.
@@ -504,13 +504,21 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 
 impl<R: Runtime> TrayMenu<R> {
     pub fn state(&self) -> TrayMenuState {
-        let live = lock(&self.live);
+        // The menu first, then `live`, never both: off the main thread (the
+        // async sim_tray) a menu getter waits for the main thread, and the
+        // main thread may be waiting for `live` (show_update from
+        // tray_update_state, show_status): holding it across the getter
+        // deadlocked the app.
+        let on = self.toggle.is_checked().unwrap_or(true);
+        let start_at_login = self.login.is_checked().unwrap_or(false);
+        let update = self.update.text().unwrap_or_default();
+        let live = lock(&self.live).clone();
         TrayMenuState {
-            on: self.toggle.is_checked().unwrap_or(true),
-            start_at_login: self.login.is_checked().unwrap_or(false),
-            status_line: live.status.line.clone(),
+            on,
+            start_at_login,
+            status_line: live.status.line,
             status_fix: live.status.fix,
-            update: self.update.text().unwrap_or_default(),
+            update,
             update_enabled: live.update_action != UpdateAction::Nothing,
             icon: live.status.icon,
         }
@@ -573,10 +581,10 @@ impl<R: Runtime> TrayMenu<R> {
                 emit_status(app, &status);
             }
             STATUS => {
-                let existed = show_settings(app);
+                show_settings(app);
                 let fix = lock(&self.live).status.fix;
                 if fix {
-                    crate::app_windows::emit_to_settings(app, FIX_PERMISSIONS_EVENT, (), existed);
+                    crate::app_windows::emit_to_settings(app, FIX_PERMISSIONS_EVENT, ());
                 }
             }
             OPEN_SETTINGS => {
@@ -610,17 +618,17 @@ impl<R: Runtime> TrayMenu<R> {
             UPDATE => {
                 let action = lock(&self.live).update_action;
                 match action.event() {
-                    // A closed settings window opens instead: it checks
-                    // as it opens (src/App.jsx).
-                    Some(what) if app.get_webview_window("main").is_none() => {
-                        tracing::info!(what, "tray: update, opening the settings window");
-                        show_settings(app);
-                    }
+                    // The flow lives in the settings window's script. A
+                    // closed one opens and, once its page listens, runs the
+                    // action: a check shows Checking… then the answer, as in
+                    // an open window (its own startup check stays silent).
                     Some(what) => {
-                        tracing::info!(what, "tray: update");
-                        if let Err(e) = app.emit_to("main", TRAY_UPDATE_EVENT, what) {
-                            tracing::warn!(error = %e, "asking the settings window to update failed");
+                        let closed = app.get_webview_window("main").is_none();
+                        tracing::info!(what, closed, "tray: update");
+                        if closed {
+                            show_settings(app);
                         }
+                        crate::app_windows::emit_to_settings(app, TRAY_UPDATE_EVENT, what);
                     }
                     None => tracing::info!("tray: the update item is disabled now"),
                 }
@@ -788,8 +796,8 @@ fn download_logs<R: Runtime>(app: &AppHandle<R>) {
             LogsSaved::Error(e)
         }
     };
-    let existed = show_settings(app);
-    crate::app_windows::emit_to_settings(app, LOGS_SAVED_EVENT, &saved, existed);
+    show_settings(app);
+    crate::app_windows::emit_to_settings(app, LOGS_SAVED_EVENT, &saved);
 }
 
 /// What the tray shows from the device loop: the battery tooltip and the
@@ -871,6 +879,48 @@ mod tests {
         let js = include_str!("../../src/simulateEvents.js");
         assert!(js.contains(&format!("SIM_TRAY_EVENT = \"{SIM_TRAY_EVENT}\"")));
         assert!(include_str!("../../src/Simulator.jsx").contains("SIM_TRAY_EVENT"));
+    }
+
+    /// No lock on the menu's live state is held across a menu call: off the
+    /// main thread a menu call waits for the main thread, which may be
+    /// waiting for that lock (the tray's Restart to update froze the app).
+    #[test]
+    fn no_menu_call_runs_under_the_live_lock() {
+        let src = include_str!("tray.rs");
+        let src = &src[..src.find("#[cfg(test)]").unwrap()];
+        let menu_call = [
+            ".is_checked()",
+            ".set_checked(",
+            ".text()",
+            ".set_text(",
+            ".set_enabled(",
+            "set_icon",
+        ];
+        for (i, line) in src.lines().enumerate() {
+            let t = line.trim();
+            // A guard kept in a binding lives to the end of its block.
+            if t.starts_with("let") && t.contains("= lock(&self.live)") && !t.contains(".clone()") {
+                let rest: Vec<&str> = src
+                    .lines()
+                    .skip(i + 1)
+                    .take_while(|l| !l.trim().starts_with('}'))
+                    .collect();
+                for l in rest {
+                    assert!(
+                        !menu_call.iter().any(|c| l.contains(c)),
+                        "line {}: a menu call under the live lock: {l}",
+                        i + 1
+                    );
+                }
+            }
+            if t.contains("lock(&self.live)") {
+                assert!(
+                    !menu_call.iter().any(|c| t.contains(c)),
+                    "line {}: {t}",
+                    i + 1
+                );
+            }
+        }
     }
 
     #[test]

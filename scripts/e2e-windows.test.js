@@ -76,13 +76,25 @@ test("the e2e workflow is a Windows PR check that builds the embedded UI and upl
 
 test("the e2e checks the header never overlaps at 820px and that the tray and the window share one On/Off", async () => {
   const { HEADER_JS } = await import("./e2e-windows.mjs");
-  for (const part of [".toolbar .tab", ".toolbar .switch", ".toolbar .window-control", "tabs clipped", "header overflows"]) expect(HEADER_JS).toContain(part);
+  for (const part of [".toolbar .tab", ".toolbar .switch", ".toolbar .window-control", "tabs clipped", "header overflows", "text.scrollWidth > text.clientWidth"]) expect(HEADER_JS).toContain(part);
+  // Every status, short and whole at 1000px; the window closed and built again twice.
+  for (const short of ["Connected · USB", "Bluetooth · 64%", "Bluetooth · 100%", "Looking for device", "Paused for Resolve", "Needs permission", '"Off"']) expect(script).toContain(short);
+  expect(script).toContain("for (const round of [1, 2])");
   for (const step of [
     "header: Looking for your Speed Editor… at 820px never overlaps",
     "header: every status at 820px and 1000px, light and dark",
     "On/Off: the window's switch moves the tray's check",
     "On/Off: tray Off, window On, window Off, tray On",
     "On/Off: a settings window opened after the tray's Off reads Off",
+    "reopen ${round}: tray Check for updates acts in the new window",
+    "reopen ${round}: tray Download logs opens Help & backup in the new window",
+    "reopen ${round}: tray Needs permission opens the fix in the new window",
+    "reopen ${round}: Record a key opens CUT recording in the new window",
+    "reopen ${round}: tray Open settings brings the minimised new window back",
+    "closed: tray Check for updates opens the window and checks there",
+    "closed: tray Download logs opens the window on Help & backup",
+    "closed: tray Needs permission opens the window on the fix",
+    "closed: Record a key opens the window on CUT recording",
   ])
     expect(script).toContain(step);
   expect(script).toContain('invoke("get_status")).enabled');

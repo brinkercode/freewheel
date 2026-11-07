@@ -48,6 +48,28 @@ test("the status reads the prototype's first match: Off, Needs permission, Looki
   expect(toolbar({ ...ok, bus: "Bluetooth", battery: 12 })).toContain("dot-orange");
 });
 
+test("the header says each status short (the full sentence is its tooltip): it fits the default 1000px window whole", () => {
+  const all = { enabled: false, permissionMissing: true, connected: false, bus: null, battery: null, paused: true };
+  const shown = (state) => {
+    const html = toolbar(state);
+    const short = html.match(/<span class="status-text">([^<]*)<\/span>/)[1];
+    const full = html.match(/ title="([^"]*)"/)[1];
+    return [short, full];
+  };
+  expect(shown(all)).toEqual(["Off", "Off: Resolve can use it"]);
+  expect(shown({ ...all, enabled: true })).toEqual(["Needs permission", "Needs permission (click to fix)"]);
+  expect(shown({ ...all, enabled: true, permissionMissing: false })).toEqual(["Looking for device", "Looking for your Speed Editor…"]);
+  expect(shown({ ...ok, paused: true })).toEqual(["Paused for Resolve", "Paused: DaVinci Resolve is open"]);
+  expect(shown(ok)).toEqual(["Connected · USB", "Connected by USB"]);
+  expect(shown({ ...ok, bus: "Bluetooth", battery: 64 })).toEqual(["Bluetooth · 64%", "Connected by Bluetooth · 64%"]);
+  expect(shown({ ...ok, bus: "Bluetooth", battery: 100 })).toEqual(["Bluetooth · 100%", "Connected by Bluetooth · 100%"]);
+  expect(shown({ ...ok, bus: "Bluetooth" })).toEqual(["Connected · Bluetooth", "Connected by Bluetooth"]);
+  expect(shown({ ...ok, bus: null })).toEqual(["Connected", "Connected"]);
+  // Short enough for the room the header leaves at 1000px (~134px of 12.5px text; the e2e measures it).
+  for (const state of [all, { ...ok, paused: true }, ok, { ...ok, bus: "Bluetooth", battery: 100 }, { ...ok, bus: "Bluetooth" }])
+    expect(shown(state)[0].length).toBeLessThanOrEqual(21);
+});
+
 test("a StatusEvent maps to the shell state", () => {
   expect(
     fromStatusEvent({ connection: "Connected", battery: { level: 9, charging: false }, permissions: { Accessibility: "Missing" } }),
@@ -138,7 +160,7 @@ test("the header status can never overlap the tabs, the switch or the window con
   const html = toolbar({ ...ok, connected: false });
   // The dot and the text sit in the status slot, between the tabs and the switch; the full text is the tooltip.
   expect(html).toMatch(/<div class="toolbar-right"><div class="status-slot"><button class="status"[^>]*title="Looking for your Speed Editor…"[^>]*aria-label="Looking for your Speed Editor…"/);
-  expect(html).toContain('<span class="status-text">Looking for your Speed Editor…</span>');
+  expect(html).toContain('<span class="status-text">Looking for device</span>');
   const css = read("./styles/base.css");
   const rule = (selector) => {
     const at = css.indexOf(`\n${selector} {`);

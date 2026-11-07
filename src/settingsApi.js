@@ -37,6 +37,13 @@ export const onTrayUpdate = (onAction) => tauri().event.listen(TRAY_UPDATE_EVENT
 /** Tells the tray the update state (src/updater.js; null is idle), so its item says Check for updates, Restart to update… */
 export const reportUpdateState = (state) => invoke("tray_update_state", { state: state ?? null });
 
+/**
+ * Tells the app this page has attached its event listeners: what the tray
+ * (or the Simulator) sent while the window was built or loading arrives
+ * now (src-tauri app_windows.rs settings_ready).
+ */
+export const settingsReady = () => invoke("settings_ready");
+
 // The tray's 'Download logs for support…' saved the bundle: { path } or { error }.
 export const LOGS_SAVED_EVENT = "logs-saved";
 
