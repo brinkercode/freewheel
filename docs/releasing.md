@@ -131,3 +131,25 @@ release only.
 4. By hand: the v0.1.0 folder from step 4 above, started, offers 0.1.1;
    Download and install → Restart to update → the same `freewheel.exe` is
    0.1.1, What's new in v0.1.1 shows, your keys are unchanged.
+
+## Manual checklist
+
+Before a draft release is published, every item of the
+[release checklist](../.github/ISSUE_TEMPLATE/release-checklist.md) must pass
+with a real Speed Editor on Windows 11 and macOS 15 (Apple Silicon and
+Intel). Open a new issue from that template for each release and tick it
+there.
+
+## Test builds
+
+Every push to main (or a manual **Run workflow**) runs the `test-build`
+workflow. To get a Windows build, open the latest run of
+[test-build on the **Actions** tab](https://github.com/brinkercode/freewheel/actions/workflows/test-build.yml)
+and download the `freewheel-windows-…` artifact from the run's
+**Artifacts** section at the bottom of its summary page. It holds the
+portable `freewheel.exe` (and `freewheel-simulate.cmd`), which runs with
+nothing to install, and is kept for 1 day. Test builds can't update
+themselves (they have no updater key).
+
+The build is unsigned, so Windows SmartScreen warns when you start it: click
+**More info**, then **Run anyway**.

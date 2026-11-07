@@ -114,10 +114,8 @@ test("ci.yml triggers exactly as written, and cancels superseded runs", () => {
   const on = ci.match(/^on:\r?\n((?:[ \t]+.*\r?\n|\r?\n)*)/m)[1];
   expect(on.trimEnd()).toBe([
     "  pull_request:",
-    '    paths-ignore: ["docs/**", "**.md"]',
     "  push:",
     "    branches: [main]",
-    '    paths-ignore: ["docs/**", "**.md"]',
     "  workflow_dispatch:",
     "  workflow_call:",
   ].join("\n"));

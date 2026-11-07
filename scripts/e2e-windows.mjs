@@ -459,6 +459,60 @@ async function main() {
   const dialogs = join(out, "dialogs");
   let saved = null;
 
+  /**
+   * README-grade stills (docs/images): the window's own client area only
+   * (it draws its own title bar, so no desktop shows), at its 1000x640
+   * default, the pointer parked and toasts gone, in Light and Dark, into
+   * <out>/readme/<look>-<screen>.png. The sample setup gives the drawing
+   * real labels.
+   */
+  const README_DIR = join(out, "readme");
+  const still = async (name, file) => {
+    await use(name);
+    await d.call("POST", "/actions", { actions: [{ type: "pointer", id: "mouse", parameters: { pointerType: "mouse" }, actions: [{ type: "pointerMove", x: 2, y: 2, origin: "viewport" }] }] }).catch(() => {});
+    await d.call("DELETE", "/actions").catch(() => {});
+    await sleep(2500); // the "You pressed" line and toasts fade, transitions end
+    const size = await d.exec("return [innerWidth, innerHeight, devicePixelRatio].join('x')");
+    writeFileSync(join(README_DIR, file), Buffer.from(await d.screenshot(), "base64"));
+    say(`  readme screenshot ${file} (${size})`);
+  };
+  const readmeTab = async (t) => {
+    await click("settings", "nav.toolbar button.tab", t);
+    await waitFor("settings", `the ${t} tab`, `return document.querySelector('nav.toolbar button.tab[aria-pressed="true"]')?.textContent.includes(arguments[0])`, [t]);
+  };
+  const readmeShots = async () => {
+    mkdirSync(README_DIR, { recursive: true });
+    await step("README: the sample setup over USB", async () => {
+      await click("simulator", `[role=group][aria-label="Speed Editor"] button`, "USB");
+      await click("simulator", `[role=group][aria-label="Keys"] button`, "Several set");
+      await logged("sample mappings loaded");
+      await waitFor("settings", "the drawing's Play/Pause", `return document.querySelector('.device [data-binding="StopPlay"]')?.getAttribute("title") === "Play/Pause"`, [], 20000);
+      await waitFor("settings", "Connected", `return document.querySelector("button.status")?.textContent.includes("Connected")`);
+    }, []);
+    for (const look of ["Light", "Dark"]) {
+      const f = look.toLowerCase();
+      await step(`README: screenshots (${look})`, async () => {
+        await readmeTab("General");
+        await click("settings", "button.appearance-option", look);
+        await waitFor("settings", `appearance ${look}`, `return document.documentElement.dataset.appearance === arguments[0]`, [look]);
+        await sim("Computer appearance", look).catch(() => {});
+        await still("settings", `${f}-general.png`);
+        await readmeTab("Wheel");
+        await still("settings", `${f}-wheel.png`);
+        await readmeTab("DaVinci Resolve");
+        await still("settings", `${f}-resolve.png`);
+        await readmeTab("Help & backup");
+        await still("settings", `${f}-help.png`);
+        await readmeTab("Keys");
+        await keyIn("StopPlay");
+        await waitFor("settings", "STOP/PLAY's panel", `return document.querySelector(".side-panel .panel-title")?.textContent.includes("STOP")`);
+        await still("settings", `${f}-keys.png`);
+        await click("settings", '.side-panel button[aria-label="Close"]');
+        await still("simulator", `${f}-simulator.png`);
+      }, []);
+    }
+  };
+
   try {
     say(`starting ${opts.app} --simulate`);
     mkdirSync(dialogs, { recursive: true });
@@ -1373,6 +1427,7 @@ async function main() {
         await waitFor("settings", "both pages", `return [...document.querySelectorAll(".pills .pill")].map((p) => p.textContent).join("|").includes("Edit Bay")`);
         await drawingShows({ In: "Ctrl+Shift+S", Cut: "Opens Round Trip", Cam5: "→ Edit Bay" });
       }, ["settings", "simulator"]);
+      await readmeShots();
       say("step: tray: Quit freewheel (after the restart)");
       await tray("quit").catch((e) => say(`  the Quit click: ${e.message}`));
       const end = Date.now() + 20000;
