@@ -90,4 +90,12 @@ test("the footprint job measures the release build and enforces the budgets", ()
   expect(wf).toContain("--bundles nsis --config '{\"bundle\":{\"createUpdaterArtifacts\":false}}'");
   expect(wf).toContain("node scripts/footprint-windows.mjs --app target/release/freewheel.exe --installer \"$installer\" --budgets scripts/footprint-budgets.json");
   expect(budgets.idleCpuPercentOfOneCore).toBeLessThanOrEqual(1);
+  // Closed to the tray, no WebView2 runs (src-tauri/src/app_windows.rs).
+  for (const mode of ["normal", "simulate"]) {
+    expect(budgets.modes[mode].tray.webviewProcesses).toBe(0);
+    expect(budgets.modes[mode].tray.workingSetMB).toBeLessThan(64);
+  }
+  expect(overBudget({ exe: 0, modes: { normal: { memory: { tray: memory([proc(1, 0, "freewheel.exe"), proc(2, 1, "msedgewebview2.exe")]) }, cpu: { oneCore: 0 }, disk: { total: 0 } } } }, budgets)).toEqual([
+    "normal tray WebView2 processes: 1.00 > budget 0",
+  ]);
 });

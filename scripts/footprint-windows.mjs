@@ -138,6 +138,7 @@ export function overBudget(result, budgets) {
     for (const [phase, mem] of Object.entries(run.memory)) {
       check(`${mode} ${phase} working set MB`, mem.workingSet / MB, b[phase]?.workingSetMB);
       check(`${mode} ${phase} private MB`, mem.privateBytes / MB, b[phase]?.privateMB);
+      check(`${mode} ${phase} WebView2 processes`, mem.webviewProcesses, b[phase]?.webviewProcesses);
     }
     check(`${mode} idle CPU % of one core`, run.cpu.oneCore, budgets.idleCpuPercentOfOneCore);
   }

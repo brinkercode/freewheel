@@ -1,4 +1,41 @@
 {
+  "_comment": "Measured on windows-2025 (PR #144): exe 16.2 MB, installer 3.9 MB; normal open 315 MB working set / 107 MB private (7 processes, 6 WebView2), tray 31 MB / 6.1 MB (1 process); simulate open 389 / 144, tray 31 / 5.8; idle CPU 0.13 % of one core; disk 3.6-5.5 MB (almost all the WebView2 data folder). Budgets are those plus a margin; MB = MiB.",
+  "exeMB": 20,
+  "installerMB": 5,
   "idleCpuPercentOfOneCore": 1,
-  "modes": {}
+  "modes": {
+    "normal": {
+      "diskMB": 10,
+      "open": {
+        "workingSetMB": 400,
+        "privateMB": 150
+      },
+      "tray": {
+        "workingSetMB": 48,
+        "privateMB": 12,
+        "webviewProcesses": 0
+      },
+      "reopened": {
+        "workingSetMB": 400,
+        "privateMB": 150
+      },
+      "tray again": {
+        "workingSetMB": 48,
+        "privateMB": 12,
+        "webviewProcesses": 0
+      }
+    },
+    "simulate": {
+      "diskMB": 10,
+      "open": {
+        "workingSetMB": 500,
+        "privateMB": 200
+      },
+      "tray": {
+        "workingSetMB": 48,
+        "privateMB": 12,
+        "webviewProcesses": 0
+      }
+    }
+  }
 }
