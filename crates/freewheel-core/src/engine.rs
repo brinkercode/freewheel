@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::clock::Clock;
 use crate::config::{Action, Config, JogMode, JogSettings, KeyCombo, Layer, OverrideMode};
@@ -98,7 +98,15 @@ impl Engine {
         let latched = std::mem::take(&mut self.latched);
         // Release all of them even if one fails; report the first error.
         held.chain(latched)
-            .map(|combo| combo_up(injector, &combo))
+            .map(|combo| {
+                log_lone(
+                    &combo,
+                    None,
+                    "released",
+                    "release all (off, disconnect, quit or config change)",
+                );
+                combo_up(injector, &combo)
+            })
             .fold(Ok(()), Result::and)
     }
 
@@ -216,15 +224,18 @@ impl Engine {
                 Some(Action::Hotkey { combo }) => injector.tap_combo(&combo),
                 Some(Action::Held { combo }) => {
                     combo_down(injector, &combo)?;
+                    log_lone(&combo, Some(*key), "held", "key pressed");
                     self.held.insert(*key, combo);
                     Ok(())
                 }
                 Some(Action::Latched { combo }) => {
                     if let Some(i) = self.latched.iter().position(|c| *c == combo) {
                         self.latched.remove(i);
+                        log_lone(&combo, Some(*key), "released", "unlatched");
                         combo_up(injector, &combo)
                     } else {
                         combo_down(injector, &combo)?;
+                        log_lone(&combo, Some(*key), "latched", "key pressed");
                         self.latched.push(combo);
                         Ok(())
                     }
@@ -252,7 +263,10 @@ impl Engine {
             },
             // Held keys release on the physical release, whatever the layer.
             DeviceEvent::Release(key) => match self.held.remove(key) {
-                Some(combo) => combo_up(injector, &combo),
+                Some(combo) => {
+                    log_lone(&combo, Some(*key), "released", "key released");
+                    combo_up(injector, &combo)
+                }
                 None => Ok(()),
             },
             DeviceEvent::Jog { value, .. } => self.jog(*value, injector),
@@ -354,14 +368,24 @@ fn fire(action: &Option<Action>, injector: &mut dyn KeyInjector) -> Result<(), I
     }
 }
 
+/// The combo's keystrokes; a lone modifier (Held or Latched) has no key.
 fn keystrokes(combo: &KeyCombo) -> Vec<Keystroke> {
     let mut keys: Vec<Keystroke> = combo
         .modifiers
         .iter()
         .map(|m| Keystroke::Modifier(*m))
         .collect();
-    keys.push(Keystroke::Key(combo.key.clone()));
+    if !combo.key.is_empty() {
+        keys.push(Keystroke::Key(combo.key.clone()));
+    }
     keys
+}
+
+/// Logs a lone modifier's state change: the button and why, never the modifier.
+fn log_lone(combo: &KeyCombo, button: Option<Key>, state: &str, reason: &str) {
+    if combo.key.is_empty() {
+        info!(?button, reason, "lone modifier {state}");
+    }
 }
 
 fn combo_down(injector: &mut dyn KeyInjector, combo: &KeyCombo) -> Result<(), InjectError> {
@@ -1169,6 +1193,200 @@ mod tests {
         assert!(engine.take_override_exit());
         engine.release_all(&mut mock).unwrap();
         assert!(!engine.take_override_exit());
+    }
+
+    fn lone(m: Modifier) -> KeyCombo {
+        KeyCombo {
+            modifiers: vec![m],
+            key: String::new(),
+        }
+    }
+
+    #[test]
+    fn held_lone_modifier_sends_one_down_on_press_and_one_up_on_release() {
+        for m in [
+            Modifier::Shift,
+            Modifier::Ctrl,
+            Modifier::Meta,
+            Modifier::Alt,
+        ] {
+            let mut engine = engine_with(Key::In, Action::Held { combo: lone(m) });
+            let mut mock = MockInjector::new();
+            let mut l = MockLauncher::new();
+            engine.handle(&Press(Key::In), &mut mock, &mut l).unwrap();
+            assert_eq!(mock.calls(), &[Down(Keystroke::Modifier(m))]);
+            engine.handle(&Release(Key::In), &mut mock, &mut l).unwrap();
+            let up = [Down(Keystroke::Modifier(m)), Up(Keystroke::Modifier(m))];
+            assert_eq!(mock.calls(), &up);
+            assert!(mock.keys_down().is_empty());
+        }
+    }
+
+    #[test]
+    fn latched_lone_modifier_stays_down_after_key_up_and_next_press_releases() {
+        let shift = Keystroke::Modifier(Modifier::Shift);
+        let mut engine = engine_with(
+            Key::Snap,
+            Action::Latched {
+                combo: lone(Modifier::Shift),
+            },
+        );
+        let mut mock = MockInjector::new();
+        let mut l = MockLauncher::new();
+        engine.handle(&Press(Key::Snap), &mut mock, &mut l).unwrap();
+        engine
+            .handle(&Release(Key::Snap), &mut mock, &mut l)
+            .unwrap();
+        assert_eq!(mock.calls(), &[Down(shift.clone())]);
+        assert_eq!(mock.keys_down(), std::slice::from_ref(&shift));
+        engine.handle(&Press(Key::Snap), &mut mock, &mut l).unwrap();
+        engine
+            .handle(&Release(Key::Snap), &mut mock, &mut l)
+            .unwrap();
+        assert_eq!(mock.calls(), &[Down(shift.clone()), Up(shift)]);
+        assert!(mock.keys_down().is_empty());
+    }
+
+    #[test]
+    fn lone_modifier_held_or_latched_across_a_page_change_is_not_left_stuck() {
+        let alt = Keystroke::Modifier(Modifier::Alt);
+        let mut engine = layered(
+            &[
+                (
+                    Key::In,
+                    Action::Held {
+                        combo: lone(Modifier::Alt),
+                    },
+                ),
+                (
+                    Key::Snap,
+                    Action::Latched {
+                        combo: lone(Modifier::Shift),
+                    },
+                ),
+                (Key::Cam1, push("l1")),
+            ],
+            1,
+            &[(Key::In, Action::Hotkey { combo: ctrl_s() })],
+        );
+        let mut mock = MockInjector::new();
+        let mut l = MockLauncher::new();
+        for e in [Press(Key::In), Press(Key::Snap), Release(Key::Snap)] {
+            engine.handle(&e, &mut mock, &mut l).unwrap();
+        }
+        engine.handle(&Press(Key::Cam1), &mut mock, &mut l).unwrap();
+        assert_eq!(engine.current_layer(), "l1");
+        // As any held key: it goes up on its own release, whatever the page.
+        engine.handle(&Release(Key::In), &mut mock, &mut l).unwrap();
+        assert!(!mock.keys_down().contains(&alt));
+        // As any latched key: it stays latched until pressed again on its page.
+        engine.handle(&Press(Key::Cam1), &mut mock, &mut l).unwrap();
+        engine.handle(&Press(Key::Snap), &mut mock, &mut l).unwrap();
+        assert!(mock.keys_down().is_empty(), "{:?}", mock.keys_down());
+    }
+
+    #[test]
+    fn two_keys_holding_the_same_modifier_never_leave_it_stuck() {
+        let shift = || Action::Held {
+            combo: lone(Modifier::Shift),
+        };
+        let latch = || Action::Latched {
+            combo: lone(Modifier::Shift),
+        };
+        let orders: [&[DeviceEvent]; 3] = [
+            &[
+                Press(Key::In),
+                Press(Key::Out),
+                Release(Key::In),
+                Release(Key::Out),
+            ],
+            &[
+                Press(Key::In),
+                Press(Key::Out),
+                Release(Key::Out),
+                Release(Key::In),
+            ],
+            // Latch on, hold the other, let go, unlatch.
+            &[
+                Press(Key::Snap),
+                Press(Key::In),
+                Release(Key::In),
+                Press(Key::Snap),
+            ],
+        ];
+        for events in orders {
+            let mut config = Config::default();
+            let b = &mut config.layers[0].bindings;
+            b.insert("In".into(), shift());
+            b.insert("Out".into(), shift());
+            b.insert("Snap".into(), latch());
+            let mut engine = Engine::new(&config);
+            let mut mock = MockInjector::new();
+            let mut l = MockLauncher::new();
+            for e in events {
+                engine.handle(e, &mut mock, &mut l).unwrap();
+            }
+            assert!(mock.keys_down().is_empty(), "{events:?}");
+        }
+    }
+
+    #[test]
+    fn lone_modifier_logs_state_and_reason_but_not_the_modifier() {
+        use std::sync::{Arc, Mutex};
+        #[derive(Clone, Default)]
+        struct Buf(Arc<Mutex<Vec<u8>>>);
+        impl std::io::Write for Buf {
+            fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(b);
+                Ok(b.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let buf = Buf::default();
+        let writer = buf.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_writer(move || writer.clone())
+            .finish();
+        tracing::subscriber::with_default(subscriber, || {
+            let mut config = Config::default();
+            let b = &mut config.layers[0].bindings;
+            b.insert(
+                "In".into(),
+                Action::Held {
+                    combo: lone(Modifier::Ctrl),
+                },
+            );
+            b.insert(
+                "Snap".into(),
+                Action::Latched {
+                    combo: lone(Modifier::Alt),
+                },
+            );
+            let mut engine = Engine::new(&config);
+            let mut mock = MockInjector::new();
+            let mut l = MockLauncher::new();
+            for e in [Press(Key::In), Release(Key::In), Press(Key::Snap)] {
+                engine.handle(&e, &mut mock, &mut l).unwrap();
+            }
+            engine.handle(&Press(Key::Snap), &mut mock, &mut l).unwrap();
+            engine.handle(&Press(Key::Snap), &mut mock, &mut l).unwrap();
+            engine.release_all(&mut mock).unwrap();
+        });
+        let log = String::from_utf8(buf.0.lock().unwrap().clone()).unwrap();
+        for line in [
+            "lone modifier held",
+            "lone modifier latched",
+            "lone modifier released",
+            "reason=\"key released\"",
+            "reason=\"unlatched\"",
+            "reason=\"release all (off, disconnect, quit or config change)\"",
+        ] {
+            assert!(log.contains(line), "{line} missing: {log}");
+        }
+        assert!(!log.contains("Ctrl") && !log.contains("Alt"), "{log}");
     }
 
     #[test]
