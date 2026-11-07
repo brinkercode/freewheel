@@ -1,0 +1,93 @@
+import { readFileSync } from "node:fs";
+import { expect, test } from "vitest";
+import { MB, cpuPercent, memory, overBudget, parseArgs, places, summary, tree } from "./footprint-windows.mjs";
+
+const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
+const wf = read("../.github/workflows/e2e-windows.yml");
+const budgets = JSON.parse(read("./footprint-budgets.json"));
+
+const proc = (pid, parent, name, mb = 10, cpu = 0) => ({ pid, parent, name, workingSet: mb * MB, privateBytes: (mb / 2) * MB, cpu100ns: cpu });
+
+test("the app's tree is freewheel.exe and every WebView2 process under it, nothing else", () => {
+  const procs = [
+    proc(1, 0, "explorer.exe"),
+    proc(10, 1, "freewheel.exe", 20),
+    proc(11, 10, "msedgewebview2.exe", 30),
+    proc(12, 11, "msedgewebview2.exe", 40),
+    proc(13, 11, "msedgewebview2.exe", 50),
+    proc(20, 1, "msedgewebview2.exe", 99),
+  ];
+  const t = tree(procs, 10);
+  expect(t.map((p) => p.pid).sort()).toEqual([10, 11, 12, 13]);
+  expect(memory(t)).toEqual({
+    processes: 4,
+    webviewProcesses: 3,
+    workingSet: 140 * MB,
+    privateBytes: 70 * MB,
+    webviewWorkingSet: 120 * MB,
+    webviewPrivateBytes: 60 * MB,
+  });
+  expect(tree(procs, 99)).toEqual([]);
+});
+
+test("idle CPU is the tree's CPU time over the wall time, per core and per machine", () => {
+  const before = [proc(10, 1, "freewheel.exe", 1, 1_000_000)];
+  // 0.3 s of CPU over 60 s, plus a process that started in between (0.3 s).
+  const after = [proc(10, 1, "freewheel.exe", 1, 4_000_000), proc(11, 10, "msedgewebview2.exe", 1, 3_000_000)];
+  const cpu = cpuPercent(before, after, 60, 4);
+  expect(cpu.oneCore).toBeCloseTo(1);
+  expect(cpu.machine).toBeCloseTo(0.25);
+});
+
+const result = (trayMB, cpu) => ({
+  exe: 10 * MB,
+  installer: 3 * MB,
+  modes: {
+    normal: {
+      memory: { open: memory([proc(1, 0, "freewheel.exe", 200)]), tray: memory([proc(1, 0, "freewheel.exe", trayMB)]) },
+      cpu: { oneCore: cpu, machine: cpu / 4, seconds: 60, cores: 4 },
+      disk: { config: 1000, logs: 2000, iconCache: 0, webviewData: 5 * MB, total: 6 * MB },
+    },
+  },
+});
+
+test("a number over its budget fails; a missing budget is not checked", () => {
+  const b = { exeMB: 12, installerMB: 4, idleCpuPercentOfOneCore: 1, modes: { normal: { diskMB: 8, tray: { workingSetMB: 30, privateMB: 20 } } } };
+  expect(overBudget(result(20, 0.1), b)).toEqual([]);
+  expect(overBudget(result(40, 2), b)).toEqual([
+    "normal tray working set MB: 40.00 > budget 30",
+    "normal idle CPU % of one core: 2.00 > budget 1",
+  ]);
+  expect(overBudget(result(42, 0), b)).toContain("normal tray private MB: 21.00 > budget 20");
+  expect(overBudget(result(40, 2), {})).toEqual([]);
+});
+
+test("the summary is a table per mode with sizes, disk and CPU", () => {
+  const r = { ...result(20, 0.05), problems: [] };
+  const md = summary(r);
+  expect(md).toContain("| freewheel.exe | 10.0 MB |");
+  expect(md).toContain("| NSIS installer | 3.0 MB |");
+  expect(md).toContain("| tray | 1 (0) | 20.0 MB | 10.0 MB | 0.0 MB | 0.0 MB |");
+  expect(md).toContain("CPU 0.050 % of one core");
+  expect(md).toContain("WebView2 data 5.0 MB");
+  expect(summary({ ...r, problems: ["x > budget 1"] })).toContain("- x > budget 1");
+});
+
+test("the arguments and the places freewheel writes on Windows", () => {
+  expect(parseArgs(["--app", "a.exe", "--idle", "5"])).toMatchObject({ app: "a.exe", idle: 5, out: "footprint" });
+  expect(() => parseArgs([])).toThrow(/--app/);
+  expect(() => parseArgs(["--x", "1"])).toThrow(/unknown/);
+  const p = places({ APPDATA: "R", LOCALAPPDATA: "L" });
+  expect(p.config).toMatch(/^R.freewheel$/);
+  expect(p.logs).toMatch(/^L.freewheel.data.logs$/);
+  expect(p.iconCache).toMatch(/^L.freewheel.cache.app-icons$/);
+  // Tauri's WebView2 data folder is named after the identifier.
+  expect(p.webviewData).toMatch(new RegExp(JSON.parse(read("../src-tauri/tauri.conf.json")).identifier + "$"));
+});
+
+test("the footprint job measures the release build and enforces the budgets", () => {
+  expect(wf).toContain("name: footprint (windows-2025)");
+  expect(wf).toContain("--bundles nsis --config '{\"bundle\":{\"createUpdaterArtifacts\":false}}'");
+  expect(wf).toContain("node scripts/footprint-windows.mjs --app target/release/freewheel.exe --installer \"$installer\" --budgets scripts/footprint-budgets.json");
+  expect(budgets.idleCpuPercentOfOneCore).toBeLessThanOrEqual(1);
+});

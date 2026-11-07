@@ -1,7 +1,8 @@
 # Windows probes for scripts/footprint-windows.mjs (one call per probe):
 #   procs              every process as JSON: pid, parent, name, working set,
 #                      private bytes, CPU time (100 ns units)
-#   windows -Pids a,b  the visible top-level windows of those processes
+#   windows -Pids a,b  the visible top-level app windows (title freewheel…)
+#                      of those processes
 #   close   -Pids a,b  asks each of them to close (WM_CLOSE, as the title
 #                      bar's Close button does), then lists what was closed
 param(
@@ -43,8 +44,14 @@ public static class FwWin {
       uint pid; GetWindowThreadProcessId(h, out pid);
       if (Array.IndexOf(pids, pid) >= 0 && IsWindowVisible(h)) {
         var t = new StringBuilder(256); GetWindowText(h, t, 256);
-        found.Add(pid + ":" + t.ToString());
-        if (close) PostMessage(h, 0x0010, IntPtr.Zero, IntPtr.Zero);
+        var title = t.ToString();
+        // Only the app's own windows ("freewheel settings", "freewheel
+        // (Simulator)"): never the single-instance plugin's helper window
+        // (com.brinkercode.freewheel-siw) or the tray's untitled one.
+        if (title.StartsWith("freewheel", StringComparison.OrdinalIgnoreCase)) {
+          found.Add(pid + ":" + title);
+          if (close) PostMessage(h, 0x0010, IntPtr.Zero, IntPtr.Zero);
+        }
       }
       return true;
     }, IntPtr.Zero);
