@@ -1,0 +1,123 @@
+# Update end to end for freewheel, on a hosted Windows runner: installs the
+# previous published release's NSIS installer silently, runs the installed
+# app's real updater (`freewheel --update-check-and-install`: the updater
+# plugin, the release endpoint, signature checked against the pubkey built
+# into that release) and requires the installed exe to become the newest
+# release, start (--simulate --smoke) and then report itself up to date.
+# Runs after each release (release.yml calls it) and on demand. Public
+# releases only: no secrets, read-only token.
+name: update-e2e
+
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        description: "Release tag to install first (default: the one before the latest)"
+        type: string
+        required: false
+        default: ""
+  workflow_call:
+    inputs:
+      from:
+        description: "Release tag to install first (default: the one before the latest)"
+        type: string
+        required: false
+        default: ""
+
+concurrency:
+  group: update-e2e
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: update e2e (windows-2025)
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+
+      - name: Pick the releases
+        id: pick
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FROM: ${{ inputs.from }}
+        run: |
+          gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 100 \
+            --json tagName --jq '.[].tagName' | node scripts/update-e2e.mjs | tee -a "$GITHUB_OUTPUT"
+
+      - name: No older release yet
+        if: steps.pick.outputs.skip == 'true'
+        shell: bash
+        run: echo "::notice::update-e2e needs two published releases; skipped"
+
+      - name: Install the previous release
+        if: steps.pick.outputs.skip != 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FROM: ${{ steps.pick.outputs.from }}
+          FROM_VERSION: ${{ steps.pick.outputs.from_version }}
+        run: |
+          gh release download $env:FROM --repo $env:GITHUB_REPOSITORY --pattern '*-setup.exe' --dir old
+          $setup = Get-ChildItem old/*-setup.exe | Select-Object -First 1
+          $install = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "installer exit $($install.ExitCode)" }
+          $exe = "$env:LOCALAPPDATA\freewheel\freewheel.exe"
+          $v = (Get-Item $exe).VersionInfo
+          $installed = "{0}.{1}.{2}" -f $v.FileMajorPart, $v.FileMinorPart, $v.FileBuildPart
+          Write-Host "installed $installed from $($setup.Name)"
+          if ($installed -ne $env:FROM_VERSION) { throw "installed $installed, expected $env:FROM_VERSION" }
+
+      - name: Update with the installed app's updater
+        if: steps.pick.outputs.skip != 'true'
+        shell: pwsh
+        env:
+          TO_VERSION: ${{ steps.pick.outputs.to_version }}
+        run: |
+          $exe = "$env:LOCALAPPDATA\freewheel\freewheel.exe"
+          $run = Start-Process -FilePath $exe -ArgumentList '--update-check-and-install' -Wait -PassThru
+          # 0: the update verified and the installer started; 2: up to date; 3: no pubkey; 1: failed.
+          if ($run.ExitCode -ne 0) { throw "update run exit $($run.ExitCode)" }
+          # The passive NSIS installer replaces the app after the updater exits.
+          $deadline = (Get-Date).AddMinutes(5)
+          do {
+            Start-Sleep -Seconds 3
+            $v = (Get-Item $exe -ErrorAction SilentlyContinue).VersionInfo
+            $installed = if ($v) { "{0}.{1}.{2}" -f $v.FileMajorPart, $v.FileMinorPart, $v.FileBuildPart } else { "" }
+          } while ($installed -ne $env:TO_VERSION -and (Get-Date) -lt $deadline)
+          Write-Host "installed after the update: $installed"
+          if ($installed -ne $env:TO_VERSION) { throw "installed $installed, expected $env:TO_VERSION" }
+          $reg = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\freewheel' -ErrorAction SilentlyContinue
+          Write-Host "uninstall entry DisplayVersion: $($reg.DisplayVersion)"
+          # Let the installer finish before the next steps touch the exe.
+          $deadline = (Get-Date).AddMinutes(2)
+          while ((Get-Process | Where-Object { $_.ProcessName -like '*-setup' }) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
+
+      - name: The updated app starts and is up to date
+        if: steps.pick.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          $exe = "$env:LOCALAPPDATA\freewheel\freewheel.exe"
+          node scripts/check-windows-exe.mjs $exe
+          if ($LASTEXITCODE -ne 0) { throw "smoke failed" }
+          $run = Start-Process -FilePath $exe -ArgumentList '--update-check-and-install' -Wait -PassThru
+          if ($run.ExitCode -ne 2) { throw "second update run exit $($run.ExitCode), expected 2 (up to date)" }
+
+      - name: Keep the app's logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: update-e2e-logs
+          path: ~/AppData/Local/freewheel/data/logs
+          retention-days: 7
+          if-no-files-found: ignore
