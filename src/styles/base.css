@@ -1,5 +1,5 @@
 /* freewheel base styles: every element the app renders, as the design handoff's
-   prototype (design/handoff/prototype/freewheel.dc.html) draws it. Colours come
+   prototype draws it (the handoff itself is never committed). Colours come
    from tokens.css; the px values are the prototype's own. */
 *,
 *::before,
