@@ -6,23 +6,29 @@
 // round trip through the app (a Tauri command, so a blocked main thread fails
 // it) within 5 s. Every step is screenshotted into the output dir.
 //
-//   node scripts/e2e-windows.mjs --app target/release/freewheel.exe --out e2e-shots [--driver http://127.0.0.1:4444]
+//   node scripts/e2e-windows.mjs --app target/release/freewheel.exe --out e2e-shots [--driver http://127.0.0.1:4444] [--port 9222]
+// With --port (the CI default), the script starts the app itself with
+// FREEWHEEL_E2E_DEVTOOLS_PORT set, so its WebView2 opens that DevTools port,
+// and msedgedriver attaches to it (debuggerAddress): on hosted windows-2025
+// runners WebView2 ignores the port msedgedriver would pass when it launches
+// the app (tauri-driver's way, actions/runner-images#14738). Without --port,
+// the session goes through tauri-driver (`tauri:options`).
 // Plain fetch and the W3C WebDriver protocol: no npm dependencies.
+import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+/** The env var that opens the app's DevTools port (src-tauri/src/simulate.rs). */
+export const DEVTOOLS_PORT_ENV = "FREEWHEEL_E2E_DEVTOOLS_PORT";
 
 /** How long a window may take to answer after an action. */
 export const RESPONSIVE_MS = 5000;
 
 export function parseArgs(argv) {
-  const opts = { driver: "http://127.0.0.1:4444", app: null, out: "e2e-shots", native: false };
+  const opts = { driver: "http://127.0.0.1:4444", app: null, out: "e2e-shots", port: null };
   for (let i = 0; i < argv.length; i++) {
     const name = argv[i].replace(/^--/, "");
-    if (name === "native") {
-      opts.native = true;
-      continue;
-    }
     if (!(name in opts)) throw new Error(`unknown option ${argv[i]}`);
     opts[name] = argv[++i];
   }
@@ -31,15 +37,30 @@ export function parseArgs(argv) {
 }
 
 /**
- * The new-session body: the app, started with --simulate. `native` gives
- * msedgedriver's own capabilities, exactly what tauri-driver maps
- * `tauri:options` to on Windows (WebView2 mode, the exe as the binary).
+ * The new-session body: msedgedriver attached to the running app's
+ * WebView2 on `port`, or (no port) tauri-driver starting the app with
+ * --simulate.
  */
-export function sessionBody(app, native = false) {
-  const options = native
-    ? { "ms:edgeChromium": true, browserName: "webview2", "ms:edgeOptions": { binary: app, args: ["--simulate"] } }
+export function sessionBody(app, port = null) {
+  const options = port
+    ? { browserName: "webview2", "ms:edgeOptions": { debuggerAddress: `127.0.0.1:${port}` } }
     : { "tauri:options": { application: app, args: ["--simulate"] } };
   return { capabilities: { alwaysMatch: options } };
+}
+
+/** Starts `app --simulate` with its DevTools port open; resolves once the port answers. */
+async function launch(app, port, say) {
+  const child = spawn(app, ["--simulate"], { env: { ...process.env, [DEVTOOLS_PORT_ENV]: String(port) }, stdio: "inherit" });
+  child.on("exit", (code) => say(`app exited with ${code}`));
+  const end = Date.now() + 60000;
+  while (Date.now() < end) {
+    if (child.exitCode !== null) throw new Error(`the app exited with ${child.exitCode} before opening port ${port}`);
+    const up = await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(2000) }).then((r) => r.ok, () => false);
+    if (up) return child;
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  child.kill();
+  throw new Error(`the app's DevTools port ${port} did not open within 60 s`);
 }
 
 /** A safe, ordered file name for a step's screenshot. */
@@ -68,11 +89,11 @@ class Driver {
     if (!res.ok) throw new Error(`${method} ${path}: ${res.status} ${json.value?.error ?? ""} ${json.value?.message?.split("\n")[0] ?? ""}`);
     return json.value;
   }
-  async start(app, native) {
+  async start(app, port) {
     const v = await fetch(`${this.base}/session`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(sessionBody(app, native)),
+      body: JSON.stringify(sessionBody(app, port)),
       signal: AbortSignal.timeout(120000),
     }).then((r) => r.json());
     if (!v.value?.sessionId) throw new Error(`no session: ${JSON.stringify(v).slice(0, 500)}`);
@@ -122,6 +143,7 @@ async function main() {
   let n = 0;
   let current = null;
   const win = {};
+  let app = null;
   const t0 = Date.now();
   const say = (line) => (console.log(`[${((Date.now() - t0) / 1000).toFixed(1)}s] ${line}`), log.push(line));
 
@@ -205,7 +227,8 @@ async function main() {
 
   try {
     say(`starting ${opts.app} --simulate`);
-    await d.start(resolve(opts.app), opts.native);
+    if (opts.port) app = await launch(resolve(opts.app), opts.port, say);
+    await d.start(resolve(opts.app), opts.port);
     // Both windows: the settings window ("main") and the Simulator (#simulator).
     const end = Date.now() + 30000;
     while (!(win.settings && win.simulator)) {
@@ -300,6 +323,7 @@ async function main() {
     process.exitCode = 1;
   } finally {
     await d.quit();
+    app?.kill();
   }
 }
 

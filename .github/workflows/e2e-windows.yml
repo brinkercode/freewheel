@@ -1,7 +1,7 @@
 # End to end on a hosted Windows runner: builds the real freewheel.exe (the
 # UI embedded, as `tauri build` serves it), starts it with --simulate under
-# Tauri's WebDriver (tauri-driver + the msedgedriver matching the runner's
-# WebView2) and clicks through the first run, every settings tab, the key
+# WebDriver (the msedgedriver matching the runner's WebView2, attached to
+# the app's DevTools port) and clicks through the first run, every settings tab, the key
 # panel and the Simulator window's controls, requiring both windows to answer
 # within 5 s after every action (scripts/e2e-windows.mjs). Screenshots of
 # every step go to the 'e2e-screenshots' artifact; the exe plus a
@@ -75,13 +75,14 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force e2e-shots | Out-Null
           Get-ChildItem env: | Where-Object Name -like 'WEBVIEW2*' | Format-Table -AutoSize
-          # msedgedriver in WebView2 mode, the capabilities tauri-driver would
-          # send (scripts/e2e-windows.mjs --native), with its verbose log kept.
+          # msedgedriver attaches to the app's WebView2 DevTools port (the
+          # script starts the app with it open: actions/runner-images#14738
+          # breaks tauri-driver's launch on windows-2025), verbose log kept.
           $driver = Start-Process -FilePath "$env:RUNNER_TEMP\edgedriver\msedgedriver.exe" -ArgumentList '--port=4444','--verbose',"--log-path=$PWD\e2e-shots\msedgedriver.log" -PassThru -NoNewWindow
           $deadline = (Get-Date).AddSeconds(30)
           do { Start-Sleep -Milliseconds 300; $up = Test-NetConnection 127.0.0.1 -Port 4444 -InformationLevel Quiet -WarningAction SilentlyContinue } until ($up -or (Get-Date) -gt $deadline)
           if (-not $up) { throw "msedgedriver did not start" }
-          node scripts/e2e-windows.mjs --native --app target/release/freewheel.exe --out e2e-shots
+          node scripts/e2e-windows.mjs --port 9222 --app target/release/freewheel.exe --out e2e-shots
           $code = $LASTEXITCODE
           Stop-Process -Id $driver.Id -Force -ErrorAction SilentlyContinue
           Get-Process freewheel -ErrorAction SilentlyContinue | Stop-Process -Force

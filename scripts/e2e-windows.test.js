@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import { checkWorkflow } from "./check-workflow.mjs";
-import { RESPONSIVE_MS, parseArgs, sessionBody, shotName } from "./e2e-windows.mjs";
+import { DEVTOOLS_PORT_ENV, RESPONSIVE_MS, parseArgs, sessionBody, shotName } from "./e2e-windows.mjs";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const wf = read("../.github/workflows/e2e-windows.yml");
@@ -11,15 +11,18 @@ test("the e2e session starts the real exe with --simulate through tauri-driver",
   expect(sessionBody("C:/a/freewheel.exe")).toEqual({
     capabilities: { alwaysMatch: { "tauri:options": { application: "C:/a/freewheel.exe", args: ["--simulate"] } } },
   });
-  expect(sessionBody("C:/a/freewheel.exe", true).capabilities.alwaysMatch).toEqual({
-    "ms:edgeChromium": true,
+  expect(sessionBody("C:/a/freewheel.exe", "9222").capabilities.alwaysMatch).toEqual({
     browserName: "webview2",
-    "ms:edgeOptions": { binary: "C:/a/freewheel.exe", args: ["--simulate"] },
+    "ms:edgeOptions": { debuggerAddress: "127.0.0.1:9222" },
   });
-  expect(parseArgs(["--app", "x.exe", "--out", "o"])).toEqual({ driver: "http://127.0.0.1:4444", app: "x.exe", out: "o", native: false });
-  expect(parseArgs(["--native", "--app", "x.exe"]).native).toBe(true);
+  expect(parseArgs(["--app", "x.exe", "--out", "o"])).toEqual({ driver: "http://127.0.0.1:4444", app: "x.exe", out: "o", port: null });
+  expect(parseArgs(["--port", "9222", "--app", "x.exe"]).port).toBe("9222");
   expect(() => parseArgs([])).toThrow(/--app/);
   expect(() => parseArgs(["--nope", "1"])).toThrow(/unknown/);
+});
+
+test("the DevTools port env var matches the app", () => {
+  expect(read("../src-tauri/src/simulate.rs")).toContain(`"${DEVTOOLS_PORT_ENV}"`);
 });
 
 test("screenshots are numbered per step and window", () => {
@@ -42,7 +45,7 @@ test("the e2e workflow is a Windows PR check that builds the embedded UI and upl
   expect(wf).toMatch(/^ {2}push:\n {4}branches: \[main\]/m);
   expect(wf.match(/runs-on: \S+/g)).toEqual(["runs-on: windows-2025"]);
   expect(wf).toContain("cargo build --release --locked -p freewheel --features tauri/custom-protocol");
-  expect(wf).toContain("node scripts/e2e-windows.mjs --native --app target/release/freewheel.exe --out e2e-shots");
+  expect(wf).toContain("node scripts/e2e-windows.mjs --port 9222 --app target/release/freewheel.exe --out e2e-shots");
   expect(wf).toMatch(/name: e2e-screenshots\n\s+path: e2e-shots/);
   expect(wf).toMatch(/name: freewheel-windows-simulate\n\s+path: simulate-build/);
   expect(wf).toContain("cp target/release/freewheel.exe src-tauri/windows/freewheel-simulate.cmd simulate-build/");
