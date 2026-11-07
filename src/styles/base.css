@@ -554,20 +554,6 @@ td.row-chevron .icon { vertical-align: middle; }
 .permission-card.granted { border-color: var(--good); }
 .permission-card .card-sub { font-size: var(--fs-small); margin-top: 2px; line-height: var(--lh-body); }
 
-/* simulator window (src/Simulator.jsx, the --simulate window): the prototype's dark controls column */
-.simulator { padding: var(--sp-8); display: flex; flex-direction: column; gap: var(--sp-5); background: var(--bg); color: var(--ink); min-height: 100%; font-size: var(--fs-small); overflow: auto; height: 100%; }
-.simulator h1 { margin: 0; font-size: var(--fs-body); font-weight: var(--fw-bold); }
-.sim-sub { color: var(--ink3); margin-top: 3px; line-height: 1.4; }
-.sim-status { color: var(--ink2); }
-.sim-title { font-size: var(--fs-small); font-weight: var(--fw-semibold); color: var(--ink3); margin-top: var(--sp-2); }
-.sim-row { display: flex; flex-wrap: wrap; gap: var(--sp-1); align-items: center; padding: 3px; border-radius: var(--r-btn-sm); background: var(--sunk); }
-.sim-row button { height: 26px; padding: 0 var(--sp-4); border: none; border-radius: var(--r-key); background: var(--panel); font-size: var(--fs-micro); }
-.sim-row button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: var(--fw-semibold); }
-.sim-row .sim-key { font-weight: var(--fw-bold); letter-spacing: 0.03em; }
-.sim-row label { display: flex; flex-direction: row; align-items: center; gap: var(--sp-4); padding: 0 var(--sp-3); font-size: var(--fs-micro); }
-.sim-log { list-style: none; margin: 0; padding: var(--sp-4) var(--sp-5); min-height: 76px; border-radius: var(--r-sm); background: var(--sunk); display: flex; flex-direction: column; gap: 3px; }
-.simulator li { font-size: var(--fs-micro); color: var(--ink2); line-height: 1.35; }
-.simulator .sim-log-empty { color: var(--ink3); }
 .first-run .get-started { margin-top: 12px; }
 .first-run.permissions { flex: none; padding: 0; overflow: visible; justify-content: flex-start; align-items: stretch; }
 .version-card { gap: 14px; }

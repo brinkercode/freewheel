@@ -142,9 +142,15 @@ impl Default for JogSettings {
             threshold: 1,
             shuttle_max_rate_hz: None,
         };
+        // A fresh setup: every wheel button (SHTL, JOG, SCRL) scrolls, as
+        // the design handoff's prototype starts.
         JogSettings {
             default_mode: JogMode::Scroll,
-            per_mode: BTreeMap::from([(JogMode::Scroll, scroll)]),
+            per_mode: BTreeMap::from([
+                (JogMode::Shuttle, scroll.clone()),
+                (JogMode::Jog, scroll.clone()),
+                (JogMode::Scroll, scroll),
+            ]),
         }
     }
 }
@@ -812,6 +818,9 @@ mod tests {
         assert_eq!(c.version, 1);
         assert!(c.layers.iter().all(|l| l.bindings.is_empty()));
         assert_eq!(c.jog.default_mode, JogMode::Scroll);
+        for mode in [JogMode::Shuttle, JogMode::Jog] {
+            assert_eq!(c.jog.per_mode[&mode], c.jog.per_mode[&JogMode::Scroll]);
+        }
         let scroll = &c.jog.per_mode[&JogMode::Scroll];
         assert_eq!(scroll.left, Some(Action::Scroll { amount: -1 }));
         assert_eq!(scroll.right, Some(Action::Scroll { amount: 1 }));

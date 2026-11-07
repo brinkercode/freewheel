@@ -337,6 +337,12 @@ fn main() {
             Ok(())
         })
         .on_page_load(move |webview, payload| {
+            if simulate
+                && webview.label() == "main"
+                && payload.event() == tauri::webview::PageLoadEvent::Finished
+            {
+                let _ = webview.eval(simulate::SIMULATE_FLAG_SCRIPT);
+            }
             if smoke
                 && webview.label() == "main"
                 && payload.event() == tauri::webview::PageLoadEvent::Finished

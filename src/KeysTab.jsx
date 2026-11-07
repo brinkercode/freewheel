@@ -295,6 +295,7 @@ export default function KeysTab({
   status = null,
   onWheel,
   onToast,
+  record = null,
 }) {
   const [config, setConfig] = useState(initial);
   const [page, setPage] = useState(initial?.base_layer ?? null);
@@ -312,6 +313,12 @@ export default function KeysTab({
     const unlisten = onKeyPressed((p) => handlePress(p, { select: setSelected, setChip, timer }));
     return () => unlisten.then((stop) => stop(), () => {});
   }, [initial]);
+  // The Simulator's "Record a key" (--simulate only): that key's panel, recording.
+  const [rec, setRec] = useState(null);
+  useEffect(() => {
+    if (record) (setSelected(record.key), setRec(record));
+  }, [record]);
+  const pickKey = (k) => (setRec(null), setSelected(k));
   if (!config) return null;
 
   const commit = (next) =>
@@ -375,20 +382,21 @@ export default function KeysTab({
               selected={selected}
               pressed={chip ? selected : null}
               dim={!found}
-              onSelect={setSelected}
+              onSelect={pickKey}
               onWheel={onWheel}
             />
           </div>
         ) : (
           <div className="list-scroll">
-            <ButtonList config={config} page={page} selected={selected} onSelect={setSelected} />
+            <ButtonList config={config} page={page} selected={selected} onSelect={pickKey} />
           </div>
         )}
       </div>
       <aside className="side-panel" data-screen-label="What should this key do">
         <ActionEditor
-          key={`${page}-${selected}`}
+          key={`${page}-${selected}-${rec?.key === selected ? rec.n : 0}`}
           keyName={selected}
+          recording={rec?.key === selected}
           page={page}
           initialConfig={config}
           save={save}

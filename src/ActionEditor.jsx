@@ -364,10 +364,11 @@ export function KeyPanel({
   back = null,
   initialMode = null,
   initialError = null,
+  initialListen = false,
 }) {
   const boundKind = KIND_ROWS.find((k) => action && k in action) ?? (action ? null : "Clear");
   const [mode, setMode] = useState(initialMode);
-  const [listen, setListen] = useState(false);
+  const [listen, setListen] = useState(initialListen);
   const [combo, setCombo] = useState(comboOf(action));
   const [error, setError] = useState(initialError);
   const [errors, setErrors] = useState({});
@@ -604,6 +605,7 @@ export default function ActionEditor({
   onWheel,
   onShowPage,
   back = null,
+  recording = false,
 }) {
   const [config, setConfig] = useState(initialConfig);
   const layerId = page ?? config?.base_layer;
@@ -641,6 +643,8 @@ export default function ActionEditor({
       onSaveAction={(action) => saveAction({ config, layerId, key: keyName, action, save }).then(saved)}
       onClear={() => commit(withoutBinding(config, layerId, keyName), save, `key ${keyName}`).then(saved)}
       onCreatePage={createPage}
+      initialMode={recording ? "Hotkey" : null}
+      initialListen={recording}
     />
   );
 }

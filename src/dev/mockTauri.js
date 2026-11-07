@@ -11,6 +11,7 @@
 //   ?perm=missing          a macOS permission is missing
 //   ?appearance=Light|Dark|System  the Appearance setting (default System)
 //   ?empty=1               an empty setup: one page, nothing set
+//   ?simulate=1            as in --simulate: the Simulator harness drives it (__fwEmit)
 
 const params = new URLSearchParams(globalThis.location?.search ?? "");
 
@@ -72,8 +73,9 @@ export function sampleConfig() {
         ],
     jog: {
       default_mode: "Jog",
+      // An empty setup scrolls on every wheel button, as the default config (config.rs).
       per_mode: empty
-        ? {}
+        ? Object.fromEntries(["Shuttle", "Jog", "Scroll"].map((m) => [m, binding({ Scroll: { amount: -1 } }, { Scroll: { amount: 1 } })]))
         : {
             Shuttle: binding(hotkey("Left"), hotkey("Right")),
             Jog: binding({ Scroll: { amount: -1 } }, { Scroll: { amount: 1 } }),
@@ -153,6 +155,9 @@ export function installMockTauri(win = window) {
   // Simulated key press from the console: __fwPress("Cut", "CUT").
   win.__fwPress = (key, label = key.toUpperCase()) =>
     (listeners["key-pressed"] ?? []).forEach((f) => f({ payload: { key, label } }));
+  // The Simulator harness (src/dev/simHarness.jsx) emits the simulate-only events.
+  win.__fwEmit = (event, payload) => (listeners[event] ?? []).forEach((f) => f({ payload }));
+  if (params.get("simulate") === "1") win.__FREEWHEEL_SIMULATE__ = true;
   const storage = win.localStorage;
   if (params.get("firstrun") === "1") storage.removeItem("freewheel.first-run-done");
   else storage.setItem("freewheel.first-run-done", "1");

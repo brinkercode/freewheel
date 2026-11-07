@@ -144,3 +144,13 @@ test("the Keys tab edits the selected key on the selected page", () => {
   expect(html).toContain("Right now: Turns the wheel into a brightness knob");
   expect(text(html)).not.toMatch(/layer/i);
 });
+
+test("the Simulator's Record a key opens the key panel on Press a shortcut, recording", () => {
+  const cfg = { version: 1, base_layer: "base", layers: [{ id: "base", name: "Main", bindings: {} }] };
+  const idle = renderToString(<ActionEditor keyName="Cut" initialConfig={cfg} />);
+  expect(idle).not.toContain("record-box");
+  const html = renderToString(<ActionEditor keyName="Cut" initialConfig={cfg} recording />);
+  expect(html).toContain("All choices");
+  expect(html).toContain("record-box");
+  expect(html).toContain("When you press CUT, freewheel presses this");
+});

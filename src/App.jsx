@@ -24,6 +24,7 @@ import {
   setEnabled,
   setStartAtLogin,
 } from "./settingsApi.js";
+import { listenSimulate } from "./simulateEvents.js";
 import { TABS, finishFirstRun, firstRunDone, fromStatusEvent, showToast, switchOn } from "./shell.js";
 
 export default function App({ autoUpdate = true, storage = globalThis.localStorage }) {
@@ -47,6 +48,7 @@ function Settings({ autoUpdate, storage }) {
   const [firstRun, setFirstRun] = useState(() => !firstRunDone(storage));
   const [fixing, setFixing] = useState(false);
   const [toast, setToast] = useState(null);
+  const [record, setRecord] = useState(null);
   const pending = useRef(null);
   const toastTimer = useRef(null);
   const say = (text) => {
@@ -72,6 +74,19 @@ function Settings({ autoUpdate, storage }) {
     const unlisten = [onStatus(setStatus), onFixPermissions(() => setFixing(true))];
     return () => unlisten.forEach((u) => u.then((stop) => stop(), () => {}));
   }, []);
+  // --simulate only (src/simulateEvents.js): the Simulator's "Record a key" and "New version".
+  useEffect(
+    () =>
+      listenSimulate({
+        onRecordKey: (key) => {
+          setFixing(false);
+          setTab("Keys");
+          setRecord((r) => ({ key, n: (r?.n ?? 0) + 1 }));
+        },
+        onUpdate: (u) => setUpdate(u ?? null),
+      }),
+    [],
+  );
   const state = fromStatusEvent(status ?? { connection: "Absent" });
   // A failed switch is an error that needs action: it is logged, never toasted.
   const turn = (on) =>
@@ -119,13 +134,13 @@ function Settings({ autoUpdate, storage }) {
         />
         <UpdateBanner
           update={update}
-          onInstall={() => download(pending.current, setUpdate)}
+          onInstall={() => pending.current && download(pending.current, setUpdate)}
           onLater={() => setUpdate(null)}
-          onRestart={() => restart(pending.current, relaunch, setUpdate)}
+          onRestart={() => pending.current && restart(pending.current, relaunch, setUpdate)}
         />
         {status && <NoticeBar state={state} onFix={() => setFixing(true)} onTurnOn={() => turn(true)} />}
         <div className="app-body">
-          {tab === "Keys" && <KeysTab status={status} onWheel={() => setTab("Wheel")} onToast={say} />}
+          {tab === "Keys" && <KeysTab status={status} record={record} onWheel={() => setTab("Wheel")} onToast={say} />}
           {tab === "Wheel" && <WheelTab status={status} />}
           {tab === "DaVinci Resolve" && <ResolveTab settings={config?.settings} onSetting={onSetting} />}
           {tab === "General" && (

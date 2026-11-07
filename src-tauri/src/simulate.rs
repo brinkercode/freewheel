@@ -320,8 +320,19 @@ pub fn window_spot(main_pos: (f64, f64), main_width: f64) -> (f64, f64) {
 }
 
 #[tauri::command]
-pub fn simulate(control: Control, sim: tauri::State<'_, SimHandle>) -> Result<SimStatus, String> {
-    sim.apply(control)
+pub fn simulate(
+    control: Control,
+    sim: tauri::State<'_, SimHandle>,
+    app: tauri::AppHandle,
+) -> Result<SimStatus, String> {
+    use tauri::Emitter;
+    let steps_update = control == Control::StepUpdate;
+    let status = sim.apply(control)?;
+    if steps_update {
+        // The settings window's banner follows "New version".
+        let _ = app.emit_to("main", SIM_UPDATE_EVENT, &status.update);
+    }
+    Ok(status)
 }
 
 /// A screen of the app the Simulator window's "Jump to" opens, named as
@@ -332,8 +343,8 @@ pub enum Jump {
     Settings,
     /// The first-run flow: its done flag cleared, the window reloaded.
     FirstRun,
-    /// Keys tab, CUT selected, "Press a shortcut" listening (best effort:
-    /// it clicks the settings window's own controls).
+    /// Keys tab, CUT selected, its key panel recording a shortcut (the
+    /// settings window hears [`SIM_RECORD_KEY_EVENT`]).
     RecordKey,
     /// The OS colour scheme the settings window follows on "System".
     Light,
@@ -360,30 +371,29 @@ impl std::str::FromStr for Jump {
     }
 }
 
+/// Simulate-only event to the settings window: open the key panel of the
+/// named key, recording a shortcut (src/simulateEvents.js).
+pub const SIM_RECORD_KEY_EVENT: &str = "sim-record-key";
+/// Simulate-only event to the settings window: the update banner's state
+/// (`null` hides it), as the Simulator's "New version" steps it.
+pub const SIM_UPDATE_EVENT: &str = "sim-update";
+/// The key "Record a key" opens.
+pub const RECORD_KEY: &str = "Cut";
+/// What the settings window runs on each page load in --simulate: the flag
+/// its simulate-only listeners check (src/simulateEvents.js).
+pub const SIMULATE_FLAG_SCRIPT: &str = "window.__FREEWHEEL_SIMULATE__ = true;";
+
 /// The webview's localStorage key of the first-run flag (src/shell.js).
 pub const FIRST_RUN_DONE: &str = "freewheel.first-run-done";
 
 /// The script a jump runs in the settings window, if any.
 pub fn jump_script(jump: Jump) -> Option<String> {
     match jump {
-        Jump::Settings | Jump::Quit => None,
+        Jump::Settings | Jump::Quit | Jump::RecordKey => None,
         Jump::Reload => Some("location.reload();".into()),
         Jump::FirstRun => Some(format!(
             "localStorage.removeItem({FIRST_RUN_DONE:?}); location.reload();"
         )),
-        Jump::RecordKey => Some(
-            r#"(() => {
-  const byText = (sel, text) => [...document.querySelectorAll(sel)].find((e) => e.textContent.trim().startsWith(text));
-  const tab = byText('[role="tab"], nav button, header button', "Keys");
-  if (tab) tab.click();
-  setTimeout(() => {
-    const key = document.querySelector('[data-key="Cut"]') || byText("button", "CUT");
-    if (key) key.click();
-    setTimeout(() => { const s = byText("button", "Press a shortcut"); if (s) s.click(); }, 150);
-  }, 150);
-})();"#
-                .to_string(),
-        ),
         Jump::Light | Jump::Dark => Some(format!(
             "document.documentElement.dataset.theme = {:?};",
             if jump == Jump::Dark { "dark" } else { "light" }
@@ -410,6 +420,11 @@ pub fn sim_jump(to: String, app: tauri::AppHandle) -> Result<(), String> {
     }
     if let Some(script) = jump_script(to) {
         window.eval(&script).map_err(|e| e.to_string())?;
+    }
+    if to == Jump::RecordKey {
+        use tauri::Emitter;
+        app.emit_to("main", SIM_RECORD_KEY_EVENT, RECORD_KEY)
+            .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -615,17 +630,26 @@ mod tests {
         assert!(jump_script(Jump::Settings).is_none());
         assert!(jump_script(Jump::Quit).is_none());
         assert_eq!(jump_script(Jump::Reload).unwrap(), "location.reload();");
-        assert!(
-            jump_script(Jump::RecordKey)
-                .unwrap()
-                .contains("Press a shortcut")
-        );
+        assert!(jump_script(Jump::RecordKey).is_none());
     }
 
     #[test]
     fn the_simulator_window_sits_right_of_the_settings_window() {
         assert_eq!(window_spot((100.0, 50.0), 1000.0), (1108.0, 50.0));
         assert_eq!(window_spot((0.0, -20.0), 800.0), (808.0, 0.0));
+    }
+
+    #[test]
+    fn the_simulate_events_match_the_frontend() {
+        let js = include_str!("../../src/simulateEvents.js");
+        for name in [
+            SIM_RECORD_KEY_EVENT,
+            SIM_UPDATE_EVENT,
+            "__FREEWHEEL_SIMULATE__",
+        ] {
+            assert!(js.contains(name), "{name}");
+        }
+        assert!(SIMULATE_FLAG_SCRIPT.contains("__FREEWHEEL_SIMULATE__"));
     }
 
     #[test]
