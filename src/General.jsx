@@ -88,7 +88,7 @@ export function updateButton(update, { onCheck, onDownload, onRestart } = {}) {
   return { label: status === "error" ? "Try again" : "Check for updates", onClick: onCheck, disabled: !onCheck };
 }
 
-export default function General({ settings, onSetting, startAtLogin, onStartAtLogin, version, update, onCheck, onDownload, onRestart }) {
+export default function General({ settings, onSetting, startAtLogin, onStartAtLogin, version, update, onCheck, onDownload, onRestart, trayHint = null }) {
   const appearance = settings?.appearance ?? "System";
   const button = updateButton(update, { onCheck, onDownload, onRestart });
   return (
@@ -125,6 +125,13 @@ export default function General({ settings, onSetting, startAtLogin, onStartAtLo
           <div className="card-title grow">Start freewheel when I log in</div>
           <Switch label="Start freewheel when I log in" on={startAtLogin} onChange={onStartAtLogin} />
         </section>
+        {/* Linux without a tray host (GNOME without the AppIndicator extension): say where the tray menu went. */}
+        {trayHint && (
+          <section className="card card-stack" aria-label="Tray">
+            <div className="card-title">No tray icon</div>
+            <div className="card-sub">{trayHint}</div>
+          </section>
+        )}
         <section className="card card-stack version-card">
           <div className="row">
             <div className="grow">

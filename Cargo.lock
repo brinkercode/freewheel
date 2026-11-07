@@ -1135,7 +1135,9 @@ dependencies = [
  "enigo",
  "flate2",
  "freewheel-core",
+ "gdk-pixbuf",
  "hidapi",
+ "libc",
  "minisign-verify",
  "objc2",
  "objc2-app-kit",
@@ -1159,6 +1161,8 @@ dependencies = [
  "windows 0.61.3",
  "windows-sys 0.61.2",
  "wmi",
+ "x11rb",
+ "zbus",
  "zip",
 ]
 

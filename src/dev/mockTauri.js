@@ -209,6 +209,7 @@ export function installMockTauri(win = window) {
       onEvent.onmessage({ event: "Finished" });
       return null;
     },
+    desktop_hints: () => ({ tray: null }),
     update_install: () => {
       if (!updates.offer) throw "nothing: no update to download or install";
       updates.current = updates.offer;

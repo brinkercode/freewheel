@@ -59,6 +59,9 @@ export const setEnabled = (on) => invoke("set_enabled", { on });
 /** @returns {Promise<boolean>} whether the OS login item is registered now. */
 export const getStartAtLogin = () => invoke("get_start_at_login");
 
+// What this desktop's user should know: `{ tray }` is the Linux no-tray-host hint, or null.
+export const getDesktopHints = () => invoke("desktop_hints");
+
 /** Sets the OS login item and the config; resolves to what the OS has now. */
 export const setStartAtLogin = (on) => invoke("set_start_at_login", { on });
 

@@ -1,5 +1,7 @@
-//! The macOS permission checks behind the tray's 'Needs permission' state and
-//! the settings window's Permissions section, and `open_permission_pane`.
+//! The permission checks behind the tray's 'Needs permission' state and
+//! the settings window's Permissions section, and `open_permission_pane`:
+//! macOS's privacy panes, and on Linux freewheel's device rule
+//! (linux_udev.rs), which `open_permission_pane` installs.
 //! Input Monitoring is checked too: see ADR-002 in `freewheel_core::permissions`.
 //!
 //! P5, macOS 15: with Accessibility and Input Monitoring revoked the tray
@@ -10,12 +12,17 @@
 
 use std::collections::BTreeMap;
 
-use freewheel_core::permissions::{Grant, Permission, Permissions, check_all, status_line};
+use freewheel_core::permissions::{
+    Grant, Permission, Permissions, check_all, check_each, status_line,
+};
 
-/// The permissions this OS needs; none outside macOS.
+/// The permissions this OS needs: macOS's two, Linux's device rule, none
+/// on Windows.
 pub fn current() -> Permissions {
     if cfg!(target_os = "macos") {
         check_all(granted)
+    } else if cfg!(target_os = "linux") {
+        check_each(Permission::LINUX, granted)
     } else {
         Permissions::new()
     }
@@ -37,10 +44,16 @@ fn granted(permission: Permission) -> bool {
     match permission {
         Permission::Accessibility => unsafe { AXIsProcessTrusted() != 0 },
         Permission::InputMonitoring => unsafe { IOHIDCheckAccess(LISTEN_EVENT) == ACCESS_GRANTED },
+        Permission::DeviceAccess => true,
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
+fn granted(permission: Permission) -> bool {
+    permission != Permission::DeviceAccess || crate::linux_udev::granted()
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn granted(_permission: Permission) -> bool {
     true
 }
@@ -102,6 +115,7 @@ fn pane_label(permission: Permission) -> &'static str {
     match permission {
         Permission::Accessibility => "Accessibility",
         Permission::InputMonitoring => "Input Monitoring",
+        Permission::DeviceAccess => "Device rule",
     }
 }
 
@@ -128,6 +142,10 @@ pub fn open_pane_for<R: tauri::Runtime>(
     if app.try_state::<crate::simulate::SimHandle>().is_some() {
         return simulated_pane(permission).map(Some);
     }
+    #[cfg(target_os = "linux")]
+    if Permission::from_name(permission) == Some(Permission::DeviceAccess) {
+        return crate::linux_udev::install().map(Some);
+    }
     open_pane_with(&AppOpener(app), permission).map(|()| None)
 }
 
@@ -145,10 +163,34 @@ pub fn open_permission_pane(
     result
 }
 
+/// The Linux desktops' Bluetooth settings (GNOME, KDE Plasma, Blueman),
+/// each a program and its argument.
+pub const LINUX_BLUETOOTH: [(&str, &str); 3] = [
+    ("gnome-control-center", "bluetooth"),
+    ("systemsettings", "kcm_bluetooth"),
+    ("blueman-manager", ""),
+];
+
+/// The first of `programs` found in `path` (a `PATH` value).
+pub fn first_in_path<'a>(
+    programs: &[(&'a str, &'a str)],
+    path: &std::ffi::OsStr,
+) -> Option<(&'a str, &'a str)> {
+    programs
+        .iter()
+        .copied()
+        .find(|(program, _)| std::env::split_paths(path).any(|dir| dir.join(program).is_file()))
+}
+
 /// The program and URL that open the OS Bluetooth settings, with no shell:
 /// System Settings > Bluetooth on macOS 13+, Settings > Bluetooth & devices
-/// on Windows; none elsewhere.
+/// on Windows, the desktop's Bluetooth settings on Linux.
 pub fn bluetooth_settings() -> Result<(&'static str, &'static str), String> {
+    if cfg!(target_os = "linux") {
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        return first_in_path(&LINUX_BLUETOOTH, &path)
+            .ok_or_else(|| "no Bluetooth settings app found (GNOME, KDE or Blueman)".into());
+    }
     if cfg!(target_os = "macos") {
         Ok((
             "/usr/bin/open",
@@ -157,7 +199,7 @@ pub fn bluetooth_settings() -> Result<(&'static str, &'static str), String> {
     } else if cfg!(windows) {
         Ok(("explorer.exe", "ms-settings:bluetooth"))
     } else {
-        Err("Bluetooth settings open only on macOS and Windows".into())
+        Err("Bluetooth settings open only on macOS, Windows and Linux".into())
     }
 }
 
@@ -166,7 +208,7 @@ pub fn bluetooth_settings() -> Result<(&'static str, &'static str), String> {
 pub fn open_bluetooth_settings() -> Result<(), String> {
     let result = bluetooth_settings().and_then(|(program, url)| {
         std::process::Command::new(program)
-            .arg(url)
+            .args((!url.is_empty()).then_some(url))
             .spawn()
             .map(drop)
             .map_err(|e| format!("{program} {url}: {e}"))
@@ -264,10 +306,27 @@ mod tests {
             );
         } else if cfg!(windows) {
             assert_eq!(target.unwrap(), ("explorer.exe", "ms-settings:bluetooth"));
-        } else {
-            assert!(target.is_err());
-            assert!(open_bluetooth_settings().is_err());
+        } else if let Ok(t) = target {
+            assert!(LINUX_BLUETOOTH.contains(&t));
         }
+    }
+
+    #[test]
+    fn linux_opens_the_first_bluetooth_settings_app_it_finds() {
+        let dir = tempfile::tempdir().unwrap();
+        let path =
+            std::env::join_paths([dir.path().join("none"), dir.path().to_path_buf()]).unwrap();
+        assert_eq!(first_in_path(&LINUX_BLUETOOTH, &path), None);
+        std::fs::write(dir.path().join("systemsettings"), "").unwrap();
+        assert_eq!(
+            first_in_path(&LINUX_BLUETOOTH, &path),
+            Some(("systemsettings", "kcm_bluetooth"))
+        );
+        std::fs::write(dir.path().join("gnome-control-center"), "").unwrap();
+        assert_eq!(
+            first_in_path(&LINUX_BLUETOOTH, &path),
+            Some(("gnome-control-center", "bluetooth"))
+        );
     }
 
     #[test]
@@ -348,10 +407,26 @@ mod tests {
         );
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(windows)]
     #[test]
-    fn only_macos_needs_permissions() {
+    fn windows_needs_no_permissions() {
         assert!(current().is_empty());
+        let app = tauri::test::mock_app();
+        assert!(open_pane_for(app.handle(), "Accessibility").is_err());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_needs_only_the_device_rule() {
+        let p = current();
+        assert_eq!(
+            p.keys().copied().collect::<Vec<_>>(),
+            [Permission::DeviceAccess]
+        );
+        assert_eq!(
+            to_ui(&p).keys().copied().collect::<Vec<_>>(),
+            ["DeviceAccess"]
+        );
         let app = tauri::test::mock_app();
         assert!(open_pane_for(app.handle(), "Accessibility").is_err());
     }

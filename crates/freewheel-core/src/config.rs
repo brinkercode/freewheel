@@ -217,8 +217,12 @@ pub enum Appearance {
 
 impl Default for Settings {
     fn default() -> Self {
+        // The process DaVinci Resolve runs as: Resolve.exe, Resolve.app's
+        // Resolve, and /opt/resolve/bin/resolve on Linux.
         let resolve = if cfg!(windows) {
             "Resolve.exe"
+        } else if cfg!(target_os = "linux") {
+            "resolve"
         } else {
             "Resolve"
         };

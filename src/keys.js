@@ -117,6 +117,7 @@ export function describeAction(action, config) {
 }
 
 const MAC = /Mac/.test(globalThis.navigator?.userAgent ?? "");
+const LINUX = /Linux/.test(globalThis.navigator?.userAgent ?? "") && !/Android/.test(globalThis.navigator?.userAgent ?? "");
 const MOD = MAC ? "Meta" : "Ctrl";
 // The prototype's named shortcuts: a combo shows by its name, like "Undo".
 const NAMED_COMBOS = [
@@ -128,8 +129,8 @@ const NAMED_COMBOS = [
   ...Object.entries(MEDIA_NAMES).map(([key, name]) => [name, [], key]),
 ];
 const MAC_KEYS = { Meta: "⌘", Ctrl: "⌃", Shift: "⇧", Alt: "⌥" };
-/** A key as the prototype's kn() names it: ⌘ ⌃ ⇧ ⌥ on a Mac, Ctrl Shift Alt Win elsewhere. */
-export const keyName = (k) => MEDIA_NAMES[k] ?? (MAC ? MAC_KEYS[k] : { Meta: "Win" }[k]) ?? k;
+/** A key as the prototype's kn() names it: ⌘ ⌃ ⇧ ⌥ on a Mac, Ctrl Shift Alt Win on Windows (Super on Linux). */
+export const keyName = (k) => MEDIA_NAMES[k] ?? (MAC ? MAC_KEYS[k] : { Meta: LINUX ? "Super" : "Win" }[k]) ?? k;
 /** The combo's keys, each named as keyName does. */
 export const comboKeys = (combo) => [...combo.modifiers, combo.key].filter(Boolean).map(keyName);
 /** "Ctrl + Z" (the prototype's combo with a separator). */
@@ -146,14 +147,16 @@ export function appName(path) {
   const p = (path ?? "").trim();
   if (/^(https?:\/\/|www\.)|^[a-z0-9-]+(\.[a-z0-9-]+)+(\/.*)?$/i.test(p)) return p.replace(/^https?:\/\//, "").replace(/\/$/, "");
   const base = p.split(/[\\/]/).filter(Boolean).pop() ?? "";
-  const name = base.replace(/\.(exe|app|lnk|bat|cmd)$/i, "");
+  let name = base.replace(/\.(exe|app|lnk|bat|cmd|AppImage)$/i, "");
+  // A Linux desktop entry: "org.gnome.Nautilus.desktop" is Nautilus.
+  if (/\.desktop$/i.test(name)) name = name.replace(/\.desktop$/i, "").split(".").pop();
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
 /** What a LaunchApp opens: the website it opens in the browser, else the app's name. */
 export function launchName(v) {
-  // A website, a Start Menu shortcut or a .app opens through the OS opener: name what it opens.
-  if (/(^|[\\/])(explorer\.exe|open)$/i.test(v.path) && v.args?.[0]) return appName(v.args[0]);
+  // A website, a Start Menu shortcut, a .app or a Linux file opens through the OS opener: name what it opens.
+  if (/(^|[\\/])(explorer\.exe|open|xdg-open)$/i.test(v.path) && v.args?.[0]) return appName(v.args[0]);
   return appName(v.path);
 }
 

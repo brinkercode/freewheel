@@ -27,6 +27,7 @@ test("the settings window may call exactly the commands its UI invokes", () => {
     "app_icons",
     "app_version",
     "choose_app",
+    "desktop_hints",
     "exit_wheel_override",
     "export_logs",
     "export_mappings",
