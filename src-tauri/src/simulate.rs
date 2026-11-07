@@ -45,12 +45,9 @@ impl SimHandle {
         }
     }
 
+    #[cfg(test)]
     pub fn apply(&self, control: Control) -> Result<SimStatus, String> {
-        let (tx, rx) = mpsc::channel();
-        self.tx
-            .send(Msg::Ui(control, tx))
-            .map_err(|e| e.to_string())?;
-        rx.recv().map_err(|e| e.to_string())
+        apply_on(&self.tx, control, REPLY_TIMEOUT)
     }
 
     /// The sending end, for a control applied off the calling thread.
@@ -373,15 +370,24 @@ pub fn window_spot(main_pos: (f64, f64), main_width: f64) -> (f64, f64) {
     (main_pos.0 + main_width + 8.0, main_pos.1.max(0.0))
 }
 
+/// Async, so it never runs on the main thread: the session's sink updates
+/// the tray, which waits for the main thread, so a sync command waiting
+/// here for the session's answer deadlocked the whole app (both windows
+/// froze right after the Simulator window's first `Status`). The wait
+/// itself runs on a blocking worker.
 #[tauri::command]
-pub fn simulate(
+pub async fn simulate(
     control: Control,
     sim: tauri::State<'_, SimHandle>,
     app: tauri::AppHandle,
 ) -> Result<SimStatus, String> {
     use tauri::Emitter;
     let steps_update = control == Control::StepUpdate;
-    let status = sim.apply(control)?;
+    let tx = sim.sender();
+    let status =
+        tauri::async_runtime::spawn_blocking(move || apply_on(&tx, control, REPLY_TIMEOUT))
+            .await
+            .map_err(|e| e.to_string())??;
     if steps_update {
         // The settings window's banner follows "New version".
         let _ = app.emit_to("main", SIM_UPDATE_EVENT, &status.update);
