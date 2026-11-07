@@ -1717,7 +1717,7 @@ async function main() {
       await sleep(500);
       if (JSON.stringify(await readConfig()) !== before) throw new Error("the bad file changed the config");
     });
-    await step("data: open by full path runs a .cmd with its args in its cwd (send for real)", async () => {
+    await step("data: open by full path runs a .cmd with its args in its cwd (Do actions for real)", async () => {
       const marker = resolve(dialogs, "marker.cmd");
       const cwd = resolve(dialogs, "start here");
       const result = resolve(dialogs, "marker.txt");
@@ -1743,8 +1743,7 @@ async function main() {
         if (!ok) throw new Error(JSON.stringify(b));
         return true;
       });
-      await click("simulator", ".fw-sim-switch input");
-      await shows("simulator", "Shortcuts reach the apps you have open.");
+      await setReal(true);
       try {
         await pressKey("Cam4");
         const end = Date.now() + 15000;
@@ -1756,9 +1755,9 @@ async function main() {
         }
         say(`  marker.txt: ${JSON.stringify(got)}`);
         if (got.toLowerCase() !== `hello world|second|${cwd}`.toLowerCase()) throw new Error(`marker.cmd wrote ${JSON.stringify(got)}`);
+        await lineWith("launched \"marker\" ok", "marker.cmd");
       } finally {
-        await click("simulator", ".fw-sim-switch input");
-        await shows("simulator", "Off: shortcuts only show up in the log.");
+        await setReal(false);
       }
     }, ["simulator", "settings"]);
     for (const [name, text, error] of [
