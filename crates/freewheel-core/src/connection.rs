@@ -57,6 +57,8 @@ pub struct ConnectionManager<T, O, C, F> {
     idle_reauth: Option<Duration>,
     last_activity: Instant,
     diag: Recorder,
+    /// Successful authentications (connects and re-auths) so far.
+    session: u64,
 }
 
 impl<T, O, C, F> ConnectionManager<T, O, C, F>
@@ -81,7 +83,16 @@ where
             idle_reauth: None,
             last_activity: now,
             diag: Recorder::new(now),
+            session: 0,
         }
+    }
+
+    /// Counts successful authentications (connects and re-auths, idle ones
+    /// included). A device that slept or was reset by another app comes back
+    /// with its LEDs off, so whoever owns the output state sends it again
+    /// when this changes.
+    pub fn session(&self) -> u64 {
+        self.session
     }
 
     /// Re-runs the handshake after `idle` without input (see [`IDLE_REAUTH`]).
@@ -186,6 +197,7 @@ where
                     }
                     self.diag.auth_passed(session, self.clock.now());
                     self.last_activity = self.clock.now();
+                    self.session += 1;
                 }
                 Err(e) => {
                     let took = self.clock.now().saturating_duration_since(now);
@@ -260,6 +272,7 @@ where
         }
         self.last_activity = self.clock.now();
         self.handle = Some(t);
+        self.session += 1;
         self.set_status(ConnectionStatus::Connected, events);
         self.diag.connected();
         events.push(ConnectionEvent::Device(DeviceEvent::Connected));
@@ -432,6 +445,36 @@ mod tests {
         assert_eq!(m.tick(T), []);
         assert_eq!(dev.writes(), 6);
         assert_eq!(m.status(), Some(Connected));
+    }
+
+    #[test]
+    fn session_counts_connects_and_reauths_and_writes_need_a_device() {
+        let (f, clock) = setup();
+        let bad = Shared::default();
+        bad.handshake(5);
+        f.plug(&bad);
+        let mut m = manager(&f, &clock);
+        assert_eq!(m.tick(T), [Status(AuthFailed)]);
+        assert_eq!(m.session(), 0);
+        assert_eq!(m.write(&[0x02, 0, 0, 0, 0]), Err(HidError::Disconnected));
+
+        let dev = Shared::default();
+        dev.handshake(300);
+        f.plug(&dev);
+        clock.advance(RETRY_INTERVAL);
+        assert_eq!(m.tick(T), CONNECTED);
+        assert_eq!(m.session(), 1);
+        assert_eq!(m.write(&[0x02, 1, 0, 0, 0]), Ok(()));
+        assert_eq!(dev.writes(), 4);
+
+        // A read without a re-auth keeps the session; the re-auth starts one.
+        dev.timeouts(1);
+        m.tick(T);
+        assert_eq!(m.session(), 1);
+        clock.advance(Duration::from_secs(290));
+        dev.handshake(300).timeouts(1);
+        m.tick(T);
+        assert_eq!(m.session(), 2);
     }
 
     #[test]

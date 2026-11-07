@@ -266,10 +266,13 @@ export function drawingLabels(config, page) {
 }
 
 /** The Speed Editor drawn as it looks; click a key to change it, the wheel to set it up. */
-export function DeviceDrawing({ config, page, selected, pressed = null, dim = false, onSelect, onWheel }) {
+export function DeviceDrawing({ config, page, selected, pressed = null, dim = false, lit: deviceLit = null, onSelect, onWheel }) {
   const labels = drawingLabels(config, page);
-  const live = liveButton(config);
-  const lit = [live].filter(Boolean);
+  // While connected the drawing lights what the device lights (status.lit:
+  // page key, latched keys, override key, wheel button); otherwise the wheel
+  // button the config starts in.
+  const lit = deviceLit ?? [liveButton(config)].filter(Boolean);
+  const live = WHEEL_KEYS.find((k) => lit.includes(k)) ?? liveButton(config);
   const wheel = { button: LABELS[live] ?? "JOG", does: live ? buttonDoes(config, live) : "Scrolls" };
   const click = (e) => {
     const key = e.target.closest?.("[data-binding]")?.dataset.binding;
@@ -394,6 +397,7 @@ export default function KeysTab({
               selected={selected}
               pressed={chip ? selected : null}
               dim={!found}
+              lit={status?.connection === "Connected" ? (status.lit ?? null) : null}
               onSelect={pickKey}
               onWheel={onWheel}
             />

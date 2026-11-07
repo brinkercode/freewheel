@@ -8,7 +8,7 @@ use tracing::{info, warn};
 
 use crate::clock::Clock;
 use crate::config::{Action, Config, JogMode, JogSettings, KeyCombo, Layer, OverrideMode};
-use crate::hid::{HidError, HidTransport};
+use crate::hid::HidError;
 use crate::inject::{InjectError, KeyInjector, Keystroke};
 use crate::launch::{LaunchError, Launcher};
 use crate::report::{
@@ -32,7 +32,8 @@ pub struct Engine {
     /// `push_keys[i]` pushed `layer_stack[i + 1]` and pops it again.
     push_keys: Vec<Key>,
     held: BTreeMap<Key, KeyCombo>,
-    latched: Vec<KeyCombo>,
+    /// Each latched combo with the key that latched it (its LED stays lit).
+    latched: Vec<(Key, KeyCombo)>,
     jog: JogSettings,
     jog_mode: JogMode,
     /// Jog/Scroll ticks not yet worth a threshold; Shuttle: the dial position.
@@ -113,7 +114,9 @@ impl Engine {
         self.jog_value = 0;
         self.last_shuttle_fire = None;
         let held = std::mem::take(&mut self.held).into_values();
-        let latched = std::mem::take(&mut self.latched);
+        let latched = std::mem::take(&mut self.latched)
+            .into_iter()
+            .map(|(_, combo)| combo);
         // Release all of them even if one fails; report the first error.
         held.chain(latched)
             .map(|combo| {
@@ -288,14 +291,14 @@ impl Engine {
                     Ok(())
                 }
                 Some(Action::Latched { combo }) => {
-                    if let Some(i) = self.latched.iter().position(|c| *c == combo) {
+                    if let Some(i) = self.latched.iter().position(|(_, c)| *c == combo) {
                         self.latched.remove(i);
                         log_lone(&combo, Some(*key), "released", "unlatched");
                         combo_up(injector, &combo)
                     } else {
                         combo_down(injector, &combo)?;
                         log_lone(&combo, Some(*key), "latched", "key pressed");
-                        self.latched.push(combo);
+                        self.latched.push((*key, combo));
                         Ok(())
                     }
                 }
@@ -315,6 +318,15 @@ impl Engine {
                     if let Err(e) = launcher.launch(&path, &args) {
                         warn!(%path, error = %e, "app launch failed");
                         self.launch_errors.push(e);
+                    }
+                    Ok(())
+                }
+                // An unbound wheel button switches to its printed mode, as the
+                // Wheel tab shows it (WheelTab.jsx WHEEL_BUTTONS), so its LED
+                // follows on a fresh config too.
+                None => {
+                    if let Some(mode) = natural_jog_mode(*key) {
+                        self.set_jog_mode(mode);
                     }
                     Ok(())
                 }
@@ -386,9 +398,12 @@ impl Engine {
         layer.bindings.get(&format!("{key:?}"))
     }
 
-    /// The LEDs for the current state: the jog mode, the button that pushed
-    /// the current layer (its 'back' button) and the active override's
-    /// toggle button on the current layer.
+    /// The LEDs for the current state (screens-and-components: "lit (amber
+    /// LED: toggle on, active wheel button, wheel-override key)"): the jog
+    /// mode, the button that pushed the current layer (its 'back' button),
+    /// the active override's toggle button on the current layer and every
+    /// key whose Latched (toggle) combo is on, on whatever page. Keys without
+    /// an LED ([`Led::for_key`]) stay dark.
     pub fn leds(&self) -> LedState {
         let push_key = self.push_keys.last().copied();
         let override_key = self.active_override.and_then(|mode| {
@@ -400,8 +415,14 @@ impl Engine {
             buttons: push_key
                 .into_iter()
                 .chain(override_key)
+                .chain(self.latched.iter().map(|(k, _)| *k))
                 .filter_map(Led::for_key)
-                .collect(),
+                .fold(Vec::new(), |mut lit, led| {
+                    if !lit.contains(&led) {
+                        lit.push(led);
+                    }
+                    lit
+                }),
             jog: match self.jog_mode {
                 // The device has no Volume/Brightness LED; they turn like Jog.
                 JogMode::Jog | JogMode::Volume | JogMode::Brightness => JogLed::Jog,
@@ -419,27 +440,70 @@ pub struct LedState {
     pub jog: JogLed,
 }
 
+impl LedState {
+    /// The lit keys by binding name (`"Cam1"`, `"Snap"`, then `"Jog"`,
+    /// `"Shtl"` or `"Scrl"`), as the settings window and the Simulator
+    /// draw them. [`Led`] and [`JogLed`] variants are named as their keys.
+    pub fn names(&self) -> Vec<String> {
+        let buttons = self.buttons.iter().map(|l| format!("{l:?}"));
+        buttons.chain([format!("{:?}", self.jog)]).collect()
+    }
+}
+
+/// Writes one output report to the device
+/// ([`ConnectionManager::write`](crate::connection::ConnectionManager::write)).
+pub type Write<'a> = dyn FnMut(&[u8]) -> Result<(), HidError> + 'a;
+
 /// Writes LED reports to the device, each only when its LEDs change.
+///
+/// Wire format (bmd.py, smunaut/blackmagic-misc, `SpeedEditor.set_leds` /
+/// `set_jog_leds`): output report 0x02 is a little-endian u32 of
+/// [`Led`] bits, output report 0x04 one byte of [`JogLed`] bits; see
+/// [`led_report`] and [`jog_led_report`].
 #[derive(Debug, Default)]
 pub struct LedWriter {
     last: Option<LedState>,
 }
 
 impl LedWriter {
-    pub fn sync(
-        &mut self,
-        leds: &LedState,
-        transport: &mut dyn HidTransport,
-    ) -> Result<(), HidError> {
-        let last = self.last.as_ref();
-        if last.map(|l| &l.buttons) != Some(&leds.buttons) {
-            transport.write(&led_report(&leds.buttons))?;
+    /// Writes the reports whose LEDs differ from the last sync. A failed
+    /// write is returned but not retried until the LEDs change or
+    /// [`reset`](Self::reset), so a device that refuses output reports is
+    /// not hammered every loop turn.
+    pub fn sync(&mut self, leds: &LedState, write: &mut Write<'_>) -> Result<(), HidError> {
+        let last = self.last.replace(leds.clone());
+        let mut result = Ok(());
+        if last.as_ref().map(|l| &l.buttons) != Some(&leds.buttons) {
+            result = write(&led_report(&leds.buttons));
         }
-        if last.map(|l| l.jog) != Some(leds.jog) {
-            transport.write(&jog_led_report(&[leds.jog]))?;
+        if last.as_ref().map(|l| l.jog) != Some(leds.jog) {
+            result = result.and(write(&jog_led_report(&[leds.jog])));
         }
-        self.last = Some(leds.clone());
-        Ok(())
+        result
+    }
+
+    /// Forgets what the device shows, so the next sync writes both reports
+    /// (a new connection or a re-auth).
+    pub fn reset(&mut self) {
+        self.last = None;
+    }
+
+    /// Turns every key and jog LED off (Off, step aside for Resolve, quit)
+    /// and forgets the state, so a later sync lights them again.
+    pub fn clear(&mut self, write: &mut Write<'_>) -> Result<(), HidError> {
+        self.last = None;
+        let keys = write(&led_report(&[]));
+        keys.and(write(&jog_led_report(&[])))
+    }
+}
+
+/// The wheel mode printed on a wheel button.
+fn natural_jog_mode(key: Key) -> Option<JogMode> {
+    match key {
+        Key::Shtl => Some(JogMode::Shuttle),
+        Key::Jog => Some(JogMode::Jog),
+        Key::Scrl => Some(JogMode::Scroll),
+        _ => None,
     }
 }
 
@@ -1262,7 +1326,7 @@ mod tests {
 
     #[test]
     fn led_reports_are_written_only_when_the_leds_change() {
-        use crate::hid::{FakeTransport, Written::Output};
+        use crate::hid::{FakeTransport, HidTransport, Written::Output};
         let mut config = Config::default();
         let bindings = &mut config.layers[0].bindings;
         bindings.insert("Cam1".into(), push("l1"));
@@ -1278,7 +1342,9 @@ mod tests {
         let mut writer = LedWriter::default();
         let mut mock = MockInjector::new();
         let mut l = MockLauncher::new();
-        writer.sync(&engine.leds(), &mut fake).unwrap();
+        writer
+            .sync(&engine.leds(), &mut |r| fake.write(r).map(drop))
+            .unwrap();
         for e in [
             Press(Key::Cut),
             Release(Key::Cut),
@@ -1290,7 +1356,9 @@ mod tests {
             Press(Key::Jog),
         ] {
             engine.handle(&e, &mut mock, &mut l).unwrap();
-            writer.sync(&engine.leds(), &mut fake).unwrap();
+            writer
+                .sync(&engine.leds(), &mut |r| fake.write(r).map(drop))
+                .unwrap();
         }
         assert_eq!(
             fake.written(),
@@ -1304,6 +1372,130 @@ mod tests {
                 Output(vec![0x04, 0x01]),
             ]
         );
+    }
+
+    #[test]
+    fn a_latched_key_is_lit_while_latched_on_every_page_and_dark_after() {
+        let mut engine = layered(
+            &[
+                (Key::Snap, Action::Latched { combo: ctrl_s() }),
+                (Key::Cam1, push("l1")),
+                // No LED on IN: latching it lights nothing.
+                (
+                    Key::In,
+                    Action::Latched {
+                        combo: lone(Modifier::Alt),
+                    },
+                ),
+            ],
+            1,
+            &[],
+        );
+        let mut l = MockLauncher::new();
+        let mut mock = MockInjector::new();
+        engine.handle(&Press(Key::Snap), &mut mock, &mut l).unwrap();
+        engine
+            .handle(&Release(Key::Snap), &mut mock, &mut l)
+            .unwrap();
+        engine.handle(&Press(Key::In), &mut mock, &mut l).unwrap();
+        assert_eq!(engine.leds().buttons, [Led::Snap]);
+        // On another page the modifier is still down, so SNAP stays lit
+        // next to the page key.
+        engine.handle(&Press(Key::Cam1), &mut mock, &mut l).unwrap();
+        assert_eq!(engine.leds().buttons, [Led::Cam1, Led::Snap]);
+        engine.handle(&Press(Key::Cam1), &mut mock, &mut l).unwrap();
+        engine.handle(&Press(Key::Snap), &mut mock, &mut l).unwrap();
+        assert!(engine.leds().buttons.is_empty());
+        // release_all (Off, disconnect, quit) darkens a latch too.
+        engine.handle(&Press(Key::Snap), &mut mock, &mut l).unwrap();
+        assert_eq!(engine.leds().buttons, [Led::Snap]);
+        engine.release_all(&mut mock).unwrap();
+        assert!(engine.leds().buttons.is_empty());
+    }
+
+    #[test]
+    fn a_key_both_latched_and_the_page_key_lights_once() {
+        let mut engine = layered(
+            &[(Key::Cam1, push("l1"))],
+            1,
+            &[(Key::Cam2, Action::Latched { combo: ctrl_s() })],
+        );
+        let mut l = MockLauncher::new();
+        let mut mock = MockInjector::new();
+        engine.handle(&Press(Key::Cam1), &mut mock, &mut l).unwrap();
+        engine.handle(&Press(Key::Cam2), &mut mock, &mut l).unwrap();
+        assert_eq!(engine.leds().buttons, [Led::Cam1, Led::Cam2]);
+        assert_eq!(engine.leds().names(), ["Cam1", "Cam2", "Scrl"]);
+        // Exact 0x02 bytes: CAM1 bit 14 + CAM2 bit 15 (bmd.py SpeedEditorLed).
+        assert_eq!(led_report(&engine.leds().buttons), [0x02, 0, 0xc0, 0, 0]);
+    }
+
+    #[test]
+    fn led_writer_sends_exact_bytes_resets_and_clears() {
+        use crate::hid::{FakeTransport, HidTransport, Written::Output};
+        let mut fake = FakeTransport::new();
+        let mut writer = LedWriter::default();
+        let snap_shtl = LedState {
+            buttons: vec![Led::Snap, Led::AudioOnly],
+            jog: JogLed::Shtl,
+        };
+        writer
+            .sync(&snap_shtl, &mut |r| fake.write(r).map(drop))
+            .unwrap();
+        writer
+            .sync(&snap_shtl, &mut |r| fake.write(r).map(drop))
+            .unwrap();
+        writer.reset();
+        writer
+            .sync(&snap_shtl, &mut |r| fake.write(r).map(drop))
+            .unwrap();
+        writer.clear(&mut |r| fake.write(r).map(drop)).unwrap();
+        writer
+            .sync(&snap_shtl, &mut |r| fake.write(r).map(drop))
+            .unwrap();
+        // SNAP bit 5 = 0x20, AUDIO ONLY bit 17 = byte 3 0x02; SHTL = 0x02.
+        let lit = [
+            Output(vec![0x02, 0x20, 0, 0x02, 0]),
+            Output(vec![0x04, 0x02]),
+        ];
+        let off = [Output(vec![0x02, 0, 0, 0, 0]), Output(vec![0x04, 0])];
+        let expected: Vec<_> = [&lit[..], &lit, &off, &lit].concat();
+        assert_eq!(fake.written(), expected);
+    }
+
+    #[test]
+    fn a_failed_led_write_is_not_retried_until_the_leds_change() {
+        use crate::hid::{FakeTransport, HidTransport};
+        let mut fake = FakeTransport::new();
+        fake.close();
+        let mut writer = LedWriter::default();
+        let jog = LedState {
+            buttons: vec![],
+            jog: JogLed::Jog,
+        };
+        assert_eq!(
+            writer.sync(&jog, &mut |r| fake.write(r).map(drop)),
+            Err(HidError::Closed)
+        );
+        assert_eq!(writer.sync(&jog, &mut |r| fake.write(r).map(drop)), Ok(()));
+    }
+
+    #[test]
+    fn unbound_wheel_buttons_switch_to_their_printed_mode_and_light() {
+        let mut engine = Engine::new(&Config::default());
+        let mut l = MockLauncher::new();
+        let mut mock = MockInjector::new();
+        for (key, mode, led, byte) in [
+            (Key::Shtl, JogMode::Shuttle, JogLed::Shtl, 3),
+            (Key::Jog, JogMode::Jog, JogLed::Jog, 0),
+            (Key::Scrl, JogMode::Scroll, JogLed::Scrl, 0),
+        ] {
+            engine.handle(&Press(key), &mut mock, &mut l).unwrap();
+            assert_eq!(engine.jog_mode(), mode);
+            assert_eq!(engine.leds().jog, led);
+            assert_eq!(engine.take_reports(), [vec![0x03, byte, 0, 0, 0, 0, 0xff]]);
+        }
+        assert!(mock.calls().is_empty());
     }
 
     #[test]

@@ -492,7 +492,8 @@ impl TrayView {
             Update::Layer(_)
             | Update::KeyPressed(_)
             | Update::Override(_)
-            | Update::Diagnostics(_) => return,
+            | Update::Diagnostics(_)
+            | Update::Leds(_) => return,
         }
         let _ = tray.set_tooltip(Some(self.tooltip()));
     }

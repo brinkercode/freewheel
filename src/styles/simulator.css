@@ -90,6 +90,8 @@ html:has(.fw-sim) body { overflow-y: auto; }
   user-select: none;
 }
 .fw-sim-quick button[aria-pressed="true"] { background: #e8e8e6; color: #151618; }
+/* lit on the device (the drawing's lit LED): amber with glow */
+.fw-sim-led { width: 6px; height: 6px; border-radius: 50%; background: #ffb547; box-shadow: 0 0 5px 1px rgba(255, 181, 71, 0.7); }
 
 .fw-sim-line { display: flex; gap: var(--sp-2); }
 .fw-sim-line > button { flex: 1; font-size: var(--fs-small); touch-action: none; user-select: none; }

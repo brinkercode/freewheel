@@ -144,6 +144,9 @@ pub fn updates(before: Option<&SimStatus>, now: &SimStatus) -> Vec<Update> {
     {
         out.push(Update::Override(now.wheel_override));
     }
+    if before.map(|b| &b.lit_leds) != Some(&now.lit_leds) {
+        out.push(Update::Leds(now.lit_leds.clone()));
+    }
     for held in &now.held_keys {
         if before.is_some_and(|b| b.held_keys.contains(held)) {
             continue;
@@ -673,6 +676,8 @@ mod tests {
             charging: false
         })));
         assert!(now.contains(&Mirror::Bus(Some(Bus::Bluetooth))));
+        // The lit wheel button reaches the settings window's drawing.
+        assert!(ups.contains(&Update::Leds(vec!["Scrl".into()])));
 
         key(&sim, "Cut", true);
         assert_eq!(

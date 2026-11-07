@@ -101,6 +101,7 @@ export function sampleStatus() {
     bus: BUS[conn] ?? null,
     paused: params.get("paused") === "1",
     wheel_override: params.get("override") ?? null,
+    lit: params.get("lit")?.split(",") ?? (conn === "none" ? [] : ["Scrl"]),
   };
 }
 

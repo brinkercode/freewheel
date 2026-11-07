@@ -522,12 +522,7 @@ impl Simulator {
             low_battery: self.battery.is_some_and(|(level, _)| level < threshold),
             page: self.engine.current_layer().to_string(),
             jog_mode,
-            lit_leds: if connected {
-                let buttons = leds.buttons.iter().map(|l| format!("{l:?}"));
-                buttons.chain([format!("{:?}", leds.jog)]).collect()
-            } else {
-                vec![]
-            },
+            lit_leds: if connected { leds.names() } else { vec![] },
             held_keys: self.held.iter().map(|k| format!("{k:?}")).collect(),
             enabled: self.connection != Some(ConnectionStatus::Off),
             send_for_real: self.send_for_real,
@@ -1007,6 +1002,43 @@ mod tests {
             ("base", vec!["Scrl".to_string()])
         );
         assert!(mock.calls().is_empty());
+    }
+
+    #[test]
+    fn a_latched_key_and_the_pressed_wheel_button_light_in_the_simulator() {
+        let (_dir, mut sim, _) = connected(Bus::Usb);
+        let mut config = sim.config().clone();
+        let base = config.base_layer.clone();
+        let layer = config.layers.iter_mut().find(|l| l.id == base).unwrap();
+        let ctrl = KeyCombo {
+            modifiers: vec![Modifier::Ctrl],
+            key: String::new(),
+        };
+        layer
+            .bindings
+            .insert("Trans".into(), Action::Latched { combo: ctrl });
+        assert!(sim.sync_config(config));
+        key(&mut sim, "Trans", true);
+        let s = key(&mut sim, "Trans", false);
+        assert_eq!(s.lit_leds, ["Trans", "Scrl"]);
+        // An unbound wheel button switches to its printed mode.
+        key(&mut sim, "Shtl", true);
+        let s = key(&mut sim, "Shtl", false);
+        assert_eq!(
+            (s.jog_mode, s.lit_leds),
+            (
+                JogMode::Shuttle,
+                vec!["Trans".to_string(), "Shtl".to_string()]
+            )
+        );
+        key(&mut sim, "Trans", true);
+        assert_eq!(key(&mut sim, "Trans", false).lit_leds, ["Shtl"]);
+        // Off: nothing lit.
+        assert!(
+            sim.apply(Control::SetEnabled { on: false })
+                .lit_leds
+                .is_empty()
+        );
     }
 
     #[test]
