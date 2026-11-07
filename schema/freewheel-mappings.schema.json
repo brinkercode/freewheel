@@ -1,0 +1,561 @@
+{
+  "$defs": {
+    "keyAction": {
+      "anyOf": [
+        {
+          "pattern": "^\\s*(?:[Nn][Oo][Tt][Hh][Ii][Nn][Gg]|[Bb][Aa][Cc][Kk]|[Hh][Tt][Tt][Pp][Ss]?://\\S+|[Oo][Pp][Ee][Nn]\\s+\\S.*|(?:[Hh][Oo][Ll][Dd]|[Tt][Oo][Gg][Gg][Ll][Ee])\\s+(?:(?:(?:[Cc][Tt][Rr][Ll]|[Cc][Oo][Nn][Tt][Rr][Oo][Ll]|[Cc][Tt][Ll]|[Ss][Hh][Ii][Ff][Tt]|[Aa][Ll][Tt]|[Oo][Pp][Tt][Ii][Oo][Nn]|[Oo][Pp][Tt]|[Ww][Ii][Nn]|[Cc][Mm][Dd]|[Cc][Oo][Mm][Mm][Aa][Nn][Dd]|[Mm][Ee][Tt][Aa]|[Ss][Uu][Pp][Ee][Rr]|[Ww][Ii][Nn][Dd][Oo][Ww][Ss])\\s*\\+\\s*)*(?:(?:(?:[Ee][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ee][\\s_]*[Rr]|[Ee][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ee][\\s_]*[Rr]|[Rr][\\s_]*[Ee][\\s_]*[Tt][\\s_]*[Uu][\\s_]*[Rr][\\s_]*[Nn]|[Tt][\\s_]*[Aa][\\s_]*[Bb]|[Tt][\\s_]*[Aa][\\s_]*[Bb]|[Ss][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Ee]|[Ss][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Ee]|[Ss][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Ee][\\s_]*[Bb][\\s_]*[Aa][\\s_]*[Rr]|[Ee][\\s_]*[Ss][\\s_]*[Cc][\\s_]*[Aa][\\s_]*[Pp][\\s_]*[Ee]|[Ee][\\s_]*[Ss][\\s_]*[Cc][\\s_]*[Aa][\\s_]*[Pp][\\s_]*[Ee]|[Ee][\\s_]*[Ss][\\s_]*[Cc]|[Bb][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ss][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Ee]|[Bb][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ss][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Ee]|[Dd][\\s_]*[Ee][\\s_]*[Ll][\\s_]*[Ee][\\s_]*[Tt][\\s_]*[Ee]|[Dd][\\s_]*[Ee][\\s_]*[Ll][\\s_]*[Ee][\\s_]*[Tt][\\s_]*[Ee]|[Dd][\\s_]*[Ee][\\s_]*[Ll]|[Ii][\\s_]*[Nn][\\s_]*[Ss][\\s_]*[Ee][\\s_]*[Rr][\\s_]*[Tt]|[Ii][\\s_]*[Nn][\\s_]*[Ss][\\s_]*[Ee][\\s_]*[Rr][\\s_]*[Tt]|[Ii][\\s_]*[Nn][\\s_]*[Ss]|[Hh][\\s_]*[Oo][\\s_]*[Mm][\\s_]*[Ee]|[Hh][\\s_]*[Oo][\\s_]*[Mm][\\s_]*[Ee]|[Ee][\\s_]*[Nn][\\s_]*[Dd]|[Ee][\\s_]*[Nn][\\s_]*[Dd]|[Pp][\\s_]*[Aa][\\s_]*[Gg][\\s_]*[Ee][\\s_]*[Uu][\\s_]*[Pp]|[Pp][\\s_]*[Aa][\\s_]*[Gg][\\s_]*[Ee][\\s_]*[Uu][\\s_]*[Pp]|[Pp][\\s_]*[Gg][\\s_]*[Uu][\\s_]*[Pp]|[Pp][\\s_]*[Aa][\\s_]*[Gg][\\s_]*[Ee][\\s_]*[Uu][\\s_]*[Pp]|[Pp][\\s_]*[Aa][\\s_]*[Gg][\\s_]*[Ee][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Pp][\\s_]*[Aa][\\s_]*[Gg][\\s_]*[Ee][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Pp][\\s_]*[Gg][\\s_]*[Dd][\\s_]*[Nn]|[Pp][\\s_]*[Aa][\\s_]*[Gg][\\s_]*[Ee][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Cc][\\s_]*[Aa][\\s_]*[Pp][\\s_]*[Ss][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Cc][\\s_]*[Aa][\\s_]*[Pp][\\s_]*[Ss][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Cc][\\s_]*[Aa][\\s_]*[Pp][\\s_]*[Ss][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Pp][\\s_]*[Rr][\\s_]*[Ii][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ss][\\s_]*[Cc][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Ee][\\s_]*[Nn]|[Pp][\\s_]*[Rr][\\s_]*[Ii][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ss][\\s_]*[Cc][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Ee][\\s_]*[Nn]|[Pp][\\s_]*[Rr][\\s_]*[Tt][\\s_]*[Ss][\\s_]*[Cc]|[Pp][\\s_]*[Rr][\\s_]*[Ii][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ss][\\s_]*[Cc][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Ee][\\s_]*[Nn]|[Pp][\\s_]*[Aa][\\s_]*[Uu][\\s_]*[Ss][\\s_]*[Ee]|[Pp][\\s_]*[Aa][\\s_]*[Uu][\\s_]*[Ss][\\s_]*[Ee]|[Bb][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Aa][\\s_]*[Kk]|[Uu][\\s_]*[Pp]|[Uu][\\s_]*[Pp]|[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Uu][\\s_]*[Pp]|[Uu][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww]|[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn][\\s_]*[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww]|[Ll][\\s_]*[Ee][\\s_]*[Ff][\\s_]*[Tt]|[Ll][\\s_]*[Ee][\\s_]*[Ff][\\s_]*[Tt]|[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Ll][\\s_]*[Ee][\\s_]*[Ff][\\s_]*[Tt]|[Ll][\\s_]*[Ee][\\s_]*[Ff][\\s_]*[Tt][\\s_]*[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww]|[Rr][\\s_]*[Ii][\\s_]*[Gg][\\s_]*[Hh][\\s_]*[Tt]|[Rr][\\s_]*[Ii][\\s_]*[Gg][\\s_]*[Hh][\\s_]*[Tt]|[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Rr][\\s_]*[Ii][\\s_]*[Gg][\\s_]*[Hh][\\s_]*[Tt]|[Rr][\\s_]*[Ii][\\s_]*[Gg][\\s_]*[Hh][\\s_]*[Tt][\\s_]*[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww]|[Ff][\\s_]*1|[Ff][\\s_]*1|[Ff][\\s_]*2|[Ff][\\s_]*2|[Ff][\\s_]*3|[Ff][\\s_]*3|[Ff][\\s_]*4|[Ff][\\s_]*4|[Ff][\\s_]*5|[Ff][\\s_]*5|[Ff][\\s_]*6|[Ff][\\s_]*6|[Ff][\\s_]*7|[Ff][\\s_]*7|[Ff][\\s_]*8|[Ff][\\s_]*8|[Ff][\\s_]*9|[Ff][\\s_]*9|[Ff][\\s_]*1[\\s_]*0|[Ff][\\s_]*1[\\s_]*0|[Ff][\\s_]*1[\\s_]*1|[Ff][\\s_]*1[\\s_]*1|[Ff][\\s_]*1[\\s_]*2|[Ff][\\s_]*1[\\s_]*2|[Ff][\\s_]*1[\\s_]*3|[Ff][\\s_]*1[\\s_]*3|[Ff][\\s_]*1[\\s_]*4|[Ff][\\s_]*1[\\s_]*4|[Ff][\\s_]*1[\\s_]*5|[Ff][\\s_]*1[\\s_]*5|[Ff][\\s_]*1[\\s_]*6|[Ff][\\s_]*1[\\s_]*6|[Ff][\\s_]*1[\\s_]*7|[Ff][\\s_]*1[\\s_]*7|[Ff][\\s_]*1[\\s_]*8|[Ff][\\s_]*1[\\s_]*8|[Ff][\\s_]*1[\\s_]*9|[Ff][\\s_]*1[\\s_]*9|[Ff][\\s_]*2[\\s_]*0|[Ff][\\s_]*2[\\s_]*0|[Ff][\\s_]*2[\\s_]*1|[Ff][\\s_]*2[\\s_]*1|[Ff][\\s_]*2[\\s_]*2|[Ff][\\s_]*2[\\s_]*2|[Ff][\\s_]*2[\\s_]*3|[Ff][\\s_]*2[\\s_]*3|[Ff][\\s_]*2[\\s_]*4|[Ff][\\s_]*2[\\s_]*4|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*0|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*0|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*0|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*1|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*1|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*1|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*2|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*2|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*2|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*3|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*3|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*3|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*4|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*4|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*4|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*5|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*5|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*5|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*6|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*6|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*6|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*7|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*7|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*7|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*8|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*8|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*8|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*9|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*9|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*9|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Dd]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Dd]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Ss]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Dd]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ss][\\s_]*[Uu][\\s_]*[Bb][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Tt]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ss][\\s_]*[Uu][\\s_]*[Bb][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Tt]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Mm][\\s_]*[Ii][\\s_]*[Nn][\\s_]*[Uu][\\s_]*[Ss]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Ss][\\s_]*[Uu][\\s_]*[Bb][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Tt]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Mm][\\s_]*[Uu][\\s_]*[Ll][\\s_]*[Tt][\\s_]*[Ii][\\s_]*[Pp][\\s_]*[Ll][\\s_]*[Yy]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Mm][\\s_]*[Uu][\\s_]*[Ll][\\s_]*[Tt][\\s_]*[Ii][\\s_]*[Pp][\\s_]*[Ll][\\s_]*[Yy]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Mm][\\s_]*[Uu][\\s_]*[Ll][\\s_]*[Tt][\\s_]*[Ii][\\s_]*[Pp][\\s_]*[Ll][\\s_]*[Yy]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Dd][\\s_]*[Ii][\\s_]*[Vv][\\s_]*[Ii][\\s_]*[Dd][\\s_]*[Ee]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Dd][\\s_]*[Ii][\\s_]*[Vv][\\s_]*[Ii][\\s_]*[Dd][\\s_]*[Ee]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Dd][\\s_]*[Ii][\\s_]*[Vv][\\s_]*[Ii][\\s_]*[Dd][\\s_]*[Ee]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Dd][\\s_]*[Ee][\\s_]*[Cc][\\s_]*[Ii][\\s_]*[Mm][\\s_]*[Aa][\\s_]*[Ll]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Dd][\\s_]*[Ee][\\s_]*[Cc][\\s_]*[Ii][\\s_]*[Mm][\\s_]*[Aa][\\s_]*[Ll]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Dd][\\s_]*[Ee][\\s_]*[Cc][\\s_]*[Ii][\\s_]*[Mm][\\s_]*[Aa][\\s_]*[Ll]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ee][\\s_]*[Rr]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ee][\\s_]*[Rr]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Ee][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ee][\\s_]*[Rr]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Ss][\\s_]*[Cc][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Ss][\\s_]*[Cc][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Ss][\\s_]*[Cc][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Pp][\\s_]*[Ll][\\s_]*[Aa][\\s_]*[Yy][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Uu][\\s_]*[Ss][\\s_]*[Ee]|[Pp][\\s_]*[Ll][\\s_]*[Aa][\\s_]*[Yy][\\s_]*\\/[\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Uu][\\s_]*[Ss][\\s_]*[Ee]|[Pp][\\s_]*[Ll][\\s_]*[Aa][\\s_]*[Yy][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Uu][\\s_]*[Ss][\\s_]*[Ee]|[Pp][\\s_]*[Ll][\\s_]*[Aa][\\s_]*[Yy]|[Mm][\\s_]*[Uu][\\s_]*[Tt][\\s_]*[Ee]|[Mm][\\s_]*[Uu][\\s_]*[Tt][\\s_]*[Ee]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Mm][\\s_]*[Uu][\\s_]*[Tt][\\s_]*[Ee]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Uu][\\s_]*[Pp]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Uu][\\s_]*[Pp]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Pp]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Nn][\\s_]*[Ee][\\s_]*[Xx][\\s_]*[Tt][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk]|[Nn][\\s_]*[Ee][\\s_]*[Xx][\\s_]*[Tt][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk]|[Nn][\\s_]*[Ee][\\s_]*[Xx][\\s_]*[Tt]|[Pp][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Vv][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk]|[Pp][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Vv][\\s_]*[Ii][\\s_]*[Oo][\\s_]*[Uu][\\s_]*[Ss][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk]|[Pp][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Vv][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk]|[Pp][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Vv][\\s_]*[Ii][\\s_]*[Oo][\\s_]*[Uu][\\s_]*[Ss]|[Pp][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Vv]|[Pp][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Ss]|[Mm][\\s_]*[Ii][\\s_]*[Nn][\\s_]*[Uu][\\s_]*[Ss]|[Dd][\\s_]*[Aa][\\s_]*[Ss][\\s_]*[Hh]|[Hh][\\s_]*[Yy][\\s_]*[Pp][\\s_]*[Hh][\\s_]*[Ee][\\s_]*[Nn]|[Ee][\\s_]*[Qq][\\s_]*[Uu][\\s_]*[Aa][\\s_]*[Ll][\\s_]*[Ss]|[Ee][\\s_]*[Qq][\\s_]*[Uu][\\s_]*[Aa][\\s_]*[Ll]|[Cc][\\s_]*[Oo][\\s_]*[Mm][\\s_]*[Mm][\\s_]*[Aa]|[Pp][\\s_]*[Ee][\\s_]*[Rr][\\s_]*[Ii][\\s_]*[Oo][\\s_]*[Dd]|[Dd][\\s_]*[Oo][\\s_]*[Tt]|[Ff][\\s_]*[Uu][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Ss][\\s_]*[Tt][\\s_]*[Oo][\\s_]*[Pp]|[Ss][\\s_]*[Ll][\\s_]*[Aa][\\s_]*[Ss][\\s_]*[Hh]|[Bb][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ss][\\s_]*[Ll][\\s_]*[Aa][\\s_]*[Ss][\\s_]*[Hh]|[Ss][\\s_]*[Ee][\\s_]*[Mm][\\s_]*[Ii][\\s_]*[Cc][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Nn]|[Qq][\\s_]*[Uu][\\s_]*[Oo][\\s_]*[Tt][\\s_]*[Ee]|[Aa][\\s_]*[Pp][\\s_]*[Oo][\\s_]*[Ss][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Pp][\\s_]*[Hh][\\s_]*[Ee]|[Bb][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Qq][\\s_]*[Uu][\\s_]*[Oo][\\s_]*[Tt][\\s_]*[Ee]|[Gg][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Vv][\\s_]*[Ee]|[Bb][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Tt][\\s_]*[Ii][\\s_]*[Cc][\\s_]*[Kk]|[Bb][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ee][\\s_]*[Tt][\\s_]*[Ll][\\s_]*[Ee][\\s_]*[Ff][\\s_]*[Tt]|[Ll][\\s_]*[Ee][\\s_]*[Ff][\\s_]*[Tt][\\s_]*[Bb][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ee][\\s_]*[Tt]|[Bb][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ee][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Ii][\\s_]*[Gg][\\s_]*[Hh][\\s_]*[Tt]|[Rr][\\s_]*[Ii][\\s_]*[Gg][\\s_]*[Hh][\\s_]*[Tt][\\s_]*[Bb][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ee][\\s_]*[Tt])|[^\\s\\p{Cc}])|(?:[Cc][Tt][Rr][Ll]|[Cc][Oo][Nn][Tt][Rr][Oo][Ll]|[Cc][Tt][Ll]|[Ss][Hh][Ii][Ff][Tt]|[Aa][Ll][Tt]|[Oo][Pp][Tt][Ii][Oo][Nn]|[Oo][Pp][Tt]|[Ww][Ii][Nn]|[Cc][Mm][Dd]|[Cc][Oo][Mm][Mm][Aa][Nn][Dd]|[Mm][Ee][Tt][Aa]|[Ss][Uu][Pp][Ee][Rr]|[Ww][Ii][Nn][Dd][Oo][Ww][Ss]))|(?:(?:[Cc][Tt][Rr][Ll]|[Cc][Oo][Nn][Tt][Rr][Oo][Ll]|[Cc][Tt][Ll]|[Ss][Hh][Ii][Ff][Tt]|[Aa][Ll][Tt]|[Oo][Pp][Tt][Ii][Oo][Nn]|[Oo][Pp][Tt]|[Ww][Ii][Nn]|[Cc][Mm][Dd]|[Cc][Oo][Mm][Mm][Aa][Nn][Dd]|[Mm][Ee][Tt][Aa]|[Ss][Uu][Pp][Ee][Rr]|[Ww][Ii][Nn][Dd][Oo][Ww][Ss])\\s*\\+\\s*)*\\+)|[Pp][Aa][Gg][Ee]\\s+\\S.*|[Ss][Cc][Rr][Oo][Ll][Ll]\\s+(?:[Uu][Pp]|[Dd][Oo][Ww][Nn]|-?(?:100|[1-9][0-9]?))|[Ww][Hh][Ee][Ee][Ll]\\s+(?:(?:[Vv][Oo][Ll][Uu][Mm][Ee]|[Aa][Pp][Pp]\\s+[Vv][Oo][Ll][Uu][Mm][Ee]|[Bb][Rr][Ii][Gg][Hh][Tt][Nn][Ee][Ss][Ss])|[Mm][Oo][Dd][Ee]\\s+(?:[Jj][Oo][Gg]|[Ss][Cc][Rr][Oo][Ll][Ll]|[Ss][Hh][Uu][Tt][Tt][Ll][Ee]|[Vv][Oo][Ll][Uu][Mm][Ee]|[Bb][Rr][Ii][Gg][Hh][Tt][Nn][Ee][Ss][Ss]))|(?:(?:[Cc][Tt][Rr][Ll]|[Cc][Oo][Nn][Tt][Rr][Oo][Ll]|[Cc][Tt][Ll]|[Ss][Hh][Ii][Ff][Tt]|[Aa][Ll][Tt]|[Oo][Pp][Tt][Ii][Oo][Nn]|[Oo][Pp][Tt]|[Ww][Ii][Nn]|[Cc][Mm][Dd]|[Cc][Oo][Mm][Mm][Aa][Nn][Dd]|[Mm][Ee][Tt][Aa]|[Ss][Uu][Pp][Ee][Rr]|[Ww][Ii][Nn][Dd][Oo][Ww][Ss])\\s*\\+\\s*)*(?:(?:(?:[Ee][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ee][\\s_]*[Rr]|[Ee][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ee][\\s_]*[Rr]|[Rr][\\s_]*[Ee][\\s_]*[Tt][\\s_]*[Uu][\\s_]*[Rr][\\s_]*[Nn]|[Tt][\\s_]*[Aa][\\s_]*[Bb]|[Tt][\\s_]*[Aa][\\s_]*[Bb]|[Ss][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Ee]|[Ss][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Ee]|[Ss][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Ee][\\s_]*[Bb][\\s_]*[Aa][\\s_]*[Rr]|[Ee][\\s_]*[Ss][\\s_]*[Cc][\\s_]*[Aa][\\s_]*[Pp][\\s_]*[Ee]|[Ee][\\s_]*[Ss][\\s_]*[Cc][\\s_]*[Aa][\\s_]*[Pp][\\s_]*[Ee]|[Ee][\\s_]*[Ss][\\s_]*[Cc]|[Bb][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ss][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Ee]|[Bb][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ss][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Ee]|[Dd][\\s_]*[Ee][\\s_]*[Ll][\\s_]*[Ee][\\s_]*[Tt][\\s_]*[Ee]|[Dd][\\s_]*[Ee][\\s_]*[Ll][\\s_]*[Ee][\\s_]*[Tt][\\s_]*[Ee]|[Dd][\\s_]*[Ee][\\s_]*[Ll]|[Ii][\\s_]*[Nn][\\s_]*[Ss][\\s_]*[Ee][\\s_]*[Rr][\\s_]*[Tt]|[Ii][\\s_]*[Nn][\\s_]*[Ss][\\s_]*[Ee][\\s_]*[Rr][\\s_]*[Tt]|[Ii][\\s_]*[Nn][\\s_]*[Ss]|[Hh][\\s_]*[Oo][\\s_]*[Mm][\\s_]*[Ee]|[Hh][\\s_]*[Oo][\\s_]*[Mm][\\s_]*[Ee]|[Ee][\\s_]*[Nn][\\s_]*[Dd]|[Ee][\\s_]*[Nn][\\s_]*[Dd]|[Pp][\\s_]*[Aa][\\s_]*[Gg][\\s_]*[Ee][\\s_]*[Uu][\\s_]*[Pp]|[Pp][\\s_]*[Aa][\\s_]*[Gg][\\s_]*[Ee][\\s_]*[Uu][\\s_]*[Pp]|[Pp][\\s_]*[Gg][\\s_]*[Uu][\\s_]*[Pp]|[Pp][\\s_]*[Aa][\\s_]*[Gg][\\s_]*[Ee][\\s_]*[Uu][\\s_]*[Pp]|[Pp][\\s_]*[Aa][\\s_]*[Gg][\\s_]*[Ee][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Pp][\\s_]*[Aa][\\s_]*[Gg][\\s_]*[Ee][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Pp][\\s_]*[Gg][\\s_]*[Dd][\\s_]*[Nn]|[Pp][\\s_]*[Aa][\\s_]*[Gg][\\s_]*[Ee][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Cc][\\s_]*[Aa][\\s_]*[Pp][\\s_]*[Ss][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Cc][\\s_]*[Aa][\\s_]*[Pp][\\s_]*[Ss][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Cc][\\s_]*[Aa][\\s_]*[Pp][\\s_]*[Ss][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Pp][\\s_]*[Rr][\\s_]*[Ii][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ss][\\s_]*[Cc][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Ee][\\s_]*[Nn]|[Pp][\\s_]*[Rr][\\s_]*[Ii][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ss][\\s_]*[Cc][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Ee][\\s_]*[Nn]|[Pp][\\s_]*[Rr][\\s_]*[Tt][\\s_]*[Ss][\\s_]*[Cc]|[Pp][\\s_]*[Rr][\\s_]*[Ii][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ss][\\s_]*[Cc][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Ee][\\s_]*[Nn]|[Pp][\\s_]*[Aa][\\s_]*[Uu][\\s_]*[Ss][\\s_]*[Ee]|[Pp][\\s_]*[Aa][\\s_]*[Uu][\\s_]*[Ss][\\s_]*[Ee]|[Bb][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Aa][\\s_]*[Kk]|[Uu][\\s_]*[Pp]|[Uu][\\s_]*[Pp]|[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Uu][\\s_]*[Pp]|[Uu][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww]|[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn][\\s_]*[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww]|[Ll][\\s_]*[Ee][\\s_]*[Ff][\\s_]*[Tt]|[Ll][\\s_]*[Ee][\\s_]*[Ff][\\s_]*[Tt]|[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Ll][\\s_]*[Ee][\\s_]*[Ff][\\s_]*[Tt]|[Ll][\\s_]*[Ee][\\s_]*[Ff][\\s_]*[Tt][\\s_]*[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww]|[Rr][\\s_]*[Ii][\\s_]*[Gg][\\s_]*[Hh][\\s_]*[Tt]|[Rr][\\s_]*[Ii][\\s_]*[Gg][\\s_]*[Hh][\\s_]*[Tt]|[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Rr][\\s_]*[Ii][\\s_]*[Gg][\\s_]*[Hh][\\s_]*[Tt]|[Rr][\\s_]*[Ii][\\s_]*[Gg][\\s_]*[Hh][\\s_]*[Tt][\\s_]*[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww]|[Ff][\\s_]*1|[Ff][\\s_]*1|[Ff][\\s_]*2|[Ff][\\s_]*2|[Ff][\\s_]*3|[Ff][\\s_]*3|[Ff][\\s_]*4|[Ff][\\s_]*4|[Ff][\\s_]*5|[Ff][\\s_]*5|[Ff][\\s_]*6|[Ff][\\s_]*6|[Ff][\\s_]*7|[Ff][\\s_]*7|[Ff][\\s_]*8|[Ff][\\s_]*8|[Ff][\\s_]*9|[Ff][\\s_]*9|[Ff][\\s_]*1[\\s_]*0|[Ff][\\s_]*1[\\s_]*0|[Ff][\\s_]*1[\\s_]*1|[Ff][\\s_]*1[\\s_]*1|[Ff][\\s_]*1[\\s_]*2|[Ff][\\s_]*1[\\s_]*2|[Ff][\\s_]*1[\\s_]*3|[Ff][\\s_]*1[\\s_]*3|[Ff][\\s_]*1[\\s_]*4|[Ff][\\s_]*1[\\s_]*4|[Ff][\\s_]*1[\\s_]*5|[Ff][\\s_]*1[\\s_]*5|[Ff][\\s_]*1[\\s_]*6|[Ff][\\s_]*1[\\s_]*6|[Ff][\\s_]*1[\\s_]*7|[Ff][\\s_]*1[\\s_]*7|[Ff][\\s_]*1[\\s_]*8|[Ff][\\s_]*1[\\s_]*8|[Ff][\\s_]*1[\\s_]*9|[Ff][\\s_]*1[\\s_]*9|[Ff][\\s_]*2[\\s_]*0|[Ff][\\s_]*2[\\s_]*0|[Ff][\\s_]*2[\\s_]*1|[Ff][\\s_]*2[\\s_]*1|[Ff][\\s_]*2[\\s_]*2|[Ff][\\s_]*2[\\s_]*2|[Ff][\\s_]*2[\\s_]*3|[Ff][\\s_]*2[\\s_]*3|[Ff][\\s_]*2[\\s_]*4|[Ff][\\s_]*2[\\s_]*4|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*0|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*0|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*0|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*1|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*1|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*1|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*2|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*2|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*2|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*3|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*3|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*3|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*4|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*4|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*4|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*5|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*5|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*5|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*6|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*6|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*6|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*7|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*7|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*7|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*8|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*8|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*8|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*9|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*9|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*9|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Dd]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Dd]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Ss]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Dd]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ss][\\s_]*[Uu][\\s_]*[Bb][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Tt]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ss][\\s_]*[Uu][\\s_]*[Bb][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Tt]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Mm][\\s_]*[Ii][\\s_]*[Nn][\\s_]*[Uu][\\s_]*[Ss]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Ss][\\s_]*[Uu][\\s_]*[Bb][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Tt]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Mm][\\s_]*[Uu][\\s_]*[Ll][\\s_]*[Tt][\\s_]*[Ii][\\s_]*[Pp][\\s_]*[Ll][\\s_]*[Yy]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Mm][\\s_]*[Uu][\\s_]*[Ll][\\s_]*[Tt][\\s_]*[Ii][\\s_]*[Pp][\\s_]*[Ll][\\s_]*[Yy]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Mm][\\s_]*[Uu][\\s_]*[Ll][\\s_]*[Tt][\\s_]*[Ii][\\s_]*[Pp][\\s_]*[Ll][\\s_]*[Yy]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Dd][\\s_]*[Ii][\\s_]*[Vv][\\s_]*[Ii][\\s_]*[Dd][\\s_]*[Ee]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Dd][\\s_]*[Ii][\\s_]*[Vv][\\s_]*[Ii][\\s_]*[Dd][\\s_]*[Ee]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Dd][\\s_]*[Ii][\\s_]*[Vv][\\s_]*[Ii][\\s_]*[Dd][\\s_]*[Ee]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Dd][\\s_]*[Ee][\\s_]*[Cc][\\s_]*[Ii][\\s_]*[Mm][\\s_]*[Aa][\\s_]*[Ll]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Dd][\\s_]*[Ee][\\s_]*[Cc][\\s_]*[Ii][\\s_]*[Mm][\\s_]*[Aa][\\s_]*[Ll]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Dd][\\s_]*[Ee][\\s_]*[Cc][\\s_]*[Ii][\\s_]*[Mm][\\s_]*[Aa][\\s_]*[Ll]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ee][\\s_]*[Rr]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ee][\\s_]*[Rr]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Ee][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ee][\\s_]*[Rr]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Ss][\\s_]*[Cc][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Ss][\\s_]*[Cc][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Ss][\\s_]*[Cc][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Pp][\\s_]*[Ll][\\s_]*[Aa][\\s_]*[Yy][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Uu][\\s_]*[Ss][\\s_]*[Ee]|[Pp][\\s_]*[Ll][\\s_]*[Aa][\\s_]*[Yy][\\s_]*\\/[\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Uu][\\s_]*[Ss][\\s_]*[Ee]|[Pp][\\s_]*[Ll][\\s_]*[Aa][\\s_]*[Yy][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Uu][\\s_]*[Ss][\\s_]*[Ee]|[Pp][\\s_]*[Ll][\\s_]*[Aa][\\s_]*[Yy]|[Mm][\\s_]*[Uu][\\s_]*[Tt][\\s_]*[Ee]|[Mm][\\s_]*[Uu][\\s_]*[Tt][\\s_]*[Ee]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Mm][\\s_]*[Uu][\\s_]*[Tt][\\s_]*[Ee]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Uu][\\s_]*[Pp]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Uu][\\s_]*[Pp]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Pp]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Nn][\\s_]*[Ee][\\s_]*[Xx][\\s_]*[Tt][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk]|[Nn][\\s_]*[Ee][\\s_]*[Xx][\\s_]*[Tt][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk]|[Nn][\\s_]*[Ee][\\s_]*[Xx][\\s_]*[Tt]|[Pp][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Vv][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk]|[Pp][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Vv][\\s_]*[Ii][\\s_]*[Oo][\\s_]*[Uu][\\s_]*[Ss][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk]|[Pp][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Vv][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk]|[Pp][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Vv][\\s_]*[Ii][\\s_]*[Oo][\\s_]*[Uu][\\s_]*[Ss]|[Pp][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Vv]|[Pp][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Ss]|[Mm][\\s_]*[Ii][\\s_]*[Nn][\\s_]*[Uu][\\s_]*[Ss]|[Dd][\\s_]*[Aa][\\s_]*[Ss][\\s_]*[Hh]|[Hh][\\s_]*[Yy][\\s_]*[Pp][\\s_]*[Hh][\\s_]*[Ee][\\s_]*[Nn]|[Ee][\\s_]*[Qq][\\s_]*[Uu][\\s_]*[Aa][\\s_]*[Ll][\\s_]*[Ss]|[Ee][\\s_]*[Qq][\\s_]*[Uu][\\s_]*[Aa][\\s_]*[Ll]|[Cc][\\s_]*[Oo][\\s_]*[Mm][\\s_]*[Mm][\\s_]*[Aa]|[Pp][\\s_]*[Ee][\\s_]*[Rr][\\s_]*[Ii][\\s_]*[Oo][\\s_]*[Dd]|[Dd][\\s_]*[Oo][\\s_]*[Tt]|[Ff][\\s_]*[Uu][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Ss][\\s_]*[Tt][\\s_]*[Oo][\\s_]*[Pp]|[Ss][\\s_]*[Ll][\\s_]*[Aa][\\s_]*[Ss][\\s_]*[Hh]|[Bb][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ss][\\s_]*[Ll][\\s_]*[Aa][\\s_]*[Ss][\\s_]*[Hh]|[Ss][\\s_]*[Ee][\\s_]*[Mm][\\s_]*[Ii][\\s_]*[Cc][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Nn]|[Qq][\\s_]*[Uu][\\s_]*[Oo][\\s_]*[Tt][\\s_]*[Ee]|[Aa][\\s_]*[Pp][\\s_]*[Oo][\\s_]*[Ss][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Pp][\\s_]*[Hh][\\s_]*[Ee]|[Bb][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Qq][\\s_]*[Uu][\\s_]*[Oo][\\s_]*[Tt][\\s_]*[Ee]|[Gg][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Vv][\\s_]*[Ee]|[Bb][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Tt][\\s_]*[Ii][\\s_]*[Cc][\\s_]*[Kk]|[Bb][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ee][\\s_]*[Tt][\\s_]*[Ll][\\s_]*[Ee][\\s_]*[Ff][\\s_]*[Tt]|[Ll][\\s_]*[Ee][\\s_]*[Ff][\\s_]*[Tt][\\s_]*[Bb][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ee][\\s_]*[Tt]|[Bb][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ee][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Ii][\\s_]*[Gg][\\s_]*[Hh][\\s_]*[Tt]|[Rr][\\s_]*[Ii][\\s_]*[Gg][\\s_]*[Hh][\\s_]*[Tt][\\s_]*[Bb][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ee][\\s_]*[Tt])|[^\\s\\p{Cc}])|\\+)|(?:(?:[Cc][Tt][Rr][Ll]|[Cc][Oo][Nn][Tt][Rr][Oo][Ll]|[Cc][Tt][Ll]|[Ss][Hh][Ii][Ff][Tt]|[Aa][Ll][Tt]|[Oo][Pp][Tt][Ii][Oo][Nn]|[Oo][Pp][Tt]|[Ww][Ii][Nn]|[Cc][Mm][Dd]|[Cc][Oo][Mm][Mm][Aa][Nn][Dd]|[Mm][Ee][Tt][Aa]|[Ss][Uu][Pp][Ee][Rr]|[Ww][Ii][Nn][Dd][Oo][Ww][Ss])\\s*\\+\\s*)+\\+)\\s*$",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/open"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "<shortcut>: Presses the shortcut: modifiers and one key joined by +, or a media key like Play/Pause.\nhold <shortcut>: Holds the shortcut down while the key is held. A single modifier alone is allowed.\ntoggle <shortcut>: The first press holds the shortcut down, the next press lets it go (the key's light shows it).\nopen <app or path>: Opens an app by its name, a program, a file or a folder (see How open finds the app).\n<web address>: Opens the page in your web browser. It must start with https:// or http://.\npage <name>: Goes to another page. On that page, the same key goes back.\nback: Says the key goes back: allowed only on the key that opened this page from another page. It is the same as leaving the key out.\nscroll <n>: Scrolls n lines (negative: up). scroll up and scroll down are -1 and 1. n is -100 to 100, not 0.\nwheel volume: Turns the wheel into a volume knob until you press the key again.\nwheel app volume: Turns the wheel into a volume knob for the app in front.\nwheel brightness: Turns the wheel into a brightness knob.\nwheel mode <mode>: Switches the wheel to a mode, as pressing SHTL, JOG or SCRL does: jog, scroll, shuttle, volume or brightness.\nnothing: The key does nothing (the same as leaving it out). SHTL, JOG and SCRL left unset switch the wheel to their mode.\n{ \"open\": ..., \"args\": [...], \"cwd\": ... }: open with arguments and a start folder. open may also be { \"windows\": ..., \"macos\": ..., \"linux\": ... } for one file shared by several computers.",
+      "examples": [
+        "Ctrl+Shift+Z",
+        "hold Shift",
+        "toggle Alt",
+        "open Spotify",
+        "https://youtube.com",
+        "page Music",
+        "back",
+        "scroll -3",
+        "wheel volume",
+        "wheel app volume",
+        "wheel brightness",
+        "wheel mode jog",
+        "nothing"
+      ]
+    },
+    "open": {
+      "additionalProperties": false,
+      "description": "open with arguments, a start folder or one app per OS.",
+      "properties": {
+        "args": {
+          "description": "Arguments, each passed as it is (no shell).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "cwd": {
+          "description": "The folder the app starts in (environment variables and ~ expand).",
+          "type": "string"
+        },
+        "open": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/openTarget"
+            },
+            {
+              "additionalProperties": false,
+              "minProperties": 1,
+              "properties": {
+                "linux": {
+                  "$ref": "#/$defs/openTarget"
+                },
+                "macos": {
+                  "$ref": "#/$defs/openTarget"
+                },
+                "windows": {
+                  "$ref": "#/$defs/openTarget"
+                }
+              },
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "required": [
+        "open"
+      ],
+      "type": "object"
+    },
+    "openTarget": {
+      "description": "An app name, a path (environment variables and ~ expand), a macOS bundle id, a Linux .desktop id, or a web address.",
+      "pattern": "\\S",
+      "type": "string"
+    },
+    "page": {
+      "additionalProperties": false,
+      "description": "Key name (see Key names) to what the key does (see Actions). Keys left out are not set. Allowed: key name to action. Default: {}.",
+      "patternProperties": {
+        "^[^A-Za-z0-9]*(?:[Ss][^A-Za-z0-9]*[Mm][^A-Za-z0-9]*[Aa][^A-Za-z0-9]*[Rr][^A-Za-z0-9]*[Tt][^A-Za-z0-9]*[Ii][^A-Za-z0-9]*[Nn][^A-Za-z0-9]*[Ss][^A-Za-z0-9]*[Rr][^A-Za-z0-9]*[Tt]|[Aa][^A-Za-z0-9]*[Pp][^A-Za-z0-9]*[Pp][^A-Za-z0-9]*[Nn][^A-Za-z0-9]*[Dd]|[Rr][^A-Za-z0-9]*[Ii][^A-Za-z0-9]*[Pp][^A-Za-z0-9]*[Ll][^A-Za-z0-9]*[Oo][^A-Za-z0-9]*[Ww][^A-Za-z0-9]*[Rr]|[Cc][^A-Za-z0-9]*[Ll][^A-Za-z0-9]*[Oo][^A-Za-z0-9]*[Ss][^A-Za-z0-9]*[Ee][^A-Za-z0-9]*[Uu][^A-Za-z0-9]*[Pp]|[Pp][^A-Za-z0-9]*[Ll][^A-Za-z0-9]*[Aa][^A-Za-z0-9]*[Cc][^A-Za-z0-9]*[Ee][^A-Za-z0-9]*[Oo][^A-Za-z0-9]*[Nn][^A-Za-z0-9]*[Tt][^A-Za-z0-9]*[Oo][^A-Za-z0-9]*[Pp]|[Ss][^A-Za-z0-9]*[Rr][^A-Za-z0-9]*[Cc][^A-Za-z0-9]*[Oo][^A-Za-z0-9]*[Ww][^A-Za-z0-9]*[Rr]|[Ii][^A-Za-z0-9]*[Nn]|[Oo][^A-Za-z0-9]*[Uu][^A-Za-z0-9]*[Tt]|[Tt][^A-Za-z0-9]*[Rr][^A-Za-z0-9]*[Ii][^A-Za-z0-9]*[Mm][^A-Za-z0-9]*[Ii][^A-Za-z0-9]*[Nn]|[Tt][^A-Za-z0-9]*[Rr][^A-Za-z0-9]*[Ii][^A-Za-z0-9]*[Mm][^A-Za-z0-9]*[Oo][^A-Za-z0-9]*[Uu][^A-Za-z0-9]*[Tt]|[Rr][^A-Za-z0-9]*[Oo][^A-Za-z0-9]*[Ll][^A-Za-z0-9]*[Ll]|[Ss][^A-Za-z0-9]*[Ll][^A-Za-z0-9]*[Ii][^A-Za-z0-9]*[Pp][^A-Za-z0-9]*[Ss][^A-Za-z0-9]*[Rr][^A-Za-z0-9]*[Cc]|[Ss][^A-Za-z0-9]*[Ll][^A-Za-z0-9]*[Ii][^A-Za-z0-9]*[Pp][^A-Za-z0-9]*[Dd][^A-Za-z0-9]*[Ee][^A-Za-z0-9]*[Ss][^A-Za-z0-9]*[Tt]|[Tt][^A-Za-z0-9]*[Rr][^A-Za-z0-9]*[Aa][^A-Za-z0-9]*[Nn][^A-Za-z0-9]*[Ss][^A-Za-z0-9]*[Dd][^A-Za-z0-9]*[Uu][^A-Za-z0-9]*[Rr]|[Cc][^A-Za-z0-9]*[Uu][^A-Za-z0-9]*[Tt]|[Dd][^A-Za-z0-9]*[Ii][^A-Za-z0-9]*[Ss]|[Ss][^A-Za-z0-9]*[Mm][^A-Za-z0-9]*[Tt][^A-Za-z0-9]*[Hh][^A-Za-z0-9]*[Cc][^A-Za-z0-9]*[Uu][^A-Za-z0-9]*[Tt]|[Ee][^A-Za-z0-9]*[Ss][^A-Za-z0-9]*[Cc]|[Ss][^A-Za-z0-9]*[Yy][^A-Za-z0-9]*[Nn][^A-Za-z0-9]*[Cc][^A-Za-z0-9]*[Bb][^A-Za-z0-9]*[Ii][^A-Za-z0-9]*[Nn]|[Aa][^A-Za-z0-9]*[Uu][^A-Za-z0-9]*[Dd][^A-Za-z0-9]*[Ii][^A-Za-z0-9]*[Oo][^A-Za-z0-9]*[Ll][^A-Za-z0-9]*[Ee][^A-Za-z0-9]*[Vv][^A-Za-z0-9]*[Ee][^A-Za-z0-9]*[Ll]|[Ff][^A-Za-z0-9]*[Uu][^A-Za-z0-9]*[Ll][^A-Za-z0-9]*[Ll][^A-Za-z0-9]*[Vv][^A-Za-z0-9]*[Ii][^A-Za-z0-9]*[Ee][^A-Za-z0-9]*[Ww]|[Tt][^A-Za-z0-9]*[Rr][^A-Za-z0-9]*[Aa][^A-Za-z0-9]*[Nn][^A-Za-z0-9]*[Ss]|[Ss][^A-Za-z0-9]*[Pp][^A-Za-z0-9]*[Ll][^A-Za-z0-9]*[Ii][^A-Za-z0-9]*[Tt]|[Ss][^A-Za-z0-9]*[Nn][^A-Za-z0-9]*[Aa][^A-Za-z0-9]*[Pp]|[Rr][^A-Za-z0-9]*[Ii][^A-Za-z0-9]*[Pp][^A-Za-z0-9]*[Ll][^A-Za-z0-9]*[Dd][^A-Za-z0-9]*[Ee][^A-Za-z0-9]*[Ll]|[Cc][^A-Za-z0-9]*[Aa][^A-Za-z0-9]*[Mm][^A-Za-z0-9]*7|[Cc][^A-Za-z0-9]*[Aa][^A-Za-z0-9]*[Mm][^A-Za-z0-9]*8|[Cc][^A-Za-z0-9]*[Aa][^A-Za-z0-9]*[Mm][^A-Za-z0-9]*9|[Ll][^A-Za-z0-9]*[Ii][^A-Za-z0-9]*[Vv][^A-Za-z0-9]*[Ee][^A-Za-z0-9]*[Oo][^A-Za-z0-9]*[Ww][^A-Za-z0-9]*[Rr]|[Cc][^A-Za-z0-9]*[Aa][^A-Za-z0-9]*[Mm][^A-Za-z0-9]*4|[Cc][^A-Za-z0-9]*[Aa][^A-Za-z0-9]*[Mm][^A-Za-z0-9]*5|[Cc][^A-Za-z0-9]*[Aa][^A-Za-z0-9]*[Mm][^A-Za-z0-9]*6|[Vv][^A-Za-z0-9]*[Ii][^A-Za-z0-9]*[Dd][^A-Za-z0-9]*[Ee][^A-Za-z0-9]*[Oo][^A-Za-z0-9]*[Oo][^A-Za-z0-9]*[Nn][^A-Za-z0-9]*[Ll][^A-Za-z0-9]*[Yy]|[Cc][^A-Za-z0-9]*[Aa][^A-Za-z0-9]*[Mm][^A-Za-z0-9]*1|[Cc][^A-Za-z0-9]*[Aa][^A-Za-z0-9]*[Mm][^A-Za-z0-9]*2|[Cc][^A-Za-z0-9]*[Aa][^A-Za-z0-9]*[Mm][^A-Za-z0-9]*3|[Aa][^A-Za-z0-9]*[Uu][^A-Za-z0-9]*[Dd][^A-Za-z0-9]*[Ii][^A-Za-z0-9]*[Oo][^A-Za-z0-9]*[Oo][^A-Za-z0-9]*[Nn][^A-Za-z0-9]*[Ll][^A-Za-z0-9]*[Yy]|[Ss][^A-Za-z0-9]*[Tt][^A-Za-z0-9]*[Oo][^A-Za-z0-9]*[Pp][^A-Za-z0-9]*[Pp][^A-Za-z0-9]*[Ll][^A-Za-z0-9]*[Aa][^A-Za-z0-9]*[Yy]|[Ss][^A-Za-z0-9]*[Oo][^A-Za-z0-9]*[Uu][^A-Za-z0-9]*[Rr][^A-Za-z0-9]*[Cc][^A-Za-z0-9]*[Ee]|[Tt][^A-Za-z0-9]*[Ii][^A-Za-z0-9]*[Mm][^A-Za-z0-9]*[Ee][^A-Za-z0-9]*[Ll][^A-Za-z0-9]*[Ii][^A-Za-z0-9]*[Nn][^A-Za-z0-9]*[Ee]|[Ss][^A-Za-z0-9]*[Hh][^A-Za-z0-9]*[Tt][^A-Za-z0-9]*[Ll]|[Jj][^A-Za-z0-9]*[Oo][^A-Za-z0-9]*[Gg]|[Ss][^A-Za-z0-9]*[Cc][^A-Za-z0-9]*[Rr][^A-Za-z0-9]*[Ll])[^A-Za-z0-9]*$": {
+          "$ref": "#/$defs/keyAction"
+        }
+      },
+      "properties": {
+        "APPND": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The APPND key."
+        },
+        "AUDIO LEVEL": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The AUDIO LEVEL key."
+        },
+        "AUDIO ONLY": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The AUDIO ONLY key."
+        },
+        "CAM1": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The CAM1 key."
+        },
+        "CAM2": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The CAM2 key."
+        },
+        "CAM3": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The CAM3 key."
+        },
+        "CAM4": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The CAM4 key."
+        },
+        "CAM5": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The CAM5 key."
+        },
+        "CAM6": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The CAM6 key."
+        },
+        "CAM7": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The CAM7 key."
+        },
+        "CAM8": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The CAM8 key."
+        },
+        "CAM9": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The CAM9 key."
+        },
+        "CLOSE UP": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The CLOSE UP key."
+        },
+        "CUT": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The CUT key."
+        },
+        "DIS": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The DIS key."
+        },
+        "ESC": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The ESC key."
+        },
+        "FULL VIEW": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The FULL VIEW key."
+        },
+        "IN": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The IN key."
+        },
+        "JOG": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The JOG key."
+        },
+        "LIVE O/WR": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The LIVE O/WR key."
+        },
+        "OUT": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The OUT key."
+        },
+        "PLACE ON TOP": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The PLACE ON TOP key."
+        },
+        "RIPL DEL": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The RIPL DEL key."
+        },
+        "RIPL O/WR": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The RIPL O/WR key."
+        },
+        "ROLL": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The ROLL key."
+        },
+        "SCRL": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The SCRL key."
+        },
+        "SHTL": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The SHTL key."
+        },
+        "SLIP DEST": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The SLIP DEST key."
+        },
+        "SLIP SRC": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The SLIP SRC key."
+        },
+        "SMART INSRT": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The SMART INSRT key."
+        },
+        "SMTH CUT": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The SMTH CUT key."
+        },
+        "SNAP": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The SNAP key."
+        },
+        "SOURCE": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The SOURCE key."
+        },
+        "SPLIT": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The SPLIT key."
+        },
+        "SRC O/WR": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The SRC O/WR key."
+        },
+        "STOP/PLAY": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The STOP/PLAY key."
+        },
+        "SYNC BIN": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The SYNC BIN key."
+        },
+        "TIMELINE": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The TIMELINE key."
+        },
+        "TRANS": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The TRANS key."
+        },
+        "TRANS DUR": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The TRANS DUR key."
+        },
+        "TRIM IN": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The TRIM IN key."
+        },
+        "TRIM OUT": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The TRIM OUT key."
+        },
+        "VIDEO ONLY": {
+          "$ref": "#/$defs/keyAction",
+          "description": "The VIDEO ONLY key."
+        }
+      },
+      "type": "object"
+    },
+    "wheelAction": {
+      "anyOf": [
+        {
+          "pattern": "^\\s*(?:[Nn][Oo][Tt][Hh][Ii][Nn][Gg]|[Hh][Tt][Tt][Pp][Ss]?://\\S+|[Oo][Pp][Ee][Nn]\\s+\\S.*|(?:[Hh][Oo][Ll][Dd]|[Tt][Oo][Gg][Gg][Ll][Ee])\\s+(?:(?:(?:[Cc][Tt][Rr][Ll]|[Cc][Oo][Nn][Tt][Rr][Oo][Ll]|[Cc][Tt][Ll]|[Ss][Hh][Ii][Ff][Tt]|[Aa][Ll][Tt]|[Oo][Pp][Tt][Ii][Oo][Nn]|[Oo][Pp][Tt]|[Ww][Ii][Nn]|[Cc][Mm][Dd]|[Cc][Oo][Mm][Mm][Aa][Nn][Dd]|[Mm][Ee][Tt][Aa]|[Ss][Uu][Pp][Ee][Rr]|[Ww][Ii][Nn][Dd][Oo][Ww][Ss])\\s*\\+\\s*)*(?:(?:(?:[Ee][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ee][\\s_]*[Rr]|[Ee][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ee][\\s_]*[Rr]|[Rr][\\s_]*[Ee][\\s_]*[Tt][\\s_]*[Uu][\\s_]*[Rr][\\s_]*[Nn]|[Tt][\\s_]*[Aa][\\s_]*[Bb]|[Tt][\\s_]*[Aa][\\s_]*[Bb]|[Ss][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Ee]|[Ss][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Ee]|[Ss][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Ee][\\s_]*[Bb][\\s_]*[Aa][\\s_]*[Rr]|[Ee][\\s_]*[Ss][\\s_]*[Cc][\\s_]*[Aa][\\s_]*[Pp][\\s_]*[Ee]|[Ee][\\s_]*[Ss][\\s_]*[Cc][\\s_]*[Aa][\\s_]*[Pp][\\s_]*[Ee]|[Ee][\\s_]*[Ss][\\s_]*[Cc]|[Bb][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ss][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Ee]|[Bb][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ss][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Ee]|[Dd][\\s_]*[Ee][\\s_]*[Ll][\\s_]*[Ee][\\s_]*[Tt][\\s_]*[Ee]|[Dd][\\s_]*[Ee][\\s_]*[Ll][\\s_]*[Ee][\\s_]*[Tt][\\s_]*[Ee]|[Dd][\\s_]*[Ee][\\s_]*[Ll]|[Ii][\\s_]*[Nn][\\s_]*[Ss][\\s_]*[Ee][\\s_]*[Rr][\\s_]*[Tt]|[Ii][\\s_]*[Nn][\\s_]*[Ss][\\s_]*[Ee][\\s_]*[Rr][\\s_]*[Tt]|[Ii][\\s_]*[Nn][\\s_]*[Ss]|[Hh][\\s_]*[Oo][\\s_]*[Mm][\\s_]*[Ee]|[Hh][\\s_]*[Oo][\\s_]*[Mm][\\s_]*[Ee]|[Ee][\\s_]*[Nn][\\s_]*[Dd]|[Ee][\\s_]*[Nn][\\s_]*[Dd]|[Pp][\\s_]*[Aa][\\s_]*[Gg][\\s_]*[Ee][\\s_]*[Uu][\\s_]*[Pp]|[Pp][\\s_]*[Aa][\\s_]*[Gg][\\s_]*[Ee][\\s_]*[Uu][\\s_]*[Pp]|[Pp][\\s_]*[Gg][\\s_]*[Uu][\\s_]*[Pp]|[Pp][\\s_]*[Aa][\\s_]*[Gg][\\s_]*[Ee][\\s_]*[Uu][\\s_]*[Pp]|[Pp][\\s_]*[Aa][\\s_]*[Gg][\\s_]*[Ee][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Pp][\\s_]*[Aa][\\s_]*[Gg][\\s_]*[Ee][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Pp][\\s_]*[Gg][\\s_]*[Dd][\\s_]*[Nn]|[Pp][\\s_]*[Aa][\\s_]*[Gg][\\s_]*[Ee][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Cc][\\s_]*[Aa][\\s_]*[Pp][\\s_]*[Ss][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Cc][\\s_]*[Aa][\\s_]*[Pp][\\s_]*[Ss][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Cc][\\s_]*[Aa][\\s_]*[Pp][\\s_]*[Ss][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Pp][\\s_]*[Rr][\\s_]*[Ii][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ss][\\s_]*[Cc][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Ee][\\s_]*[Nn]|[Pp][\\s_]*[Rr][\\s_]*[Ii][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ss][\\s_]*[Cc][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Ee][\\s_]*[Nn]|[Pp][\\s_]*[Rr][\\s_]*[Tt][\\s_]*[Ss][\\s_]*[Cc]|[Pp][\\s_]*[Rr][\\s_]*[Ii][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ss][\\s_]*[Cc][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Ee][\\s_]*[Nn]|[Pp][\\s_]*[Aa][\\s_]*[Uu][\\s_]*[Ss][\\s_]*[Ee]|[Pp][\\s_]*[Aa][\\s_]*[Uu][\\s_]*[Ss][\\s_]*[Ee]|[Bb][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Aa][\\s_]*[Kk]|[Uu][\\s_]*[Pp]|[Uu][\\s_]*[Pp]|[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Uu][\\s_]*[Pp]|[Uu][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww]|[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn][\\s_]*[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww]|[Ll][\\s_]*[Ee][\\s_]*[Ff][\\s_]*[Tt]|[Ll][\\s_]*[Ee][\\s_]*[Ff][\\s_]*[Tt]|[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Ll][\\s_]*[Ee][\\s_]*[Ff][\\s_]*[Tt]|[Ll][\\s_]*[Ee][\\s_]*[Ff][\\s_]*[Tt][\\s_]*[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww]|[Rr][\\s_]*[Ii][\\s_]*[Gg][\\s_]*[Hh][\\s_]*[Tt]|[Rr][\\s_]*[Ii][\\s_]*[Gg][\\s_]*[Hh][\\s_]*[Tt]|[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Rr][\\s_]*[Ii][\\s_]*[Gg][\\s_]*[Hh][\\s_]*[Tt]|[Rr][\\s_]*[Ii][\\s_]*[Gg][\\s_]*[Hh][\\s_]*[Tt][\\s_]*[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww]|[Ff][\\s_]*1|[Ff][\\s_]*1|[Ff][\\s_]*2|[Ff][\\s_]*2|[Ff][\\s_]*3|[Ff][\\s_]*3|[Ff][\\s_]*4|[Ff][\\s_]*4|[Ff][\\s_]*5|[Ff][\\s_]*5|[Ff][\\s_]*6|[Ff][\\s_]*6|[Ff][\\s_]*7|[Ff][\\s_]*7|[Ff][\\s_]*8|[Ff][\\s_]*8|[Ff][\\s_]*9|[Ff][\\s_]*9|[Ff][\\s_]*1[\\s_]*0|[Ff][\\s_]*1[\\s_]*0|[Ff][\\s_]*1[\\s_]*1|[Ff][\\s_]*1[\\s_]*1|[Ff][\\s_]*1[\\s_]*2|[Ff][\\s_]*1[\\s_]*2|[Ff][\\s_]*1[\\s_]*3|[Ff][\\s_]*1[\\s_]*3|[Ff][\\s_]*1[\\s_]*4|[Ff][\\s_]*1[\\s_]*4|[Ff][\\s_]*1[\\s_]*5|[Ff][\\s_]*1[\\s_]*5|[Ff][\\s_]*1[\\s_]*6|[Ff][\\s_]*1[\\s_]*6|[Ff][\\s_]*1[\\s_]*7|[Ff][\\s_]*1[\\s_]*7|[Ff][\\s_]*1[\\s_]*8|[Ff][\\s_]*1[\\s_]*8|[Ff][\\s_]*1[\\s_]*9|[Ff][\\s_]*1[\\s_]*9|[Ff][\\s_]*2[\\s_]*0|[Ff][\\s_]*2[\\s_]*0|[Ff][\\s_]*2[\\s_]*1|[Ff][\\s_]*2[\\s_]*1|[Ff][\\s_]*2[\\s_]*2|[Ff][\\s_]*2[\\s_]*2|[Ff][\\s_]*2[\\s_]*3|[Ff][\\s_]*2[\\s_]*3|[Ff][\\s_]*2[\\s_]*4|[Ff][\\s_]*2[\\s_]*4|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*0|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*0|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*0|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*1|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*1|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*1|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*2|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*2|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*2|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*3|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*3|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*3|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*4|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*4|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*4|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*5|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*5|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*5|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*6|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*6|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*6|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*7|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*7|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*7|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*8|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*8|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*8|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*9|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*9|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*9|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Dd]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Dd]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Ss]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Dd]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ss][\\s_]*[Uu][\\s_]*[Bb][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Tt]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ss][\\s_]*[Uu][\\s_]*[Bb][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Tt]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Mm][\\s_]*[Ii][\\s_]*[Nn][\\s_]*[Uu][\\s_]*[Ss]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Ss][\\s_]*[Uu][\\s_]*[Bb][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Tt]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Mm][\\s_]*[Uu][\\s_]*[Ll][\\s_]*[Tt][\\s_]*[Ii][\\s_]*[Pp][\\s_]*[Ll][\\s_]*[Yy]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Mm][\\s_]*[Uu][\\s_]*[Ll][\\s_]*[Tt][\\s_]*[Ii][\\s_]*[Pp][\\s_]*[Ll][\\s_]*[Yy]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Mm][\\s_]*[Uu][\\s_]*[Ll][\\s_]*[Tt][\\s_]*[Ii][\\s_]*[Pp][\\s_]*[Ll][\\s_]*[Yy]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Dd][\\s_]*[Ii][\\s_]*[Vv][\\s_]*[Ii][\\s_]*[Dd][\\s_]*[Ee]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Dd][\\s_]*[Ii][\\s_]*[Vv][\\s_]*[Ii][\\s_]*[Dd][\\s_]*[Ee]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Dd][\\s_]*[Ii][\\s_]*[Vv][\\s_]*[Ii][\\s_]*[Dd][\\s_]*[Ee]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Dd][\\s_]*[Ee][\\s_]*[Cc][\\s_]*[Ii][\\s_]*[Mm][\\s_]*[Aa][\\s_]*[Ll]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Dd][\\s_]*[Ee][\\s_]*[Cc][\\s_]*[Ii][\\s_]*[Mm][\\s_]*[Aa][\\s_]*[Ll]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Dd][\\s_]*[Ee][\\s_]*[Cc][\\s_]*[Ii][\\s_]*[Mm][\\s_]*[Aa][\\s_]*[Ll]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ee][\\s_]*[Rr]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ee][\\s_]*[Rr]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Ee][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ee][\\s_]*[Rr]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Ss][\\s_]*[Cc][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Ss][\\s_]*[Cc][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Ss][\\s_]*[Cc][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Pp][\\s_]*[Ll][\\s_]*[Aa][\\s_]*[Yy][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Uu][\\s_]*[Ss][\\s_]*[Ee]|[Pp][\\s_]*[Ll][\\s_]*[Aa][\\s_]*[Yy][\\s_]*\\/[\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Uu][\\s_]*[Ss][\\s_]*[Ee]|[Pp][\\s_]*[Ll][\\s_]*[Aa][\\s_]*[Yy][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Uu][\\s_]*[Ss][\\s_]*[Ee]|[Pp][\\s_]*[Ll][\\s_]*[Aa][\\s_]*[Yy]|[Mm][\\s_]*[Uu][\\s_]*[Tt][\\s_]*[Ee]|[Mm][\\s_]*[Uu][\\s_]*[Tt][\\s_]*[Ee]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Mm][\\s_]*[Uu][\\s_]*[Tt][\\s_]*[Ee]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Uu][\\s_]*[Pp]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Uu][\\s_]*[Pp]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Pp]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Nn][\\s_]*[Ee][\\s_]*[Xx][\\s_]*[Tt][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk]|[Nn][\\s_]*[Ee][\\s_]*[Xx][\\s_]*[Tt][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk]|[Nn][\\s_]*[Ee][\\s_]*[Xx][\\s_]*[Tt]|[Pp][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Vv][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk]|[Pp][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Vv][\\s_]*[Ii][\\s_]*[Oo][\\s_]*[Uu][\\s_]*[Ss][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk]|[Pp][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Vv][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk]|[Pp][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Vv][\\s_]*[Ii][\\s_]*[Oo][\\s_]*[Uu][\\s_]*[Ss]|[Pp][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Vv]|[Pp][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Ss]|[Mm][\\s_]*[Ii][\\s_]*[Nn][\\s_]*[Uu][\\s_]*[Ss]|[Dd][\\s_]*[Aa][\\s_]*[Ss][\\s_]*[Hh]|[Hh][\\s_]*[Yy][\\s_]*[Pp][\\s_]*[Hh][\\s_]*[Ee][\\s_]*[Nn]|[Ee][\\s_]*[Qq][\\s_]*[Uu][\\s_]*[Aa][\\s_]*[Ll][\\s_]*[Ss]|[Ee][\\s_]*[Qq][\\s_]*[Uu][\\s_]*[Aa][\\s_]*[Ll]|[Cc][\\s_]*[Oo][\\s_]*[Mm][\\s_]*[Mm][\\s_]*[Aa]|[Pp][\\s_]*[Ee][\\s_]*[Rr][\\s_]*[Ii][\\s_]*[Oo][\\s_]*[Dd]|[Dd][\\s_]*[Oo][\\s_]*[Tt]|[Ff][\\s_]*[Uu][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Ss][\\s_]*[Tt][\\s_]*[Oo][\\s_]*[Pp]|[Ss][\\s_]*[Ll][\\s_]*[Aa][\\s_]*[Ss][\\s_]*[Hh]|[Bb][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ss][\\s_]*[Ll][\\s_]*[Aa][\\s_]*[Ss][\\s_]*[Hh]|[Ss][\\s_]*[Ee][\\s_]*[Mm][\\s_]*[Ii][\\s_]*[Cc][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Nn]|[Qq][\\s_]*[Uu][\\s_]*[Oo][\\s_]*[Tt][\\s_]*[Ee]|[Aa][\\s_]*[Pp][\\s_]*[Oo][\\s_]*[Ss][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Pp][\\s_]*[Hh][\\s_]*[Ee]|[Bb][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Qq][\\s_]*[Uu][\\s_]*[Oo][\\s_]*[Tt][\\s_]*[Ee]|[Gg][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Vv][\\s_]*[Ee]|[Bb][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Tt][\\s_]*[Ii][\\s_]*[Cc][\\s_]*[Kk]|[Bb][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ee][\\s_]*[Tt][\\s_]*[Ll][\\s_]*[Ee][\\s_]*[Ff][\\s_]*[Tt]|[Ll][\\s_]*[Ee][\\s_]*[Ff][\\s_]*[Tt][\\s_]*[Bb][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ee][\\s_]*[Tt]|[Bb][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ee][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Ii][\\s_]*[Gg][\\s_]*[Hh][\\s_]*[Tt]|[Rr][\\s_]*[Ii][\\s_]*[Gg][\\s_]*[Hh][\\s_]*[Tt][\\s_]*[Bb][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ee][\\s_]*[Tt])|[^\\s\\p{Cc}])|(?:[Cc][Tt][Rr][Ll]|[Cc][Oo][Nn][Tt][Rr][Oo][Ll]|[Cc][Tt][Ll]|[Ss][Hh][Ii][Ff][Tt]|[Aa][Ll][Tt]|[Oo][Pp][Tt][Ii][Oo][Nn]|[Oo][Pp][Tt]|[Ww][Ii][Nn]|[Cc][Mm][Dd]|[Cc][Oo][Mm][Mm][Aa][Nn][Dd]|[Mm][Ee][Tt][Aa]|[Ss][Uu][Pp][Ee][Rr]|[Ww][Ii][Nn][Dd][Oo][Ww][Ss]))|(?:(?:[Cc][Tt][Rr][Ll]|[Cc][Oo][Nn][Tt][Rr][Oo][Ll]|[Cc][Tt][Ll]|[Ss][Hh][Ii][Ff][Tt]|[Aa][Ll][Tt]|[Oo][Pp][Tt][Ii][Oo][Nn]|[Oo][Pp][Tt]|[Ww][Ii][Nn]|[Cc][Mm][Dd]|[Cc][Oo][Mm][Mm][Aa][Nn][Dd]|[Mm][Ee][Tt][Aa]|[Ss][Uu][Pp][Ee][Rr]|[Ww][Ii][Nn][Dd][Oo][Ww][Ss])\\s*\\+\\s*)*\\+)|[Pp][Aa][Gg][Ee]\\s+\\S.*|[Ss][Cc][Rr][Oo][Ll][Ll]\\s+(?:[Uu][Pp]|[Dd][Oo][Ww][Nn]|-?(?:100|[1-9][0-9]?))|[Ww][Hh][Ee][Ee][Ll]\\s+(?:(?:[Vv][Oo][Ll][Uu][Mm][Ee]|[Aa][Pp][Pp]\\s+[Vv][Oo][Ll][Uu][Mm][Ee]|[Bb][Rr][Ii][Gg][Hh][Tt][Nn][Ee][Ss][Ss])|[Mm][Oo][Dd][Ee]\\s+(?:[Jj][Oo][Gg]|[Ss][Cc][Rr][Oo][Ll][Ll]|[Ss][Hh][Uu][Tt][Tt][Ll][Ee]|[Vv][Oo][Ll][Uu][Mm][Ee]|[Bb][Rr][Ii][Gg][Hh][Tt][Nn][Ee][Ss][Ss]))|(?:(?:[Cc][Tt][Rr][Ll]|[Cc][Oo][Nn][Tt][Rr][Oo][Ll]|[Cc][Tt][Ll]|[Ss][Hh][Ii][Ff][Tt]|[Aa][Ll][Tt]|[Oo][Pp][Tt][Ii][Oo][Nn]|[Oo][Pp][Tt]|[Ww][Ii][Nn]|[Cc][Mm][Dd]|[Cc][Oo][Mm][Mm][Aa][Nn][Dd]|[Mm][Ee][Tt][Aa]|[Ss][Uu][Pp][Ee][Rr]|[Ww][Ii][Nn][Dd][Oo][Ww][Ss])\\s*\\+\\s*)*(?:(?:(?:[Ee][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ee][\\s_]*[Rr]|[Ee][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ee][\\s_]*[Rr]|[Rr][\\s_]*[Ee][\\s_]*[Tt][\\s_]*[Uu][\\s_]*[Rr][\\s_]*[Nn]|[Tt][\\s_]*[Aa][\\s_]*[Bb]|[Tt][\\s_]*[Aa][\\s_]*[Bb]|[Ss][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Ee]|[Ss][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Ee]|[Ss][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Ee][\\s_]*[Bb][\\s_]*[Aa][\\s_]*[Rr]|[Ee][\\s_]*[Ss][\\s_]*[Cc][\\s_]*[Aa][\\s_]*[Pp][\\s_]*[Ee]|[Ee][\\s_]*[Ss][\\s_]*[Cc][\\s_]*[Aa][\\s_]*[Pp][\\s_]*[Ee]|[Ee][\\s_]*[Ss][\\s_]*[Cc]|[Bb][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ss][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Ee]|[Bb][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ss][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Ee]|[Dd][\\s_]*[Ee][\\s_]*[Ll][\\s_]*[Ee][\\s_]*[Tt][\\s_]*[Ee]|[Dd][\\s_]*[Ee][\\s_]*[Ll][\\s_]*[Ee][\\s_]*[Tt][\\s_]*[Ee]|[Dd][\\s_]*[Ee][\\s_]*[Ll]|[Ii][\\s_]*[Nn][\\s_]*[Ss][\\s_]*[Ee][\\s_]*[Rr][\\s_]*[Tt]|[Ii][\\s_]*[Nn][\\s_]*[Ss][\\s_]*[Ee][\\s_]*[Rr][\\s_]*[Tt]|[Ii][\\s_]*[Nn][\\s_]*[Ss]|[Hh][\\s_]*[Oo][\\s_]*[Mm][\\s_]*[Ee]|[Hh][\\s_]*[Oo][\\s_]*[Mm][\\s_]*[Ee]|[Ee][\\s_]*[Nn][\\s_]*[Dd]|[Ee][\\s_]*[Nn][\\s_]*[Dd]|[Pp][\\s_]*[Aa][\\s_]*[Gg][\\s_]*[Ee][\\s_]*[Uu][\\s_]*[Pp]|[Pp][\\s_]*[Aa][\\s_]*[Gg][\\s_]*[Ee][\\s_]*[Uu][\\s_]*[Pp]|[Pp][\\s_]*[Gg][\\s_]*[Uu][\\s_]*[Pp]|[Pp][\\s_]*[Aa][\\s_]*[Gg][\\s_]*[Ee][\\s_]*[Uu][\\s_]*[Pp]|[Pp][\\s_]*[Aa][\\s_]*[Gg][\\s_]*[Ee][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Pp][\\s_]*[Aa][\\s_]*[Gg][\\s_]*[Ee][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Pp][\\s_]*[Gg][\\s_]*[Dd][\\s_]*[Nn]|[Pp][\\s_]*[Aa][\\s_]*[Gg][\\s_]*[Ee][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Cc][\\s_]*[Aa][\\s_]*[Pp][\\s_]*[Ss][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Cc][\\s_]*[Aa][\\s_]*[Pp][\\s_]*[Ss][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Cc][\\s_]*[Aa][\\s_]*[Pp][\\s_]*[Ss][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Pp][\\s_]*[Rr][\\s_]*[Ii][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ss][\\s_]*[Cc][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Ee][\\s_]*[Nn]|[Pp][\\s_]*[Rr][\\s_]*[Ii][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ss][\\s_]*[Cc][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Ee][\\s_]*[Nn]|[Pp][\\s_]*[Rr][\\s_]*[Tt][\\s_]*[Ss][\\s_]*[Cc]|[Pp][\\s_]*[Rr][\\s_]*[Ii][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ss][\\s_]*[Cc][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Ee][\\s_]*[Nn]|[Pp][\\s_]*[Aa][\\s_]*[Uu][\\s_]*[Ss][\\s_]*[Ee]|[Pp][\\s_]*[Aa][\\s_]*[Uu][\\s_]*[Ss][\\s_]*[Ee]|[Bb][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Aa][\\s_]*[Kk]|[Uu][\\s_]*[Pp]|[Uu][\\s_]*[Pp]|[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Uu][\\s_]*[Pp]|[Uu][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww]|[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn][\\s_]*[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww]|[Ll][\\s_]*[Ee][\\s_]*[Ff][\\s_]*[Tt]|[Ll][\\s_]*[Ee][\\s_]*[Ff][\\s_]*[Tt]|[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Ll][\\s_]*[Ee][\\s_]*[Ff][\\s_]*[Tt]|[Ll][\\s_]*[Ee][\\s_]*[Ff][\\s_]*[Tt][\\s_]*[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww]|[Rr][\\s_]*[Ii][\\s_]*[Gg][\\s_]*[Hh][\\s_]*[Tt]|[Rr][\\s_]*[Ii][\\s_]*[Gg][\\s_]*[Hh][\\s_]*[Tt]|[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Rr][\\s_]*[Ii][\\s_]*[Gg][\\s_]*[Hh][\\s_]*[Tt]|[Rr][\\s_]*[Ii][\\s_]*[Gg][\\s_]*[Hh][\\s_]*[Tt][\\s_]*[Aa][\\s_]*[Rr][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ww]|[Ff][\\s_]*1|[Ff][\\s_]*1|[Ff][\\s_]*2|[Ff][\\s_]*2|[Ff][\\s_]*3|[Ff][\\s_]*3|[Ff][\\s_]*4|[Ff][\\s_]*4|[Ff][\\s_]*5|[Ff][\\s_]*5|[Ff][\\s_]*6|[Ff][\\s_]*6|[Ff][\\s_]*7|[Ff][\\s_]*7|[Ff][\\s_]*8|[Ff][\\s_]*8|[Ff][\\s_]*9|[Ff][\\s_]*9|[Ff][\\s_]*1[\\s_]*0|[Ff][\\s_]*1[\\s_]*0|[Ff][\\s_]*1[\\s_]*1|[Ff][\\s_]*1[\\s_]*1|[Ff][\\s_]*1[\\s_]*2|[Ff][\\s_]*1[\\s_]*2|[Ff][\\s_]*1[\\s_]*3|[Ff][\\s_]*1[\\s_]*3|[Ff][\\s_]*1[\\s_]*4|[Ff][\\s_]*1[\\s_]*4|[Ff][\\s_]*1[\\s_]*5|[Ff][\\s_]*1[\\s_]*5|[Ff][\\s_]*1[\\s_]*6|[Ff][\\s_]*1[\\s_]*6|[Ff][\\s_]*1[\\s_]*7|[Ff][\\s_]*1[\\s_]*7|[Ff][\\s_]*1[\\s_]*8|[Ff][\\s_]*1[\\s_]*8|[Ff][\\s_]*1[\\s_]*9|[Ff][\\s_]*1[\\s_]*9|[Ff][\\s_]*2[\\s_]*0|[Ff][\\s_]*2[\\s_]*0|[Ff][\\s_]*2[\\s_]*1|[Ff][\\s_]*2[\\s_]*1|[Ff][\\s_]*2[\\s_]*2|[Ff][\\s_]*2[\\s_]*2|[Ff][\\s_]*2[\\s_]*3|[Ff][\\s_]*2[\\s_]*3|[Ff][\\s_]*2[\\s_]*4|[Ff][\\s_]*2[\\s_]*4|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*0|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*0|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*0|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*1|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*1|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*1|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*2|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*2|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*2|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*3|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*3|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*3|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*4|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*4|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*4|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*5|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*5|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*5|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*6|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*6|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*6|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*7|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*7|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*7|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*8|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*8|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*8|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*9|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*9|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*9|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Dd]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Dd]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Ss]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Dd]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ss][\\s_]*[Uu][\\s_]*[Bb][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Tt]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ss][\\s_]*[Uu][\\s_]*[Bb][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Tt]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Mm][\\s_]*[Ii][\\s_]*[Nn][\\s_]*[Uu][\\s_]*[Ss]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Ss][\\s_]*[Uu][\\s_]*[Bb][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Tt]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Mm][\\s_]*[Uu][\\s_]*[Ll][\\s_]*[Tt][\\s_]*[Ii][\\s_]*[Pp][\\s_]*[Ll][\\s_]*[Yy]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Mm][\\s_]*[Uu][\\s_]*[Ll][\\s_]*[Tt][\\s_]*[Ii][\\s_]*[Pp][\\s_]*[Ll][\\s_]*[Yy]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Mm][\\s_]*[Uu][\\s_]*[Ll][\\s_]*[Tt][\\s_]*[Ii][\\s_]*[Pp][\\s_]*[Ll][\\s_]*[Yy]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Dd][\\s_]*[Ii][\\s_]*[Vv][\\s_]*[Ii][\\s_]*[Dd][\\s_]*[Ee]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Dd][\\s_]*[Ii][\\s_]*[Vv][\\s_]*[Ii][\\s_]*[Dd][\\s_]*[Ee]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Dd][\\s_]*[Ii][\\s_]*[Vv][\\s_]*[Ii][\\s_]*[Dd][\\s_]*[Ee]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Dd][\\s_]*[Ee][\\s_]*[Cc][\\s_]*[Ii][\\s_]*[Mm][\\s_]*[Aa][\\s_]*[Ll]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Dd][\\s_]*[Ee][\\s_]*[Cc][\\s_]*[Ii][\\s_]*[Mm][\\s_]*[Aa][\\s_]*[Ll]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Dd][\\s_]*[Ee][\\s_]*[Cc][\\s_]*[Ii][\\s_]*[Mm][\\s_]*[Aa][\\s_]*[Ll]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ee][\\s_]*[Rr]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ee][\\s_]*[Rr]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Dd][\\s_]*[Ee][\\s_]*[Nn][\\s_]*[Tt][\\s_]*[Ee][\\s_]*[Rr]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Nn][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Ss][\\s_]*[Cc][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Ss][\\s_]*[Cc][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Ss][\\s_]*[Cc][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Cc][\\s_]*[Kk]|[Pp][\\s_]*[Ll][\\s_]*[Aa][\\s_]*[Yy][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Uu][\\s_]*[Ss][\\s_]*[Ee]|[Pp][\\s_]*[Ll][\\s_]*[Aa][\\s_]*[Yy][\\s_]*\\/[\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Uu][\\s_]*[Ss][\\s_]*[Ee]|[Pp][\\s_]*[Ll][\\s_]*[Aa][\\s_]*[Yy][\\s_]*[Pp][\\s_]*[Aa][\\s_]*[Uu][\\s_]*[Ss][\\s_]*[Ee]|[Pp][\\s_]*[Ll][\\s_]*[Aa][\\s_]*[Yy]|[Mm][\\s_]*[Uu][\\s_]*[Tt][\\s_]*[Ee]|[Mm][\\s_]*[Uu][\\s_]*[Tt][\\s_]*[Ee]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Mm][\\s_]*[Uu][\\s_]*[Tt][\\s_]*[Ee]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Uu][\\s_]*[Pp]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Uu][\\s_]*[Pp]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Pp]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Mm][\\s_]*[Ee][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Vv][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Dd][\\s_]*[Oo][\\s_]*[Ww][\\s_]*[Nn]|[Nn][\\s_]*[Ee][\\s_]*[Xx][\\s_]*[Tt][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk]|[Nn][\\s_]*[Ee][\\s_]*[Xx][\\s_]*[Tt][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk]|[Nn][\\s_]*[Ee][\\s_]*[Xx][\\s_]*[Tt]|[Pp][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Vv][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk]|[Pp][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Vv][\\s_]*[Ii][\\s_]*[Oo][\\s_]*[Uu][\\s_]*[Ss][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk]|[Pp][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Vv][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk]|[Pp][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Vv][\\s_]*[Ii][\\s_]*[Oo][\\s_]*[Uu][\\s_]*[Ss]|[Pp][\\s_]*[Rr][\\s_]*[Ee][\\s_]*[Vv]|[Pp][\\s_]*[Ll][\\s_]*[Uu][\\s_]*[Ss]|[Mm][\\s_]*[Ii][\\s_]*[Nn][\\s_]*[Uu][\\s_]*[Ss]|[Dd][\\s_]*[Aa][\\s_]*[Ss][\\s_]*[Hh]|[Hh][\\s_]*[Yy][\\s_]*[Pp][\\s_]*[Hh][\\s_]*[Ee][\\s_]*[Nn]|[Ee][\\s_]*[Qq][\\s_]*[Uu][\\s_]*[Aa][\\s_]*[Ll][\\s_]*[Ss]|[Ee][\\s_]*[Qq][\\s_]*[Uu][\\s_]*[Aa][\\s_]*[Ll]|[Cc][\\s_]*[Oo][\\s_]*[Mm][\\s_]*[Mm][\\s_]*[Aa]|[Pp][\\s_]*[Ee][\\s_]*[Rr][\\s_]*[Ii][\\s_]*[Oo][\\s_]*[Dd]|[Dd][\\s_]*[Oo][\\s_]*[Tt]|[Ff][\\s_]*[Uu][\\s_]*[Ll][\\s_]*[Ll][\\s_]*[Ss][\\s_]*[Tt][\\s_]*[Oo][\\s_]*[Pp]|[Ss][\\s_]*[Ll][\\s_]*[Aa][\\s_]*[Ss][\\s_]*[Hh]|[Bb][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ss][\\s_]*[Ll][\\s_]*[Aa][\\s_]*[Ss][\\s_]*[Hh]|[Ss][\\s_]*[Ee][\\s_]*[Mm][\\s_]*[Ii][\\s_]*[Cc][\\s_]*[Oo][\\s_]*[Ll][\\s_]*[Oo][\\s_]*[Nn]|[Qq][\\s_]*[Uu][\\s_]*[Oo][\\s_]*[Tt][\\s_]*[Ee]|[Aa][\\s_]*[Pp][\\s_]*[Oo][\\s_]*[Ss][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Oo][\\s_]*[Pp][\\s_]*[Hh][\\s_]*[Ee]|[Bb][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Qq][\\s_]*[Uu][\\s_]*[Oo][\\s_]*[Tt][\\s_]*[Ee]|[Gg][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Vv][\\s_]*[Ee]|[Bb][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Tt][\\s_]*[Ii][\\s_]*[Cc][\\s_]*[Kk]|[Bb][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ee][\\s_]*[Tt][\\s_]*[Ll][\\s_]*[Ee][\\s_]*[Ff][\\s_]*[Tt]|[Ll][\\s_]*[Ee][\\s_]*[Ff][\\s_]*[Tt][\\s_]*[Bb][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ee][\\s_]*[Tt]|[Bb][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ee][\\s_]*[Tt][\\s_]*[Rr][\\s_]*[Ii][\\s_]*[Gg][\\s_]*[Hh][\\s_]*[Tt]|[Rr][\\s_]*[Ii][\\s_]*[Gg][\\s_]*[Hh][\\s_]*[Tt][\\s_]*[Bb][\\s_]*[Rr][\\s_]*[Aa][\\s_]*[Cc][\\s_]*[Kk][\\s_]*[Ee][\\s_]*[Tt])|[^\\s\\p{Cc}])|\\+)|(?:(?:[Cc][Tt][Rr][Ll]|[Cc][Oo][Nn][Tt][Rr][Oo][Ll]|[Cc][Tt][Ll]|[Ss][Hh][Ii][Ff][Tt]|[Aa][Ll][Tt]|[Oo][Pp][Tt][Ii][Oo][Nn]|[Oo][Pp][Tt]|[Ww][Ii][Nn]|[Cc][Mm][Dd]|[Cc][Oo][Mm][Mm][Aa][Nn][Dd]|[Mm][Ee][Tt][Aa]|[Ss][Uu][Pp][Ee][Rr]|[Ww][Ii][Nn][Dd][Oo][Ww][Ss])\\s*\\+\\s*)+\\+)\\s*$",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/open"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "What one wheel step does: any action except back."
+    }
+  },
+  "$id": "https://raw.githubusercontent.com/brinkercode/freewheel/main/schema/freewheel-mappings.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "What each Speed Editor key, the wheel and the dial do in freewheel. Reference: SCHEMA.md in the freewheel repository.",
+  "properties": {
+    "$schema": {
+      "description": "Where editors find the JSON Schema; freewheel ignores it. Allowed: any URL. Default: (none).",
+      "type": "string"
+    },
+    "dial": {
+      "additionalProperties": false,
+      "description": "How much one wheel step changes while the wheel is a knob. Default: 2, 2, 5.",
+      "properties": {
+        "app_volume_step": {
+          "description": "Percent of the front app's volume per step. Allowed: 0.1 to 100. Default: 2.",
+          "maximum": 100,
+          "minimum": 0.1,
+          "type": "number"
+        },
+        "brightness_step": {
+          "description": "Percent of display brightness per step. Allowed: 1 to 100. Default: 5.",
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "volume_step": {
+          "description": "Percent of system volume per step. Allowed: 0.1 to 100. Default: 2.",
+          "maximum": 100,
+          "minimum": 0.1,
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "pages": {
+      "additionalProperties": {
+        "$ref": "#/$defs/page"
+      },
+      "description": "Page name to its keys. The first page is where the Speed Editor starts. Allowed: 1 or more pages. Default: one empty page \"Base\".",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "\\S"
+      },
+      "type": "object"
+    },
+    "settings": {
+      "additionalProperties": false,
+      "description": "Optional app settings. Restore changes only the ones written; export never writes them. Default: (your current settings).",
+      "properties": {
+        "appearance": {
+          "anyOf": [
+            {
+              "enum": [
+                "system",
+                "light",
+                "dark"
+              ]
+            },
+            {
+              "pattern": "^\\s*(?:[Ss][Yy][Ss][Tt][Ee][Mm]|[Ll][Ii][Gg][Hh][Tt]|[Dd][Aa][Rr][Kk])\\s*$",
+              "type": "string"
+            }
+          ],
+          "description": "The settings window's colours. Allowed: system, light, dark. Default: \"system\"."
+        },
+        "detailed_logs": {
+          "description": "Detailed logs for troubleshooting (they turn off after a day). Default: false.",
+          "type": "boolean"
+        },
+        "low_battery_warning": {
+          "description": "Warn when the Speed Editor's battery is at or below this percent. Allowed: 0 to 100. Default: 15.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "resolve_program": {
+          "description": "The program name freewheel watches for. Allowed: not empty. Default: \"Resolve.exe\" (Windows), \"Resolve\" (macOS).",
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "step_aside_for_resolve": {
+          "description": "Turn freewheel off while DaVinci Resolve is open. Default: true.",
+          "type": "boolean"
+        },
+        "update_automatically": {
+          "description": "Download new versions by themselves. Default: true.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "version": {
+      "const": 2,
+      "description": "The file format. 1 is the long form earlier versions wrote; it still reads. Allowed: 1 or 2. Default: 2."
+    },
+    "wheel": {
+      "additionalProperties": false,
+      "description": "What turning the wheel does. Default: scroll mode, speed 10.",
+      "properties": {
+        "brightness": {
+          "additionalProperties": false,
+          "description": "What turning the wheel does while <mode>'s button is lit. Default: left \"scroll up\", right \"scroll down\".",
+          "properties": {
+            "left": {
+              "$ref": "#/$defs/wheelAction",
+              "description": "What one step to the left does. Allowed: any action except back. Default: \"scroll up\"."
+            },
+            "max_rate": {
+              "description": "At most this many steps a second (useful for shuttle). Allowed: 1 to 1000. Default: null (no limit).",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "right": {
+              "$ref": "#/$defs/wheelAction",
+              "description": "What one step to the right does. Allowed: any action except back. Default: \"scroll down\"."
+            },
+            "speed": {
+              "description": "This mode's speed, instead of wheel.speed. Allowed: 1 to 10. Default: wheel.speed.",
+              "maximum": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "jog": {
+          "additionalProperties": false,
+          "description": "What turning the wheel does while <mode>'s button is lit. Default: left \"scroll up\", right \"scroll down\".",
+          "properties": {
+            "left": {
+              "$ref": "#/$defs/wheelAction",
+              "description": "What one step to the left does. Allowed: any action except back. Default: \"scroll up\"."
+            },
+            "max_rate": {
+              "description": "At most this many steps a second (useful for shuttle). Allowed: 1 to 1000. Default: null (no limit).",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "right": {
+              "$ref": "#/$defs/wheelAction",
+              "description": "What one step to the right does. Allowed: any action except back. Default: \"scroll down\"."
+            },
+            "speed": {
+              "description": "This mode's speed, instead of wheel.speed. Allowed: 1 to 10. Default: wheel.speed.",
+              "maximum": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "jog",
+                "scroll",
+                "shuttle",
+                "volume",
+                "brightness"
+              ]
+            },
+            {
+              "pattern": "^\\s*(?:[Jj][Oo][Gg]|[Ss][Cc][Rr][Oo][Ll][Ll]|[Ss][Hh][Uu][Tt][Tt][Ll][Ee]|[Vv][Oo][Ll][Uu][Mm][Ee]|[Bb][Rr][Ii][Gg][Hh][Tt][Nn][Ee][Ss][Ss])\\s*$",
+              "type": "string"
+            }
+          ],
+          "description": "The wheel button lit when freewheel starts. volume and brightness turn the wheel into that knob. Allowed: jog, scroll, shuttle, volume, brightness. Default: \"scroll\"."
+        },
+        "scroll": {
+          "additionalProperties": false,
+          "description": "What turning the wheel does while <mode>'s button is lit. Default: left \"scroll up\", right \"scroll down\".",
+          "properties": {
+            "left": {
+              "$ref": "#/$defs/wheelAction",
+              "description": "What one step to the left does. Allowed: any action except back. Default: \"scroll up\"."
+            },
+            "max_rate": {
+              "description": "At most this many steps a second (useful for shuttle). Allowed: 1 to 1000. Default: null (no limit).",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "right": {
+              "$ref": "#/$defs/wheelAction",
+              "description": "What one step to the right does. Allowed: any action except back. Default: \"scroll down\"."
+            },
+            "speed": {
+              "description": "This mode's speed, instead of wheel.speed. Allowed: 1 to 10. Default: wheel.speed.",
+              "maximum": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "shuttle": {
+          "additionalProperties": false,
+          "description": "What turning the wheel does while <mode>'s button is lit. Default: left \"scroll up\", right \"scroll down\".",
+          "properties": {
+            "left": {
+              "$ref": "#/$defs/wheelAction",
+              "description": "What one step to the left does. Allowed: any action except back. Default: \"scroll up\"."
+            },
+            "max_rate": {
+              "description": "At most this many steps a second (useful for shuttle). Allowed: 1 to 1000. Default: null (no limit).",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "right": {
+              "$ref": "#/$defs/wheelAction",
+              "description": "What one step to the right does. Allowed: any action except back. Default: \"scroll down\"."
+            },
+            "speed": {
+              "description": "This mode's speed, instead of wheel.speed. Allowed: 1 to 10. Default: wheel.speed.",
+              "maximum": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "speed": {
+          "description": "How far the wheel turns per step, for every mode: 10 steps on every tick, 1 needs ten ticks. Allowed: 1 to 10. Default: 10.",
+          "maximum": 10,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "volume": {
+          "additionalProperties": false,
+          "description": "What turning the wheel does while <mode>'s button is lit. Default: left \"scroll up\", right \"scroll down\".",
+          "properties": {
+            "left": {
+              "$ref": "#/$defs/wheelAction",
+              "description": "What one step to the left does. Allowed: any action except back. Default: \"scroll up\"."
+            },
+            "max_rate": {
+              "description": "At most this many steps a second (useful for shuttle). Allowed: 1 to 1000. Default: null (no limit).",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "right": {
+              "$ref": "#/$defs/wheelAction",
+              "description": "What one step to the right does. Allowed: any action except back. Default: \"scroll down\"."
+            },
+            "speed": {
+              "description": "This mode's speed, instead of wheel.speed. Allowed: 1 to 10. Default: wheel.speed.",
+              "maximum": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "title": "freewheel mappings file",
+  "type": "object"
+}

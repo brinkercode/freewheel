@@ -1,0 +1,144 @@
+{
+  "$schema": "https://raw.githubusercontent.com/brinkercode/freewheel/main/schema/freewheel-mappings.schema.json",
+  "version": 2,
+  "pages": {
+    "Main": {
+      "SMART INSRT": "Ctrl+Shift+S",
+      "APPND": "F24",
+      "RIPL O/WR": "Win+Plus",
+      "CLOSE UP": "Alt+Num7",
+      "PLACE ON TOP": "Mute",
+      "SRC O/WR": "hold Shift",
+      "IN": "hold Ctrl+Space",
+      "OUT": "toggle Alt",
+      "TRIM IN": "scroll up",
+      "TRIM OUT": "scroll down",
+      "ROLL": "scroll -7",
+      "SLIP SRC": {
+        "open": "C:\\Tools\\Round Trip.exe",
+        "args": ["--fw", "a b"]
+      },
+      "SLIP DEST": "open Spotify",
+      "TRANS DUR": "https://example.com/a?b=c",
+      "CUT": {
+        "open": "C:\\Tools\\run.cmd",
+        "args": ["x"],
+        "cwd": "C:\\Tools"
+      },
+      "DIS": "page Studio",
+      "SMTH CUT": "wheel mode shuttle",
+      "ESC": "Win+Plus",
+      "SYNC BIN": "Alt+Num7",
+      "AUDIO LEVEL": "Mute",
+      "FULL VIEW": "hold Shift",
+      "TRANS": "hold Ctrl+Space",
+      "SPLIT": "toggle Alt",
+      "SNAP": "scroll up",
+      "RIPL DEL": "scroll down",
+      "CAM7": "wheel mode shuttle",
+      "CAM8": "wheel mode volume",
+      "CAM9": "wheel app volume",
+      "LIVE O/WR": "wheel brightness",
+      "CAM4": "https://example.com/a?b=c",
+      "CAM5": {
+        "open": "C:\\Tools\\run.cmd",
+        "args": ["x"],
+        "cwd": "C:\\Tools"
+      },
+      "CAM6": "page Studio",
+      "VIDEO ONLY": "Ctrl+Shift+S",
+      "CAM1": "scroll -7",
+      "CAM2": {
+        "open": "C:\\Tools\\Round Trip.exe",
+        "args": ["--fw", "a b"]
+      },
+      "CAM3": "open Spotify",
+      "AUDIO ONLY": "F24",
+      "STOP/PLAY": "Win+Plus",
+      "SOURCE": "wheel mode volume",
+      "TIMELINE": "wheel app volume",
+      "SHTL": "wheel brightness",
+      "JOG": "Ctrl+Shift+S",
+      "SCRL": "F24"
+    },
+    "Studio": {
+      "SMART INSRT": "Ctrl+Shift+S",
+      "APPND": "F24",
+      "RIPL O/WR": "Win+Plus",
+      "CLOSE UP": "Alt+Num7",
+      "PLACE ON TOP": "Mute",
+      "SRC O/WR": "hold Shift",
+      "IN": "hold Ctrl+Space",
+      "OUT": "toggle Alt",
+      "TRIM IN": "scroll up",
+      "TRIM OUT": "scroll down",
+      "ROLL": "scroll -7",
+      "SLIP SRC": {
+        "open": "C:\\Tools\\Round Trip.exe",
+        "args": ["--fw", "a b"]
+      },
+      "SLIP DEST": "open Spotify",
+      "TRANS DUR": "https://example.com/a?b=c",
+      "CUT": {
+        "open": "C:\\Tools\\run.cmd",
+        "args": ["x"],
+        "cwd": "C:\\Tools"
+      },
+      "DIS": "back",
+      "SMTH CUT": "wheel mode shuttle",
+      "ESC": "Win+Plus",
+      "SYNC BIN": "Alt+Num7",
+      "AUDIO LEVEL": "Mute",
+      "FULL VIEW": "hold Shift",
+      "TRANS": "hold Ctrl+Space",
+      "SPLIT": "toggle Alt",
+      "SNAP": "scroll up",
+      "RIPL DEL": "scroll down",
+      "CAM7": "wheel mode shuttle",
+      "CAM8": "wheel mode volume",
+      "CAM9": "wheel app volume",
+      "LIVE O/WR": "wheel brightness",
+      "CAM4": "https://example.com/a?b=c",
+      "CAM5": {
+        "open": "C:\\Tools\\run.cmd",
+        "args": ["x"],
+        "cwd": "C:\\Tools"
+      },
+      "CAM6": "back",
+      "VIDEO ONLY": "Ctrl+Shift+S",
+      "CAM1": "scroll -7",
+      "CAM2": {
+        "open": "C:\\Tools\\Round Trip.exe",
+        "args": ["--fw", "a b"]
+      },
+      "CAM3": "open Spotify",
+      "AUDIO ONLY": "F24",
+      "STOP/PLAY": "Win+Plus",
+      "SOURCE": "wheel mode volume",
+      "TIMELINE": "wheel app volume",
+      "SHTL": "wheel brightness",
+      "JOG": "Ctrl+Shift+S",
+      "SCRL": "F24"
+    }
+  },
+  "wheel": {
+    "mode": "jog",
+    "speed": 8,
+    "jog": {
+      "left": "Left",
+      "right": "nothing"
+    },
+    "scroll": {
+      "speed": 10
+    },
+    "shuttle": {
+      "speed": 10,
+      "max_rate": 8
+    }
+  },
+  "dial": {
+    "volume_step": 5,
+    "app_volume_step": 2.5,
+    "brightness_step": 7
+  }
+}

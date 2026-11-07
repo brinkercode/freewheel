@@ -68,3 +68,18 @@ test("the backup section loads no network fonts or icons", () => {
   const src = readFileSync(new URL("./Backup.jsx", import.meta.url), "utf8");
   expect(src).not.toMatch(/fonts\.googleapis|fonts\.gstatic|Material\sSymbols|https?:\/\//);
 });
+
+test("restore says which keys came in off, and a cancelled restore says nothing", async () => {
+  const note = "CAM1 on Main: there is no app or file called Photoshop on this computer. The key is off until you pick the app again.";
+  expect(await restore(true, async () => [note])).toBe(`Your keys are restored. ${note}`);
+  expect(await restore(true, async () => [])).toBe("Your keys are restored.");
+  expect(await restore(true, async () => null)).toBeNull();
+});
+
+test("a mistake in a hand-written file names the line, column and key", () => {
+  const error = { kind: "InvalidFile", line: 7, column: 15, at: "CAM1 on Main", message: 'unknown action "opn Spotify" (did you mean "open Spotify"?)' };
+  expect(importErrorText(error)).toBe(
+    `This file can't be restored: line 7, column 15, CAM1 on Main: unknown action "opn Spotify" (did you mean "open Spotify"?)`,
+  );
+  expect(importErrorText({ ...error, at: "" })).toBe(`This file can't be restored: line 7, column 15: ${error.message}`);
+});

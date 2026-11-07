@@ -1,0 +1,27 @@
+{
+  "pages": {
+    "Main": {
+      "CAM1": "open C:\\Program Files\\Spotify\\Spotify.exe",
+      "CAM2": "open ~/Applications/Spotify.app",
+      "CAM3": {
+        "open": "%LOCALAPPDATA%\\Tools\\run.cmd",
+        "args": [
+          "--flag",
+          "file.txt"
+        ],
+        "cwd": "%USERPROFILE%"
+      },
+      "CAM4": {
+        "open": {
+          "windows": "Spotify",
+          "macos": "com.spotify.client",
+          "linux": "spotify.desktop"
+        }
+      },
+      "CAM5": "open com.spotify.client",
+      "CAM6": "open spotify.desktop",
+      "CAM7": "https://youtube.com/watch?v=1",
+      "CAM8": "open $HOME/bin/tool"
+    }
+  }
+}

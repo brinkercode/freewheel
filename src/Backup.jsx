@@ -14,10 +14,14 @@ export async function backUp(exportFn = exportMappings) {
 
 /**
  * Restore: src-tauri asks "Replace your keys?" and backs up config.json
- * first. Resolves to the confirmation, or null when the user cancelled.
+ * first. Resolves to the confirmation (with the notes about keys that came
+ * in off), or null when the user cancelled.
  */
 export async function restore(allowApps, importFn = importMappings) {
-  return (await importFn(allowApps === true)) ? "Your keys are restored." : null;
+  const result = await importFn(allowApps === true);
+  if (!result) return null;
+  const notes = Array.isArray(result) ? result : [];
+  return ["Your keys are restored.", ...notes].join(" ");
 }
 
 /** The confirmation naming the saved log file. */

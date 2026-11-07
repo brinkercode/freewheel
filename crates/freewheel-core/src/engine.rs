@@ -314,8 +314,9 @@ impl Engine {
                     path,
                     args,
                     enabled: true,
+                    cwd,
                 }) => {
-                    if let Err(e) = launcher.launch(&path, &args) {
+                    if let Err(e) = launcher.launch_in(&path, &args, cwd.as_deref()) {
                         warn!(%path, error = %e, "app launch failed");
                         self.launch_errors.push(e);
                     }
@@ -1100,6 +1101,7 @@ mod tests {
             path: "/usr/bin/app".into(),
             args: args.iter().map(|a| a.to_string()).collect(),
             enabled,
+            cwd: None,
         }
     }
 

@@ -19,6 +19,18 @@ impl std::error::Error for LaunchError {}
 /// Starts an application with an argv array; no shell sees the arguments.
 pub trait Launcher {
     fn launch(&mut self, path: &str, args: &[String]) -> Result<(), LaunchError>;
+
+    /// Starts it in the folder `cwd` (a mappings file's `cwd`); launchers
+    /// that start nothing real ignore the folder.
+    fn launch_in(
+        &mut self,
+        path: &str,
+        args: &[String],
+        cwd: Option<&str>,
+    ) -> Result<(), LaunchError> {
+        let _ = cwd;
+        self.launch(path, args)
+    }
 }
 
 /// A recording launcher for tests: it starts nothing.

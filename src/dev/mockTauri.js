@@ -164,7 +164,7 @@ export function installMockTauri(win = window) {
         : null,
     open_bluetooth_settings: () => null,
     export_mappings: () => true,
-    import_mappings: () => true,
+    import_mappings: () => [],
     export_logs: () => "C:\\Users\\you\\Downloads\\freewheel-logs.zip",
     set_detailed_logs: ({ on }) => {
       config.settings.detailed_logs = on;
