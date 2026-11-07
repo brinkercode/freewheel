@@ -25,6 +25,8 @@ mod linux_brightness;
 #[cfg(target_os = "linux")]
 mod linux_desktop;
 #[cfg(target_os = "linux")]
+mod linux_idle;
+#[cfg(target_os = "linux")]
 mod linux_inject;
 #[cfg(target_os = "linux")]
 mod linux_udev;
@@ -444,6 +446,12 @@ fn main() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 app_windows::close_requested(window, api);
+            }
+            // Linux: with no window left, WebKit's network process and the
+            // closed webview's heap go too (linux_idle.rs).
+            #[cfg(target_os = "linux")]
+            if let tauri::WindowEvent::Destroyed = event {
+                linux_idle::last_window_closed(window.app_handle());
             }
         })
         .build(context)

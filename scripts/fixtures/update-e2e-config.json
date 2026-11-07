@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "settings": {
+    "enabled": true,
+    "start_at_login": false,
+    "resolve_process_name": "resolve",
+    "low_battery_threshold": 15,
+    "appearance": "System",
+    "auto_update": false,
+    "step_aside_for_resolve": true,
+    "detailed_logs": false
+  },
+  "layers": [
+    {
+      "id": "base",
+      "name": "Base",
+      "bindings": {
+        "In": {
+          "Hotkey": {
+            "combo": {
+              "modifiers": [
+                "Ctrl",
+                "Shift"
+              ],
+              "key": "K"
+            }
+          }
+        },
+        "Cut": {
+          "LayerPush": {
+            "target": "e2e-page"
+          }
+        }
+      }
+    },
+    {
+      "id": "e2e-page",
+      "name": "E2E page",
+      "bindings": {
+        "Out": {
+          "Hotkey": {
+            "combo": {
+              "modifiers": [],
+              "key": "J"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "base_layer": "base",
+  "jog": {
+    "default_mode": "Scroll",
+    "per_mode": {
+      "Jog": {
+        "left": {
+          "Scroll": {
+            "amount": -1
+          }
+        },
+        "right": {
+          "Scroll": {
+            "amount": 1
+          }
+        },
+        "threshold": 1,
+        "shuttle_max_rate_hz": null
+      },
+      "Scroll": {
+        "left": {
+          "Scroll": {
+            "amount": -1
+          }
+        },
+        "right": {
+          "Scroll": {
+            "amount": 1
+          }
+        },
+        "threshold": 1,
+        "shuttle_max_rate_hz": null
+      },
+      "Shuttle": {
+        "left": {
+          "Scroll": {
+            "amount": -1
+          }
+        },
+        "right": {
+          "Scroll": {
+            "amount": 1
+          }
+        },
+        "threshold": 1,
+        "shuttle_max_rate_hz": null
+      }
+    }
+  },
+  "overrides": {
+    "system_volume_step": 0.02,
+    "app_volume_step": 0.02,
+    "brightness_step": 5
+  }
+}

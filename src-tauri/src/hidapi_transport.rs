@@ -60,6 +60,20 @@ impl HidapiTransport {
     /// one), each is tried in [`try_order`] until one accepts the auth
     /// reset (feature report 6, step 0: the handshake's own first step).
     pub fn open(api: &mut HidApi) -> Result<Self, HidError> {
+        // Linux: a glance at /sys/class/hidraw first; the full HID
+        // enumeration only once a Speed Editor's node is there (the 3 s
+        // retry is otherwise most of an idle freewheel's wakeups).
+        #[cfg(target_os = "linux")]
+        if crate::linux_udev::speed_editor_nodes(
+            std::path::Path::new("/sys"),
+            std::path::Path::new("/dev"),
+        )
+        .is_empty()
+        {
+            return Err(HidError::Io(
+                "no Speed Editor (1edb:da0e) listed by the OS".into(),
+            ));
+        }
         if let Err(e) = api.refresh_devices() {
             tracing::warn!(error = %e, "cannot refresh the HID device list");
         }

@@ -1325,7 +1325,12 @@ mod tests {
         let m: Manifest = serde_json::from_str(json).unwrap();
         assert_eq!(m.version, "0.1.1");
         assert!(m.notes.contains("Features"));
-        for key in ["windows-x86_64", "darwin-aarch64", "darwin-x86_64", "linux-x86_64"] {
+        for key in [
+            "windows-x86_64",
+            "darwin-aarch64",
+            "darwin-x86_64",
+            "linux-x86_64",
+        ] {
             assert!(m.platforms[key].url.starts_with(
                 "https://github.com/brinkercode/freewheel/releases/download/v0.1.1/freewheel-0.1.1-"
             ));
@@ -1856,7 +1861,11 @@ mod tests {
             cleanup(&image, &temp),
             vec![sibling(&image, "old"), temp.clone()]
         );
-        assert_eq!(std::fs::read_dir(&apps).unwrap().count(), 1, "only the AppImage");
+        assert_eq!(
+            std::fs::read_dir(&apps).unwrap().count(),
+            1,
+            "only the AppImage"
+        );
     }
 
     #[test]
@@ -1888,16 +1897,26 @@ mod tests {
             ("ARGV0", "freewheel"),
             ("OWD", "/home/a"),
             ("LD_LIBRARY_PATH", "/tmp/.mount_freewhXyZ/usr/lib:/opt/x"),
-            ("GDK_PIXBUF_MODULE_FILE", "/tmp/.mount_freewhXyZ/usr/lib/loaders.cache"),
+            (
+                "GDK_PIXBUF_MODULE_FILE",
+                "/tmp/.mount_freewhXyZ/usr/lib/loaders.cache",
+            ),
             ("HOME", "/home/a"),
-            ("FREEWHEEL_E2E_UPDATE_URL", "http://127.0.0.1:1/latest.json"),
+            ("PATH", "/usr/local/bin:/usr/bin"),
         ]
         .map(|(k, v)| (k.to_string(), v.to_string()));
         let mut removed = appimage_env(vars.clone());
         removed.sort();
         assert_eq!(
             removed,
-            ["APPDIR", "APPIMAGE", "ARGV0", "GDK_PIXBUF_MODULE_FILE", "LD_LIBRARY_PATH", "OWD"]
+            [
+                "APPDIR",
+                "APPIMAGE",
+                "ARGV0",
+                "GDK_PIXBUF_MODULE_FILE",
+                "LD_LIBRARY_PATH",
+                "OWD"
+            ]
         );
         // Not from an AppImage: only the AppImage names, nothing else.
         assert!(appimage_env([("HOME".to_string(), "/".to_string())]).is_empty());

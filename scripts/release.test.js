@@ -89,7 +89,7 @@ test("no installer: the bundle is the macOS .app only, macOS 15.0", () => {
 });
 
 test("[T3][T7] the release build bakes in the pubkey variable, and no key is committed", () => {
-  expect(release.match(/run: npm run tauri -- build/g)).toHaveLength(2);
+  expect(release.match(/run: npm run tauri -- build/g)).toHaveLength(3);
   const pkg = JSON.parse(read("../package.json"));
   expect(pkg.scripts.tauri).toBe("node scripts/tauri-release.mjs");
   expect(release).not.toMatch(/secrets\.TAURI_UPDATER_PUBKEY/);
@@ -121,6 +121,7 @@ const latest = {
     "windows-x86_64": at("freewheel-0.1.0-windows-x64.exe"),
     "darwin-aarch64": at("freewheel-0.1.0-macos-universal.dmg"),
     "darwin-x86_64": at("freewheel-0.1.0-macos-universal.dmg"),
+    "linux-x86_64": at("freewheel-0.1.0-linux-x86_64.AppImage"),
   },
 };
 

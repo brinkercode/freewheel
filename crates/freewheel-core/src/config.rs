@@ -1391,4 +1391,16 @@ mod tests {
             assert!(real.path().ends_with(CONFIG_FILE));
         }
     }
+
+    /// The Linux update e2e's config (scripts/e2e-update-linux.mjs) is a
+    /// valid config with keys and a second page, so its byte-for-byte check
+    /// proves an update keeps a real setup.
+    #[test]
+    fn the_update_e2e_config_is_a_valid_setup() {
+        let json = include_str!("../../../scripts/fixtures/update-e2e-config.json");
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.layers.len(), 2);
+        assert!(!config.settings.auto_update);
+        assert!(validate(&config).is_ok());
+    }
 }
