@@ -11,7 +11,7 @@ freewheel ships portable packages only: no installer.
 | `freewheel-X.Y.Z-windows-x64.zip` | `freewheel.exe` + `freewheel-simulate.cmd` |
 | `freewheel-X.Y.Z-macos-universal.zip` | `freewheel.app` (universal; ad-hoc signed until the `APPLE_*` secrets exist, then signed and notarized) |
 | `<zip>.sig` | minisign signature of the zip by the updater key, bound to the version (`tauri signer sign --app-version`) |
-| `latest.json` | the manifest the app reads: `version`, `notes` (release-please's), `pub_date`, and `platforms.{windows-x86_64,darwin-aarch64,darwin-x86_64}.{url,signature}` |
+| `latest.json` | the manifest the app reads: `version`, `notes` (release-please's, user-facing: see Release notes below), `pub_date`, and `platforms.{windows-x86_64,darwin-aarch64,darwin-x86_64}.{url,signature}` |
 
 ## How updates work
 
@@ -68,7 +68,8 @@ test package verified with a test key) and never installs.
      no e2e-only code), packs the zip (`scripts/portable-release.mjs package`).
    - `publish` (`release` environment): signs each zip with the updater key
      (the only step that sees it), writes `latest.json` with the release's
-     notes, verifies every signature locally, uploads all to the release.
+     user-facing notes (the `notes` job's `scripts/release-notes.mjs filter`),
+     verifies every signature locally, uploads all to the release.
    - `latest-json` re-downloads the published `latest.json` and verifies every
      package against `vars.TAURI_UPDATER_PUBKEY`.
    - `update-e2e` unzips the previous release into a folder on Windows and
@@ -83,8 +84,35 @@ with a throwaway key, A unzipped into a folder with keys and a page set up,
 B served from 127.0.0.1 (the `e2e` feature's `FREEWHEEL_E2E_UPDATE_URL`;
 shipped builds never have it, `check-release-binary.mjs` enforces that), a
 tampered B rejected with A intact, then B downloaded, swapped in and
-restarted from the same path with What's new, the config unchanged and no
-`.old` or temp download left.
+restarted from the same path with What's new showing B's notes verbatim
+(the next release's real notes, `release-notes.mjs preview`), the config
+unchanged and no `.old` or temp download left.
+
+## Release notes
+
+- release-please writes `CHANGELOG.md` and the GitHub release from the
+  conventional commits; `changelog-sections` in `release-please-config.json`
+  shows Features, Bug Fixes and Performance Improvements and hides chore, ci,
+  test, build, docs, refactor, style and revert. CHANGELOG.md and the GitHub
+  release keep everything in those sections.
+- The app's What's new gets the user-facing cut: `scripts/release-notes.mjs
+  filter` drops bullets whose scope is developer-only
+  (`scripts/release-notes.json` `hidden_scopes`: scripts, ci, e2e, release,
+  deps-dev, test, footprint, workflow), strips commit hashes, drops the
+  `**freewheel-…:**` ticket labels (`unlabelled_scopes`) and keeps PR links.
+  Write commit subjects for users when the change is user-visible; give
+  developer-only fixes one of the hidden scopes.
+- Preview what the next release's What's new will say:
+  `node scripts/release-notes.mjs preview` (`--raw` for release-please's
+  version). It groups `git log <last v* tag>..HEAD` as release-please does and
+  runs the same filter. Test and e2e builds embed it
+  (`FREEWHEEL_NEXT_NOTES_FILE`, read by `src-tauri/build.rs`) for the
+  Simulator's "New version's notes: Next release (real notes)"; "Sample notes"
+  and "Paste notes…" are the other choices. The simulated update then carries
+  exactly those notes through check, download, restart and What's new.
+- What's new renders a safe markdown subset (`src/notesMarkdown.js`): `##`/`###`
+  headings, bullets, bold, inline code and links; no HTML. Links open in the
+  browser through the opener and only to `https://github.com/`.
 
 ## Keys and settings
 

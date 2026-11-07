@@ -1,0 +1,5 @@
+{
+  "$comment": "What the app's What's new leaves out of release-please's notes (scripts/release-notes.mjs). hidden_scopes: bullets with one of these scopes are developer-only and dropped. unlabelled_scopes: regexes of scopes (internal ticket ids) whose bullet stays but without its '**scope:**' label. CHANGELOG.md and the GitHub release keep everything.",
+  "hidden_scopes": ["scripts", "ci", "e2e", "release", "deps-dev", "test", "footprint", "workflow"],
+  "unlabelled_scopes": ["^freewheel-"]
+}

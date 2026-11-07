@@ -149,7 +149,11 @@ test("--simulate: New version, Download, progress, ready, Restart, then the new 
   await waitFor(() => expect(screen.getByText("freewheel is updated to 0.2.0")).toBeTruthy(), { timeout: 8000 });
   expect(screen.getByText("freewheel 0.2.0")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "What’s new in v0.2.0" }));
-  expect(screen.getByText("smoother scrolling when you turn the wheel fast")).toBeTruthy();
+  // Exactly the notes the update carried, as markdown.
+  expect([...document.querySelectorAll(".whats-new-notes h4, .whats-new-notes li")].map((e) => e.textContent)).toEqual([
+    "Features",
+    "wheel: smoother scrolling when you turn the wheel fast",
+  ]);
   // The same Rust commands; install answered "simulated", so the window drew the restart.
   expect(invoke.mock.calls.map(([cmd]) => cmd).filter((c) => c.startsWith("update_"))).toEqual(["update_check", "update_check", "update_check", "update_download", "update_install"]);
 }, 30000);

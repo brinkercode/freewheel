@@ -15,7 +15,7 @@ test("the e2e session starts the real exe with --simulate through tauri-driver",
     browserName: "webview2",
     "ms:edgeOptions": { debuggerAddress: "127.0.0.1:9222" },
   });
-  expect(parseArgs(["--app", "x.exe", "--out", "o"])).toEqual({ driver: "http://127.0.0.1:4444", app: "x.exe", out: "o", port: null });
+  expect(parseArgs(["--app", "x.exe", "--out", "o"])).toEqual({ driver: "http://127.0.0.1:4444", app: "x.exe", out: "o", port: null, "next-notes": null });
   expect(parseArgs(["--port", "9222", "--app", "x.exe"]).port).toBe("9222");
   expect(() => parseArgs([])).toThrow(/--app/);
   expect(() => parseArgs(["--nope", "1"])).toThrow(/unknown/);
