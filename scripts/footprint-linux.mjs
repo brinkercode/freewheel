@@ -92,7 +92,17 @@ export function windowsOf(list, pids) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const appTree = (pid) => tree(procs(), pid);
-const wmctrl = (...args) => execFileSync("wmctrl", args, { encoding: "utf8" });
+/** wmctrl, retried: it fails now and then while a window is being mapped or destroyed. */
+const wmctrl = (...args) => {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return execFileSync("wmctrl", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    } catch (e) {
+      if (attempt >= 5) throw e;
+      execFileSync("sleep", ["0.3"]);
+    }
+  }
+};
 const visibleWindows = (pid) => windowsOf(wmctrl("-lp"), appTree(pid).map((p) => p.pid));
 
 async function waitFor(what, fn, ms = 60_000) {

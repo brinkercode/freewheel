@@ -529,22 +529,23 @@ pub async fn show_logs_file(app: tauri::AppHandle) -> Result<(), String> {
         .last_bundle()
         .ok_or("The log file is gone. Download the logs again.")?;
     crate::simulate::note(&app, format!("Showed {} in its folder", path.display()));
-    tauri_plugin_opener::reveal_item_in_dir(&path).or_else(|e| {
-        // Linux without a FileManager1 service or portal (a bare window
-        // manager): open the folder with the user's default app instead.
-        #[cfg(target_os = "linux")]
-        if let Some(dir) = path.parent()
-            && std::process::Command::new(crate::apps::LINUX_OPENER)
-                .arg(dir)
-                .spawn()
-                .is_ok()
-        {
-            tracing::info!(error = %e, "no file manager service, opened the folder with xdg-open");
-            return Ok(());
-        }
-        tracing::error!(error = %e, "showing the log file failed");
-        Err(format!("The folder could not be opened: {e}"))
-    })
+    let Err(e) = tauri_plugin_opener::reveal_item_in_dir(&path) else {
+        return Ok(());
+    };
+    // Linux without a FileManager1 service or portal (a bare window
+    // manager): open the folder with the user's default app instead.
+    #[cfg(target_os = "linux")]
+    if let Some(dir) = path.parent()
+        && std::process::Command::new(crate::apps::LINUX_OPENER)
+            .arg(dir)
+            .spawn()
+            .is_ok()
+    {
+        tracing::info!(error = %e, "no file manager service, opened the folder with xdg-open");
+        return Ok(());
+    }
+    tracing::error!(error = %e, "showing the log file failed");
+    Err(format!("The folder could not be opened: {e}"))
 }
 
 /// The Wheel tab's 'Back to normal': leaves the dial override.
