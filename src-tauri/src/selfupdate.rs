@@ -1868,6 +1868,8 @@ mod tests {
         );
     }
 
+    // AppImages are Linux files: Unix paths (not absolute on Windows).
+    #[cfg(unix)]
     #[test]
     fn the_appimage_is_the_target_only_when_running_from_one() {
         let e = appimage_target(None).unwrap_err();
