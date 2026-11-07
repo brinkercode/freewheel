@@ -8,19 +8,30 @@ license = "MIT"
 [features]
 # Windows e2e builds only: the update e2e (scripts/e2e-update-windows.mjs)
 # opens the WebView2 DevTools port (FREEWHEEL_E2E_DEVTOOLS_PORT) in a normal
-# run too, not just in --simulate; the --simulate e2e gets stand-ins for the
-# OS dialogs (src/e2e.rs). Release builds never enable it.
+# run too, not just in --simulate, and points the updater at a local server
+# (FREEWHEEL_E2E_UPDATE_URL, src/selfupdate.rs); the --simulate e2e gets
+# stand-ins for the OS dialogs (src/e2e.rs). Release builds never enable it
+# (release.yml checks the shipped binary has no FREEWHEEL_E2E_UPDATE_URL).
 e2e = []
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+base64 = "0.23"
 directories = "6"
 enigo = "0.5"
 freewheel-core = { path = "../crates/freewheel-core" }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1" # generate_context! embeds plugins.updater through serde_json
+serde_json = "1"
+# The portable self-update (src/selfupdate.rs): semver compare, the
+# release's zip, its minisign signature, the download (reqwest is already
+# in the tree through tauri; TLS from the OS below).
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+minisign-verify = "0.3"
+reqwest = { version = "0.13", default-features = false, features = ["json"] }
+semver = "1"
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 hidapi = { version = "2.6", default-features = false, features = ["linux-native-basic-udev"] }
 png = "0.18"
 os_info = { version = "3", default-features = false }
@@ -30,14 +41,16 @@ tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-opener = "2"
-tauri-plugin-process = "2"
 tauri-plugin-single-instance = "2"
-tauri-plugin-updater = "2"
 tracing = "0.1"
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
 tempfile = "3"
+
+# The OS's TLS (Schannel, Security.framework): no TLS stack of our own.
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+reqwest = { version = "0.13", default-features = false, features = ["native-tls-no-alpn"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10"

@@ -29,12 +29,12 @@ test("test-build workflow runs only on manual dispatch and pushes to main", () =
   expect(wf).not.toMatch(/pull_request|workflow_call|schedule:|tags:/);
 });
 
-test("test-build job runs tauri build on hosted Windows with updater artifacts off and no signing", () => {
+test("test-build job builds the portable exe on hosted Windows, no installer, no pubkey and no signing", () => {
   expect(wf.match(/runs-on: \S+/g)).toEqual(["runs-on: windows-latest"]);
   expect(wf).not.toMatch(/self-hosted/);
-  expect(wf).toMatch(/run: npx tauri build --bundles nsis --config '\{"bundle":\{"createUpdaterArtifacts":false\}\}' -- --locked/);
+  expect(wf).toContain("run: npx tauri build --no-bundle -- --locked");
   const code = wf.split(/\r?\n/).map((l) => l.replace(/(^|\s)#.*$/, "")).join("\n");
-  expect(code).not.toMatch(/npm run tauri|tauri-release|TAURI_SIGNING|PRIVATE_KEY|PASSWORD|PUBKEY|pubkey|secrets/);
+  expect(code).not.toMatch(/npm run tauri|tauri-release|TAURI_SIGNING|PRIVATE_KEY|PASSWORD|PUBKEY|pubkey|secrets|nsis|setup\.exe/);
   for (const uses of wf.match(/uses: \S+/g)) expect(uses).toMatch(/@[0-9a-f]{40}$/);
 });
 
@@ -55,21 +55,18 @@ test("freewheel-simulate.cmd starts the exe next to it with --simulate, CRLF", (
   expect(cmd.replace(/\r\n/g, "")).not.toContain("\n");
 });
 
-// The zero-install gate release.yml runs on what ships, minus its Windows-only
-// `if:` (test-build runs only on Windows): the same script, arguments,
-// installer flag and installed-exe smoke.
-const releaseGate = read("../.github/workflows/release.yml")
-  .match(/ {6}- name: Import check and smoke \(built exe\)\r?\n(?: {8,}.*\r?\n)*(?: {6}- name: Install silently.*\r?\n(?: {8,}.*\r?\n)*)/)[0]
-  .replace(/^ {8}if: runner\.os == 'Windows'\r?\n/gm, "");
-
-test("test-build runs release.yml's zero-install gate after the build and before the upload", () => {
-  expect(releaseGate).toContain("run: node scripts/check-windows-exe.mjs target/release/freewheel.exe");
-  expect(releaseGate).toContain("-ArgumentList '/S' -Wait -PassThru");
-  expect(releaseGate).toContain('node scripts/check-windows-exe.mjs "$env:LOCALAPPDATA\\freewheel\\freewheel.exe"');
-  const gate = wf.indexOf(releaseGate);
-  expect(gate).toBeGreaterThan(wf.indexOf("run: npx tauri build"));
-  expect(gate).toBeLessThan(wf.indexOf("uses: actions/upload-artifact"));
-  expect(wf.indexOf("uses: actions/upload-artifact")).toBe(wf.lastIndexOf("uses: actions/upload-artifact"));
+test("test-build runs release.yml's checks after the build and before the upload", () => {
+  const release = read("../.github/workflows/release.yml");
+  expect(release).toContain('node scripts/check-windows-exe.mjs "$bin"');
+  expect(release).toContain("node scripts/check-release-binary.mjs");
+  const build = wf.indexOf("run: npx tauri build");
+  const gate = wf.indexOf("run: node scripts/check-windows-exe.mjs target/release/freewheel.exe");
+  const e2e = wf.indexOf("run: node scripts/check-release-binary.mjs target/release/freewheel.exe");
+  const upload = wf.indexOf("uses: actions/upload-artifact");
+  expect(gate).toBeGreaterThan(build);
+  expect(e2e).toBeGreaterThan(gate);
+  expect(upload).toBeGreaterThan(e2e);
+  expect(upload).toBe(wf.lastIndexOf("uses: actions/upload-artifact"));
 });
 
 test("a failed check fails the job, so nothing is uploaded", () => {

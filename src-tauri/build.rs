@@ -26,6 +26,9 @@ const COMMANDS: &[&str] = &[
     "choose_app",
     "app_icons",
     "tray_update_state",
+    "update_check",
+    "update_download",
+    "update_install",
 ];
 
 fn main() {

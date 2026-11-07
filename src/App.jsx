@@ -1,11 +1,10 @@
-import { relaunch } from "@tauri-apps/plugin-process";
-import { check } from "@tauri-apps/plugin-updater";
 import { useEffect, useRef, useState } from "react";
 import UpdateBanner from "./UpdateBanner.jsx";
 import { WhatsNewNotice, WhatsNewPage } from "./WhatsNew.jsx";
 import { markSeen, openReleasePage, rememberNotes, whatsNew } from "./whatsNew.js";
 import { checkNow, download, restart, startupCheck } from "./updater.js";
-import { createSimUpdates, simRelaunch } from "./simUpdate.js";
+import { simRelaunch } from "./simUpdate.js";
+import { awaitRestart, rustUpdates } from "./selfUpdate.js";
 import General, { applyAppearance, changeSetting, switchLogin } from "./General.jsx";
 import Simulator from "./Simulator.jsx";
 import Backup from "./Backup.jsx";
@@ -66,9 +65,10 @@ function Settings({ autoUpdate, storage }) {
   const trayActions = useRef({});
   const pending = useRef(null);
   const toastTimer = useRef(null);
-  // --simulate only: the simulated update server and the version a simulated update "installed".
-  const simUpdates = useRef(null);
-  simUpdates.current ??= createSimUpdates();
+  // The Rust updater (in --simulate its simulated source) and, in --simulate
+  // only, the version a simulated update "installed".
+  const updates = useRef(null);
+  updates.current ??= rustUpdates();
   const [simVersion, setSimVersion] = useState(null);
   const shownVersion = simVersion ?? version;
   const current = useRef(null);
@@ -121,13 +121,12 @@ function Settings({ autoUpdate, storage }) {
           setTab("Keys");
           setRecord((r) => ({ key, n: (r?.n ?? 0) + 1 }));
         },
-        // "New version": the simulated server publishes a newer version and freewheel finds it by itself.
+        // "New version": the simulated source (Rust) published a newer version; freewheel finds it by itself.
         onUpdate: () => {
           const busy = ["checking", "downloading", "restarting"].includes(current.current.update?.status);
           if (busy) return;
-          simUpdates.current.publish(current.current.version);
           startupCheck({
-            check: () => simUpdates.current.check(current.current.version),
+            check: () => updates.current.check(),
             autoUpdate: current.current.config?.settings?.auto_update ?? autoUpdate,
             onState: setUpdate,
           }).then((u) => u && (pending.current = u));
@@ -144,11 +143,13 @@ function Settings({ autoUpdate, storage }) {
     if (open) setNewsOpen(true);
     else setNews(null);
   };
-  // Where updates come from: the updater plugin, or in --simulate only the simulated server.
+  // Where updates come from: the Rust updater; in --simulate its simulated
+  // source, and the restart is drawn here (nothing is installed).
   const source = () => {
-    if (!simulating()) return { check, relaunch };
+    const check = () => updates.current.check();
+    if (!simulating()) return { check, relaunch: awaitRestart };
     return {
-      check: () => simUpdates.current.check(current.current.version),
+      check,
       relaunch: (u) =>
         simRelaunch(() => {
           pending.current = null;

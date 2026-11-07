@@ -46,8 +46,11 @@ test("the settings window may call exactly the commands its UI invokes", () => {
     "set_start_at_login",
     "show_logs_file",
     "tray_update_state",
+    "update_check",
+    "update_download",
+    "update_install",
   ]);
-  const granted = new Set([...allowed("default.json"), ...allowed("settings.json")]);
+  const granted = allowed("settings.json");
   expect(sorted(granted)).toEqual(sorted(settings));
 });
 
@@ -62,7 +65,6 @@ test("build.rs declares exactly the commands the UI invokes", () => {
 
 test("every capability file is checked", () => {
   expect(readdirSync(new URL("../src-tauri/capabilities", import.meta.url)).sort()).toEqual([
-    "default.json",
     "settings.json",
     "simulator.json",
   ]);

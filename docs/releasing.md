@@ -2,6 +2,52 @@
 
 Releases come from [release-please](https://github.com/googleapis/release-please)
 and conventional commits (`fix:` → patch, `feat:` → minor while below 1.0).
+freewheel ships portable packages only: no installer.
+
+## What a release holds
+
+| Asset | What it is |
+| --- | --- |
+| `freewheel-X.Y.Z-windows-x64.zip` | `freewheel.exe` + `freewheel-simulate.cmd` |
+| `freewheel-X.Y.Z-macos-universal.zip` | `freewheel.app` (universal; ad-hoc signed until the `APPLE_*` secrets exist, then signed and notarized) |
+| `<zip>.sig` | minisign signature of the zip by the updater key, bound to the version (`tauri signer sign --app-version`) |
+| `latest.json` | the manifest the app reads: `version`, `notes` (release-please's), `pub_date`, and `platforms.{windows-x86_64,darwin-aarch64,darwin-x86_64}.{url,signature}` |
+
+## How updates work
+
+`src-tauri/src/selfupdate.rs`, driven by the settings window (src/updater.js):
+
+1. **Check** (at start, once; and on Check for updates):
+   `GET https://github.com/brinkercode/freewheel/releases/latest/download/latest.json`
+   (a plain download, no API rate limit). 204/404 = no release. Newer by
+   semver → offered.
+2. **Download**: first checks the app's folder is writable (else: "move the
+   folder or download it yourself"), then streams the zip for this OS/arch to
+   `<temp>/freewheel-update/` with progress, and verifies its signature
+   against the pubkey baked in at build (`FREEWHEEL_UPDATER_PUBKEY`) and that
+   the signature is for the offered version. A bad package is deleted;
+   nothing next to the app has been touched.
+3. **Restart to update**: unpacks `freewheel.exe` / `freewheel.app` to
+   `<name>.new` next to the running one, renames the running one to
+   `<name>.old` (Windows allows renaming a running exe), renames `.new` into
+   place, starts it with `--after-update <pid>` and exits. Any failure puts
+   the old one back and shows the error.
+4. **Next start**: waits for the old process to exit, deletes `<name>.old`,
+   any stale `<name>.new` and the temp folder, and shows What's new once.
+
+Settings (`%APPDATA%\freewheel`, `~/Library/Application Support/freewheel`)
+are never touched; Start at login points at the same path. On macOS an
+ad-hoc signed app gets a new code signature each release, so macOS may ask
+for Accessibility and Input Monitoring again after an update until the app is
+signed with a Developer ID.
+
+`freewheel --update-check-and-install` runs the same check, download, verify
+and swap headless (exit 0 updated, 2 up to date, 3 no pubkey, 1 failed);
+`update-e2e.yml` uses it.
+
+`freewheel --simulate` runs the same state machine with a simulated source
+(the Simulator's **New version** publishes one; the download is a committed
+test package verified with a test key) and never installs.
 
 ## How a release flows
 
@@ -9,36 +55,47 @@ and conventional commits (`fix:` → patch, `feat:` → minor while below 1.0).
    PR, `chore(main): release X.Y.Z`, that bumps the version in `package.json`,
    `package-lock.json`, `src-tauri/tauri.conf.json`, both `Cargo.toml` files and
    `Cargo.lock`, and adds the notes to `CHANGELOG.md`. It then starts `ci.yml`
-   on that PR's branch (a PR made with `GITHUB_TOKEN` starts no workflow by
-   itself), so the four required checks run.
+   and `e2e-windows.yml` on that PR's branch (a PR made with `GITHUB_TOKEN`
+   starts no workflow by itself), so the required checks run.
 2. Squash-merge the release PR. On that push release-please tags `vX.Y.Z`,
    publishes the GitHub release with the notes, and starts `release.yml` on the
    tag.
-3. `release.yml` runs the CI matrix, then builds on Windows and macOS with
-   tauri-action in the `release` environment and uploads the NSIS installer,
-   the dmg, the signed updater bundles and `latest.json` (its `notes` are the
-   release's notes) to the published release. `latest-json` checks every
-   platform and verifies each download's signature against
-   `vars.TAURI_UPDATER_PUBKEY`; `update-e2e` installs the previous release on
-   Windows and updates it to this one with the installed app's own updater.
-4. Installed apps find it at
-   `https://github.com/brinkercode/freewheel/releases/latest/download/latest.json`.
-   After the update and restart the settings window shows
-   **What's new in vX.Y.Z** once, with the notes and a link to the release.
+3. `release.yml` runs the CI matrix, then:
+   - `build` (Windows, macOS; `release` environment): `npm run tauri -- build`
+     (`scripts/tauri-release.mjs` bakes `vars.TAURI_UPDATER_PUBKEY` in),
+     checks the binary (`check-windows-exe.mjs` zero-install gate on Windows,
+     `codesign --verify` on macOS, `check-release-binary.mjs`: the pubkey is in,
+     no e2e-only code), packs the zip (`scripts/portable-release.mjs package`).
+   - `publish` (`release` environment): signs each zip with the updater key
+     (the only step that sees it), writes `latest.json` with the release's
+     notes, verifies every signature locally, uploads all to the release.
+   - `latest-json` re-downloads the published `latest.json` and verifies every
+     package against `vars.TAURI_UPDATER_PUBKEY`.
+   - `update-e2e` unzips the previous release into a folder on Windows and
+     updates it to this one with that app's own updater.
 
 While a release builds (about 20 minutes) the release is already the latest
-one but has no `latest.json`: update checks fail quietly and retry next start.
+one but has no `latest.json`: update checks find nothing and retry next start.
+
+Every PR also runs `update e2e (windows-2025, local release server)` in
+`e2e-windows.yml`: two e2e builds (A = the repo's version, B = next minor)
+with a throwaway key, A unzipped into a folder with keys and a page set up,
+B served from 127.0.0.1 (the `e2e` feature's `FREEWHEEL_E2E_UPDATE_URL`;
+shipped builds never have it, `check-release-binary.mjs` enforces that), a
+tampered B rejected with A intact, then B downloaded, swapped in and
+restarted from the same path with What's new, the config unchanged and no
+`.old` or temp download left.
 
 ## Keys and settings
 
 - Updater key: `TAURI_SIGNING_PRIVATE_KEY` and
   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` are secrets of the `release`
-  environment; the public key is the repository variable
-  `TAURI_UPDATER_PUBKEY`, injected into release builds by
-  `scripts/tauri-release.mjs` (no key is committed). Losing the private key
-  means installed apps can never update again: keep the backup.
+  environment, used only by the `publish` job's sign step; the public key is
+  the repository variable `TAURI_UPDATER_PUBKEY`, baked into release builds
+  (no key is committed). Losing the private key means released apps can never
+  update again: keep the backup.
 - macOS: until the `APPLE_*` secrets exist, the app is ad-hoc signed and not
-  notarized (Gatekeeper asks on first open).
+  notarized (Gatekeeper asks on first open: right-click → Open).
 - Repository settings this relies on: Actions may create pull requests;
   `googleapis/release-please-action@*` is an allowed action; the `release`
   environment allows `v*` tags.
@@ -48,12 +105,17 @@ one but has no `latest.json`: update checks fail quietly and retry next start.
 `release-please-config.json` has `"release-as": "0.1.0"` for the first
 release only.
 
-1. Merge the PR that adds release-please; the next release-please run opens
-   `chore(main): release 0.1.0`.
-2. Wait for its checks, squash-merge it. Watch `release-please`, then
-   `release` on the `v0.1.0` tag. `update-e2e` is skipped (no older release).
-3. Check `https://github.com/brinkercode/freewheel/releases/latest/download/latest.json`
-   shows `"version": "0.1.0"` and the notes.
+1. Merge the release PR `chore(main): release 0.1.0` once its checks are green
+   (rebase it on main first if release-please has not refreshed it since the
+   portable-update change: its version files must match).
+2. Watch `release-please`, then `release` on the `v0.1.0` tag. `update-e2e`
+   is skipped (no older release).
+3. Check the release lists the two zips, their `.sig` files and `latest.json`,
+   and that
+   `https://github.com/brinkercode/freewheel/releases/latest/download/latest.json`
+   shows `"version": "0.1.0"`, the notes, and both zip URLs.
+4. By hand: unzip the Windows zip into a folder, start `freewheel.exe`;
+   General → Check for updates says You're up to date.
 
 ## A patch (v0.1.1)
 
@@ -61,6 +123,11 @@ release only.
    and include a small `fix:` change (the PR title is the squash commit, so
    it must start with `fix:`).
 2. Merge it; release-please opens `chore(main): release 0.1.1`. Merge that.
-3. `release.yml` on `v0.1.1` ends with `update-e2e`, which installs v0.1.0 and
-   updates it to v0.1.1. It can also be run by hand: Actions → update-e2e →
+3. `release.yml` on `v0.1.1` ends with `update-e2e`, which unzips v0.1.0 into
+   a folder and updates it to v0.1.1 headless, then checks the same path runs
+   0.1.1, `freewheel.exe.old` and the temp download are gone and a second
+   check is up to date. It can also be run by hand: Actions → update-e2e →
    Run workflow (optionally with the tag to start from).
+4. By hand: the v0.1.0 folder from step 4 above, started, offers 0.1.1;
+   Download and install → Restart to update → the same `freewheel.exe` is
+   0.1.1, What's new in v0.1.1 shows, your keys are unchanged.

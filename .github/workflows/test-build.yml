@@ -1,8 +1,8 @@
-# Test build for freewheel: on demand or on a push to main, builds an
-# unsigned NSIS installer and the portable freewheel.exe on a hosted Windows
-# runner, runs release.yml's zero-install gate on both, and uploads only
-# freewheel.exe (plus freewheel-simulate.cmd) as an artifact kept for 1 day. Updater artifacts are off, so
-# no signing secret and no updater pubkey are needed.
+# Test build for freewheel: on demand or on a push to main, builds the
+# portable freewheel.exe on a hosted Windows runner (no installer, no
+# updater pubkey, no signing: it can't update itself), runs the zero-install
+# gate and the shipped-binary check release.yml runs, and uploads
+# freewheel.exe plus freewheel-simulate.cmd as an artifact kept for 1 day.
 name: test-build
 
 on:
@@ -46,25 +46,19 @@ jobs:
       - run: npm ci
 
       # The Tauri CLI directly, not `npm run tauri` (the release wrapper that
-      # requires the signing secrets and the updater pubkey).
-      - name: Build unsigned NSIS installer and freewheel.exe
+      # requires the updater pubkey). No bundle: the exe is the app.
+      - name: Build freewheel.exe
         shell: bash
-        run: npx tauri build --bundles nsis --config '{"bundle":{"createUpdaterArtifacts":false}}' -- --locked
+        run: npx tauri build --no-bundle -- --locked
 
-      # Zero-install gate on what ships: the built exe, then the exe the
-      # NSIS installer puts in the per-user install dir.
+      # Zero-install gate and shipped-binary check on what ships, as release.yml.
       - name: Import check and smoke (built exe)
         run: node scripts/check-windows-exe.mjs target/release/freewheel.exe
-      - name: Install silently and smoke the installed exe
-        shell: pwsh
-        run: |
-          $setup = Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
-          $install = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait -PassThru
-          if ($install.ExitCode -ne 0) { throw "installer exit $($install.ExitCode)" }
-          node scripts/check-windows-exe.mjs "$env:LOCALAPPDATA\freewheel\freewheel.exe"
+      - name: No e2e-only code in the exe
+        run: node scripts/check-release-binary.mjs target/release/freewheel.exe
 
       # freewheel.exe and, next to it, the double-click freewheel-simulate.cmd
-      # (starts `freewheel.exe --simulate`).
+      # (starts `freewheel.exe --simulate`): the release zip's layout.
       - name: Stage freewheel.exe and freewheel-simulate.cmd
         shell: bash
         run: |

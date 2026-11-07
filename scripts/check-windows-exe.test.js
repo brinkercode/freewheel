@@ -72,16 +72,14 @@ test("ci.yml skips the zero-install build on pull requests, and the required job
   expect(ci).toMatch(/^ {2}test:\n {4}name: test \(\$\{\{ matrix\.os \}\}\)$/m);
 });
 
-test("release.yml checks the built exe, installs NSIS with /S and smokes the installed exe", () => {
-  const action = release.indexOf("uses: tauri-apps/tauri-action@");
-  const built = release.indexOf(`run: ${CHECK} target/release/freewheel.exe`);
-  const install = release.indexOf("-ArgumentList '/S' -Wait -PassThru");
-  const installed = release.indexOf(`${CHECK} "$env:LOCALAPPDATA\\freewheel\\freewheel.exe"`);
-  expect(action).toBeGreaterThan(0);
-  expect(built).toBeGreaterThan(action);
-  expect(install).toBeGreaterThan(built);
-  expect(installed).toBeGreaterThan(install);
-  expect(release.match(/if: runner\.os == 'Windows'/g)).toHaveLength(2);
+test("release.yml runs the zero-install gate on the built exe before packing it (no installer)", () => {
+  const build = release.indexOf("run: npm run tauri -- build --no-bundle -- --locked");
+  const check = release.indexOf(`${CHECK} "$bin"`);
+  const pack = release.indexOf("node scripts/portable-release.mjs package");
+  expect(build).toBeGreaterThan(0);
+  expect(check).toBeGreaterThan(build);
+  expect(pack).toBeGreaterThan(check);
+  expect(release).not.toMatch(/-ArgumentList '\/S'|setup\.exe/);
 });
 
 test("the check script runs the smoke flags and requires exit 0", () => {

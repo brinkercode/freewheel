@@ -87,7 +87,7 @@ export function createSimFake() {
         s.permissions = c.state;
         break;
       case "StepUpdate": {
-        // As simulator.rs: each press publishes a newer version (src/simUpdate.js runs the rest).
+        // As simulator.rs: each press publishes a newer version (the update source runs the rest: selfupdate.rs, src/dev/mockTauri.js).
         s.update = { status: "available", version: "99.0.0" };
         break;
       }

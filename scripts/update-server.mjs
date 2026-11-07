@@ -1,29 +1,36 @@
 // The Windows update e2e's local release server (scripts/e2e-update-windows.mjs):
-// serves latest.json and the newer version's signed NSIS installer on
-// 127.0.0.1, as GitHub's release download URLs would. Never used by a shipped
-// build: only the e2e builds point their updater endpoint here.
+// serves a release's latest.json (scripts/portable-release.mjs) and its
+// portable package on 127.0.0.1, as GitHub's release download URLs would.
+// Never used by a shipped build: only e2e builds (the `e2e` cargo feature)
+// read FREEWHEEL_E2E_UPDATE_URL and allow plain http to 127.0.0.1.
 //
 // GET /latest.json answers by mode:
-//   "fail"  500, the check fails (the error state, Try again)
-//   "none"  204, no update (up to date)
-//   "offer" 200, latest.json offering the bundle
-// GET /<bundle name> streams the installer in throttled chunks, so the
-// download's progress is visible. POST /__mode with the mode as the body
-// switches the mode.
-import { readFileSync, statSync } from "node:fs";
+//   "fail"      500, the check fails (the error state, Try again)
+//   "none"      204, no update (up to date)
+//   "offer"     200, the manifest, its package url pointing here
+//   "tampered"  200, the same manifest, but the package served has one
+//               byte flipped (its signature no longer matches)
+// GET /<package name> streams the package in throttled chunks, so the
+// download's progress is visible.
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { basename } from "node:path";
 
-export const MODES = ["fail", "none", "offer"];
+export const MODES = ["fail", "none", "offer", "tampered"];
 
-/** latest.json for one Windows NSIS bundle, as tauri-action writes it. */
-export function latestJson({ version, notes, signature, url, pubDate = new Date().toISOString() }) {
-  return {
-    version,
-    notes,
-    pub_date: pubDate,
-    platforms: { "windows-x86_64": { signature: signature.trim(), url } },
-  };
+/** `manifest` with every platform's url moved to `base` (same file names). */
+export function localManifest(manifest, base) {
+  const platforms = Object.fromEntries(
+    Object.entries(manifest.platforms).map(([key, p]) => [key, { ...p, url: `${base}/${basename(new URL(p.url).pathname)}` }]),
+  );
+  return { ...manifest, platforms };
+}
+
+/** A copy of `data` with the byte in the middle flipped. */
+export function tamper(data) {
+  const copy = Buffer.from(data);
+  copy[Math.floor(copy.length / 2)] ^= 0xff;
+  return copy;
 }
 
 /** Splits `size` bytes into chunks of `chunk`: [start, end) pairs. */
@@ -34,39 +41,30 @@ export function chunks(size, chunk) {
 }
 
 /**
- * Starts the server; resolves to { url, port, setMode, close, hits }.
- * `downloadMs` is about how long the bundle takes to stream.
+ * Starts the server; resolves to { url, port, setMode, mode, close, hits }.
+ * `manifest` is the parsed latest.json, `package` the path of the package it
+ * names; `downloadMs` is about how long the package takes to stream.
  */
-export function startUpdateServer({ bundle, signature, version, notes, port = 0, mode = "fail", downloadMs = 6000 }) {
+export function startUpdateServer({ manifest, package: pkg, port = 0, mode = "fail", downloadMs = 6000 }) {
   let current = mode;
   const hits = [];
-  const name = basename(bundle);
-  const size = statSync(bundle).size;
-  const parts = chunks(size, Math.max(64 * 1024, Math.ceil(size / 40)));
+  const name = basename(pkg);
+  const good = readFileSync(pkg);
+  const bad = tamper(good);
+  const parts = chunks(good.length, Math.max(64 * 1024, Math.ceil(good.length / 40)));
   const pause = downloadMs / parts.length;
   const server = createServer((req, res) => {
     hits.push(`${req.method} ${req.url} (${current})`);
-    if (req.method === "POST" && req.url === "/__mode") {
-      let body = "";
-      req.on("data", (d) => (body += d));
-      req.on("end", () => {
-        if (!MODES.includes(body.trim())) return res.writeHead(400).end("unknown mode");
-        current = body.trim();
-        res.writeHead(200).end(current);
-      });
-      return;
-    }
     if (req.method !== "GET") return res.writeHead(405).end();
     if (req.url.split("?")[0] === "/latest.json") {
       if (current === "fail") return res.writeHead(500).end("simulated server error");
       if (current === "none") return res.writeHead(204).end();
-      const base = `http://127.0.0.1:${server.address().port}`;
-      const json = latestJson({ version, notes, signature, url: `${base}/${encodeURIComponent(name)}` });
+      const json = localManifest(manifest, `http://127.0.0.1:${server.address().port}`);
       return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(json));
     }
     if (decodeURIComponent(req.url.slice(1)) === name) {
-      const data = readFileSync(bundle);
-      res.writeHead(200, { "content-type": "application/octet-stream", "content-length": size });
+      const data = current === "tampered" ? bad : good;
+      res.writeHead(200, { "content-type": "application/zip", "content-length": data.length });
       let i = 0;
       const next = () => {
         if (i >= parts.length) return res.end();

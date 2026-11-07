@@ -37,11 +37,29 @@ function blockEnd(lines, start) {
   return i;
 }
 
+/** Where release secrets may appear: only in the env of these steps. */
+export const SECRET_STEPS = [
+  { re: /APPLE_/, step: "Build freewheel.app (macOS)", what: "APPLE_*" },
+  { re: /TAURI_SIGNING_/, step: "Sign the packages", what: "TAURI_SIGNING_*" },
+];
+
+/** The [start, end) lines of the env block of the step named `name`, and its job's lines; null when absent. */
+function stepEnv(lines, name) {
+  const step = lines.findIndex((l) => new RegExp(`^\\s*-\\s+name:\\s*${name.replace(/[()*.]/g, "\\$&")}\\s*$`).test(l));
+  if (step < 0) return null;
+  const stepEnd = blockEnd(lines, step);
+  const env = lines.findIndex((l, i) => i > step && i < stepEnd && /^\s+env:\s*$/.test(l));
+  let job = step;
+  while (job >= 0 && indent(lines[job]) !== 2) job--;
+  return { env, envEnd: env < 0 ? env : blockEnd(lines, env), job: job < 0 ? [] : lines.slice(job, blockEnd(lines, job)) };
+}
+
 /**
  * Lints the release workflow: every 'uses:' is pinned to a 40-hex commit SHA
- * (or is a local ./ workflow), the tauri-action job declares
- * 'environment: release', APPLE_* and TAURI_SIGNING_* appear only in the
- * tauri-action step env, and no secrets are inherited by called workflows.
+ * (or is a local ./ workflow), APPLE_* appear only in the macOS build step's
+ * env and TAURI_SIGNING_* only in the sign step's env, both of those jobs
+ * declare 'environment: release', and no secrets are inherited by called
+ * workflows.
  */
 export function checkReleaseWorkflow(text) {
   const lines = text.split(/\r?\n/).map((l) => l.replace(/(^|\s)#.*$/, ""));
@@ -53,21 +71,18 @@ export function checkReleaseWorkflow(text) {
     }
     if (/secrets:\s*inherit/.test(line)) problems.push(`line ${i + 1}: uses 'secrets: inherit'`);
   });
-  const step = lines.findIndex((l) => /^\s*-\s+uses:\s*tauri-apps\/tauri-action@/.test(l));
-  if (step < 0) return [...problems, "no tauri-action step"];
-  const stepEnd = blockEnd(lines, step);
-  const env = lines.findIndex((l, i) => i > step && i < stepEnd && /^\s+env:\s*$/.test(l));
-  const envEnd = env < 0 ? env : blockEnd(lines, env);
-  lines.forEach((line, i) => {
-    if (/APPLE_|TAURI_SIGNING_/.test(line) && !(i > env && i < envEnd)) {
-      problems.push(`line ${i + 1}: APPLE_*/TAURI_SIGNING_* outside the tauri-action step env`);
+  for (const { re, step, what } of SECRET_STEPS) {
+    const found = stepEnv(lines, step);
+    if (!found) {
+      problems.push(`no '${step}' step`);
+      continue;
     }
-  });
-  let job = step;
-  while (job >= 0 && indent(lines[job]) !== 2) job--;
-  const jobLines = job < 0 ? [] : lines.slice(job, blockEnd(lines, job));
-  if (!jobLines.some((l) => /^ {4}environment:\s*release\s*$/.test(l))) {
-    problems.push("the tauri-action job does not declare 'environment: release'");
+    lines.forEach((line, i) => {
+      if (re.test(line) && !(i > found.env && i < found.envEnd)) problems.push(`line ${i + 1}: ${what} outside the '${step}' step env`);
+    });
+    if (!found.job.some((l) => /^ {4}environment:\s*release\s*$/.test(l))) {
+      problems.push(`the job of '${step}' does not declare 'environment: release'`);
+    }
   }
   return problems;
 }

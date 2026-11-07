@@ -41,7 +41,7 @@ test("idle CPU is the tree's CPU time over the wall time, per core and per machi
 
 const result = (trayMB, cpu) => ({
   exe: 10 * MB,
-  installer: 3 * MB,
+  package: 3 * MB,
   modes: {
     normal: {
       memory: { open: memory([proc(1, 0, "freewheel.exe", 200)]), tray: memory([proc(1, 0, "freewheel.exe", trayMB)]) },
@@ -52,7 +52,7 @@ const result = (trayMB, cpu) => ({
 });
 
 test("a number over its budget fails; a missing budget is not checked", () => {
-  const b = { exeMB: 12, installerMB: 4, idleCpuPercentOfOneCore: 1, modes: { normal: { diskMB: 8, tray: { workingSetMB: 30, privateMB: 20 } } } };
+  const b = { exeMB: 12, packageMB: 4, idleCpuPercentOfOneCore: 1, modes: { normal: { diskMB: 8, tray: { workingSetMB: 30, privateMB: 20 } } } };
   expect(overBudget(result(20, 0.1), b)).toEqual([]);
   expect(overBudget(result(40, 2), b)).toEqual([
     "normal tray working set MB: 40.00 > budget 30",
@@ -66,7 +66,7 @@ test("the summary is a table per mode with sizes, disk and CPU", () => {
   const r = { ...result(20, 0.05), problems: [] };
   const md = summary(r);
   expect(md).toContain("| freewheel.exe | 10.0 MB |");
-  expect(md).toContain("| NSIS installer | 3.0 MB |");
+  expect(md).toContain("| portable zip | 3.0 MB |");
   expect(md).toContain("| tray | 1 (0) | 20.0 MB | 10.0 MB | 0.0 MB | 0.0 MB |");
   expect(md).toContain("CPU 0.050 % of one core");
   expect(md).toContain("WebView2 data 5.0 MB");
@@ -87,8 +87,9 @@ test("the arguments and the places freewheel writes on Windows", () => {
 
 test("the footprint job measures the release build and enforces the budgets", () => {
   expect(wf).toContain("name: footprint (windows-2025)");
-  expect(wf).toContain("--bundles nsis --config '{\"bundle\":{\"createUpdaterArtifacts\":false}}'");
-  expect(wf).toContain("node scripts/footprint-windows.mjs --app target/release/freewheel.exe --installer \"$installer\" --budgets scripts/footprint-budgets.json");
+  expect(wf).toContain('node "$TAURI_CLI" build --ci --no-bundle');
+  expect(wf).toContain("node scripts/portable-release.mjs package --os windows");
+  expect(wf).toContain('node scripts/footprint-windows.mjs --app target/release/freewheel.exe --package "$zip" --budgets scripts/footprint-budgets.json');
   expect(budgets.idleCpuPercentOfOneCore).toBeLessThanOrEqual(1);
   // Closed to the tray, no WebView2 runs (src-tauri/src/app_windows.rs).
   for (const mode of ["normal", "simulate"]) {

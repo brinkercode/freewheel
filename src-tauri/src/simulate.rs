@@ -458,7 +458,15 @@ pub async fn simulate(
             .await
             .map_err(|e| e.to_string())??;
     if steps_update {
-        // The settings window's banner follows "New version".
+        // "New version": the simulated update source publishes one, then
+        // the settings window finds it (src/selfupdate.rs, src/App.jsx).
+        use tauri::Manager;
+        if let Some(published) = app
+            .try_state::<crate::selfupdate::Updater>()
+            .and_then(|u| u.sim_publish())
+        {
+            tracing::info!(%published, "simulate: new version published");
+        }
         let _ = app.emit_to("main", SIM_UPDATE_EVENT, &status.update);
     }
     Ok(status)

@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // Checks a release's latest.json lists every platform freewheel ships, each
-// with an https url and a signature (the universal dmg serves both macOS keys).
+// with an https url to its portable package and a signature (the universal
+// macOS zip serves both macOS keys; scripts/portable-release.mjs).
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { PACKAGES, PLATFORMS as SERVED } from "./portable-release.mjs";
 
 export const PLATFORMS = ["windows-x86_64", "darwin-aarch64", "darwin-x86_64"];
 
@@ -14,6 +16,8 @@ export function checkLatestJson(json) {
     if (!p) return [`missing platform '${key}'`];
     const problems = [];
     if (!/^https:\/\//.test(p.url ?? "")) problems.push(`'${key}' has no https url`);
+    else if (json.version && !p.url.endsWith(`/${PACKAGES[SERVED[key]](json.version)}`))
+      problems.push(`'${key}' is not ${PACKAGES[SERVED[key]](json.version)}: ${p.url}`);
     if (!p.signature) problems.push(`'${key}' has no signature`);
     return problems;
   });

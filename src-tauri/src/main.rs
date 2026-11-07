@@ -25,6 +25,7 @@ mod macos_volume;
 mod notify;
 mod permissions;
 mod resolve_watch;
+mod selfupdate;
 mod settings;
 mod simulate;
 mod smoke;
@@ -260,7 +261,10 @@ fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::
             permissions::open_bluetooth_settings,
             settings::export_logs,
             settings::set_detailed_logs,
-            updates::open_release_page
+            updates::open_release_page,
+            selfupdate::update_check,
+            selfupdate::update_download,
+            selfupdate::update_install
         ])
 }
 
@@ -277,10 +281,12 @@ fn main() {
         context.config().product_name.as_deref(),
         Some(freewheel_core::APP_NAME)
     );
-    if updates::requested(std::env::args()) {
-        let configured = updater_pubkey_set(&context.config().plugins);
-        std::process::exit(updates::run(context, configured));
+    let version = context.package_info().version.to_string();
+    if selfupdate::headless_requested(std::env::args()) {
+        std::process::exit(selfupdate::run_headless(&version));
     }
+    // Started by an update: the old version exits first (single instance).
+    selfupdate::wait_after_update(std::env::args(), Duration::from_secs(15));
     let (commands, receiver) = mpsc::channel();
     let quit_commands = commands.clone();
     let simulate = simulator::requested(std::env::args());
@@ -301,7 +307,6 @@ fn main() {
         }));
     }
     let mut builder = builder
-        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -309,12 +314,14 @@ fn main() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ));
-    // `--simulate` never updates for real: its settings window uses the
-    // simulated update source (src/simUpdate.js) instead.
-    let updater = !simulate && updater_pubkey_set(&context.config().plugins);
-    if updater {
-        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
-    }
+    // `--simulate` never updates for real: the same update state machine
+    // runs with the simulated source (src/selfupdate.rs).
+    let updater = !simulate && selfupdate::configured();
+    builder = builder.manage(if simulate {
+        selfupdate::Updater::simulated(&version)
+    } else {
+        selfupdate::Updater::release(&version)
+    });
     builder = if simulate {
         with_simulator(builder)
     } else {
@@ -340,7 +347,10 @@ fn main() {
             apps::choose_app,
             app_icons::app_icons,
             tray::tray_update_state,
-            updates::open_release_page
+            updates::open_release_page,
+            selfupdate::update_check,
+            selfupdate::update_download,
+            selfupdate::update_install
         ])
     };
     let app = builder
@@ -364,8 +374,12 @@ fn main() {
                     .with_logger(logger.clone()),
             );
             spawn_resolve_watch(app.handle().clone(), &config, manual_rx, commands.clone());
-            // The tray's update item works with the updater plugin, or in
-            // --simulate with the simulated update source; else it says this
+            // What the last update left behind: the old version, the download.
+            if !simulate {
+                std::thread::spawn(selfupdate::cleanup_current);
+            }
+            // The tray's update item works in a release build (it has the
+            // updater pubkey), or in --simulate with the simulated source; else it says this
             // build can't update itself, as the General tab does.
             let tray = tray::build(
                 app.handle(),
@@ -433,21 +447,8 @@ fn main() {
     });
 }
 
-/// Only release builds get the updater pubkey (`tauri build --config` in the
-/// release workflow); CI and dev builds have none and skip the updater.
-fn updater_pubkey_set(plugins: &tauri::utils::config::PluginConfig) -> bool {
-    plugins
-        .0
-        .get("updater")
-        .and_then(|u| u.get("pubkey"))
-        .and_then(serde_json::Value::as_str)
-        .is_some_and(|k| !k.trim().is_empty())
-}
-
 #[cfg(test)]
 mod tests {
-    use super::updater_pubkey_set;
-
     /// #140: the device loop once authenticated with a stub that always
     /// answered 0, and nothing noticed. The manager the app builds must send
     /// bmd.py's response to a recorded challenge.
@@ -514,34 +515,12 @@ mod tests {
             );
         }
     }
-    use tauri::utils::config::PluginConfig;
-
-    fn plugins(updater: serde_json::Value) -> PluginConfig {
-        PluginConfig([("updater".to_string(), updater)].into_iter().collect())
-    }
-
     #[test]
-    fn dev_and_ci_builds_without_a_pubkey_skip_the_updater() {
-        assert!(!updater_pubkey_set(&PluginConfig::default()));
-        assert!(!updater_pubkey_set(&plugins(serde_json::json!({}))));
-        assert!(!updater_pubkey_set(&plugins(
-            serde_json::json!({ "pubkey": "" })
-        )));
-    }
-
-    #[test]
-    fn a_release_build_with_the_injected_pubkey_runs_the_updater() {
-        assert!(updater_pubkey_set(&plugins(
-            serde_json::json!({ "pubkey": "injected" })
-        )));
-    }
-
-    #[test]
-    fn the_committed_config_has_no_pubkey() {
+    fn the_committed_config_has_no_updater_plugin_or_installer() {
         let conf: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
-        let plugins = PluginConfig(serde_json::from_value(conf["plugins"].clone()).unwrap());
-        assert!(!updater_pubkey_set(&plugins));
+        assert!(conf["plugins"].get("updater").is_none());
+        assert_eq!(conf["bundle"]["targets"], serde_json::json!(["app"]));
     }
 
     /// A21: tapped audio only goes to the playback IOProc.
