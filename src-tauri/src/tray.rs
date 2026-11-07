@@ -983,7 +983,10 @@ mod tests {
         assert_eq!(v.line, "Paused: DaVinci Resolve is open");
     }
 
-    /// A tray built on a mock app with the real Settings behind it.
+    /// A tray built on a mock app with the real Settings behind it. (Not
+    /// on macOS: AppKit menus only exist on the main thread, which a test
+    /// does not run on; the Windows and Linux menus are the same code.)
+    #[cfg(not(target_os = "macos"))]
     fn mock_tray() -> (
         tauri::App<tauri::test::MockRuntime>,
         tempfile::TempDir,
@@ -1005,6 +1008,7 @@ mod tests {
         (app, dir, rx)
     }
 
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn the_tray_and_the_window_switch_the_same_on_off_both_ways() {
         use crate::device::Command;
