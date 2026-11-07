@@ -45,7 +45,7 @@ export const SECRET_STEPS = [
 
 /** The [start, end) lines of the env block of the step named `name`, and its job's lines; null when absent. */
 function stepEnv(lines, name) {
-  const step = lines.findIndex((l) => new RegExp(`^\\s*-\\s+name:\\s*${name.replace(/[()*.]/g, "\\$&")}\\s*$`).test(l));
+  const step = lines.findIndex((l) => new RegExp(`^\\s*-\\s+name:\\s*${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`).test(l));
   if (step < 0) return null;
   const stepEnd = blockEnd(lines, step);
   const env = lines.findIndex((l, i) => i > step && i < stepEnd && /^\s+env:\s*$/.test(l));
