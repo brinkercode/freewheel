@@ -138,8 +138,8 @@ jobs:
           if-no-files-found: error
 
   # What freewheel costs a PC: the release-built exe (as `tauri build` makes
-  # it, no e2e feature) and its NSIS installer, run normally (no Speed
-  # Editor attached) and with --simulate. Records exe/installer size, disk
+  # it, no e2e feature) and its portable zip, run normally (no Speed
+  # Editor attached) and with --simulate. Records exe/zip size, disk
   # written, RAM of freewheel.exe plus its WebView2 processes with the window
   # open and closed to the tray, and idle CPU; fails over the budgets in
   # scripts/footprint-budgets.json and writes the table to the job summary.
@@ -172,16 +172,18 @@ jobs:
 
       - run: npm ci
 
-      # The release build without the updater key (no updater artifacts).
-      - name: Build freewheel.exe and the installer
+      # The release build without the updater key, packed as the release packs it.
+      - name: Build freewheel.exe and the portable zip
         shell: bash
-        run: node "$TAURI_CLI" build --ci --bundles nsis --config '{"bundle":{"createUpdaterArtifacts":false}}'
+        run: |
+          node "$TAURI_CLI" build --ci --no-bundle
+          node scripts/portable-release.mjs package --os windows --version "$(node -p "require('./src-tauri/tauri.conf.json').version")" --out footprint-package
 
       - name: Measure the footprint
         shell: bash
         run: |
-          installer=$(ls target/release/bundle/nsis/*-setup.exe | head -n 1)
-          node scripts/footprint-windows.mjs --app target/release/freewheel.exe --installer "$installer" --budgets scripts/footprint-budgets.json --out footprint
+          zip=$(ls footprint-package/*.zip | head -n 1)
+          node scripts/footprint-windows.mjs --app target/release/freewheel.exe --package "$zip" --budgets scripts/footprint-budgets.json --out footprint
 
       - name: Upload the measurements
         if: always()
