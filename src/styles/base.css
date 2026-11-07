@@ -216,6 +216,12 @@ input[type="range"] { accent-color: var(--accent); border: none; background: tra
   .toolbar-right { gap: 10px; margin-left: 4px; }
   .toolbar .window-controls { margin-left: 6px; }
 }
+/* At the 820px minimum, wider system fonts (DejaVu Sans, the default on many
+   Linux desktops) need a little less padding in each tab to keep every tab
+   and the status dot. */
+@media (max-width: 859px) {
+  .tab { padding: 0 7px; }
+}
 .status:hover:not(:disabled) { background: transparent; }
 .status.is-link { cursor: pointer; }
 .status.is-link:hover:not(:disabled) { background: var(--hover); }

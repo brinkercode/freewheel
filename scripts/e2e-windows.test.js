@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import { checkWorkflow } from "./check-workflow.mjs";
@@ -95,7 +96,7 @@ test("the Linux e2e installs its own desktop entry with a themed icon", async ()
   const { join } = await import("node:path");
   const { tmpdir } = await import("node:os");
   const home = mkdtempSync(join(tmpdir(), "fw-e2e-"));
-  const desktop = installLinuxApp(home, new URL("../src-tauri/icons/32x32.png", import.meta.url).pathname, "");
+  const desktop = installLinuxApp(home, fileURLToPath(new URL("../src-tauri/icons/32x32.png", import.meta.url)), "");
   expect(desktop).toBe(join(home, ".local/share/applications", `${LINUX_APP.id}.desktop`));
   expect(rf(desktop, "utf8")).toContain(`Name=${LINUX_APP.name}\nExec=/usr/bin/true %F\nIcon=${LINUX_APP.id}`);
   expect(existsSync(join(home, ".local/share/icons/hicolor/32x32/apps", `${LINUX_APP.id}.png`))).toBe(true);

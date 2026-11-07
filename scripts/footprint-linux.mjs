@@ -54,18 +54,18 @@ export function procs(proc = "/proc") {
 
 /** Where freewheel writes on Linux (directories::ProjectDirs, WebKitGTK's data and cache under the identifier). */
 export function places(home = os.homedir(), env = process.env) {
-  const config = env.XDG_CONFIG_HOME || path.join(home, ".config");
-  const data = env.XDG_DATA_HOME || path.join(home, ".local", "share");
-  const cache = env.XDG_CACHE_HOME || path.join(home, ".cache");
+  const config = env.XDG_CONFIG_HOME || path.posix.join(home, ".config");
+  const data = env.XDG_DATA_HOME || path.posix.join(home, ".local", "share");
+  const cache = env.XDG_CACHE_HOME || path.posix.join(home, ".cache");
   const id = "com.brinkercode.freewheel";
   return {
-    config: path.join(config, "freewheel"),
-    logs: path.join(data, "freewheel", "logs"),
-    appLocal: path.join(data, "freewheel"),
-    iconCache: path.join(cache, "freewheel", "app-icons"),
-    appCache: path.join(cache, "freewheel"),
-    webviewData: path.join(data, id),
-    webviewCache: path.join(cache, id),
+    config: path.posix.join(config, "freewheel"),
+    logs: path.posix.join(data, "freewheel", "logs"),
+    appLocal: path.posix.join(data, "freewheel"),
+    iconCache: path.posix.join(cache, "freewheel", "app-icons"),
+    appCache: path.posix.join(cache, "freewheel"),
+    webviewData: path.posix.join(data, id),
+    webviewCache: path.posix.join(cache, id),
   };
 }
 
