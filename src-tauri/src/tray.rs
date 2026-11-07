@@ -489,7 +489,10 @@ impl TrayView {
                 }
             }
             // Only the settings window shows these.
-            Update::Layer(_) | Update::KeyPressed(_) | Update::Override(_) => return,
+            Update::Layer(_)
+            | Update::KeyPressed(_)
+            | Update::Override(_)
+            | Update::Diagnostics(_) => return,
         }
         let _ = tray.set_tooltip(Some(self.tooltip()));
     }

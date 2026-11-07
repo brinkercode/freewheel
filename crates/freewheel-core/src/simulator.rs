@@ -12,6 +12,7 @@ use tracing::{info, warn};
 use crate::clock::Clock;
 use crate::config::{Action, Config, ConfigStore, JogMode, OverrideMode};
 use crate::connection::{ConnectionEvent, ConnectionManager, ConnectionStatus, RETRY_INTERVAL};
+use crate::diagnostics::{DeviceDiagnostics, DeviceInfo};
 use crate::engine::Engine;
 use crate::first_run::{FakeFirstRun, FirstRun};
 use crate::hid::{FakeTransport, HidError, HidTransport};
@@ -216,9 +217,17 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 struct SimDevice(Arc<Mutex<FakeTransport>>);
 
 impl SimDevice {
-    /// A device scripted to pass one auth handshake.
-    fn plugged() -> Self {
+    /// A device on `bus` scripted to pass one auth handshake.
+    fn plugged(bus: Bus) -> Self {
         let device = Self::default();
+        lock(&device.0).set_info(DeviceInfo {
+            bus: Some(bus),
+            vendor_id: 0x1edb,
+            product_id: 0xda0e,
+            product: Some("DaVinci Resolve Speed Editor (simulated)".into()),
+            candidates: 1,
+            ..DeviceInfo::default()
+        });
         for (sub, payload) in [(0u8, 0x5eed_u64), (2, 0), (4, SESSION_S)] {
             let mut report = vec![0x06, sub];
             report.extend_from_slice(&payload.to_le_bytes());
@@ -243,6 +252,9 @@ impl HidTransport for SimDevice {
     }
     fn close(&mut self) {
         lock(&self.0).close()
+    }
+    fn info(&self) -> Option<DeviceInfo> {
+        lock(&self.0).info()
     }
 }
 
@@ -360,7 +372,7 @@ impl Simulator {
         let slot = Arc::clone(&plug);
         let open: Opener = Box::new(move || match lock(&slot).as_mut() {
             Some(p) => {
-                p.device = SimDevice::plugged();
+                p.device = SimDevice::plugged(p.bus);
                 Ok(p.device.clone())
             }
             None => Err(HidError::Io("no simulated device attached".into())),
@@ -423,7 +435,10 @@ impl Simulator {
                     self.run(|engine, injector, _| engine.tick(&clock, injector));
                 }
             }
-            Control::WheelMode { mode } => self.engine.set_jog_mode(mode),
+            Control::WheelMode { mode } => self.run(|engine, _, _| {
+                engine.set_jog_mode(mode);
+                Ok(())
+            }),
             Control::SetEnabled { on } => {
                 self.resolve.manual_switch();
                 self.set_enabled(on);
@@ -525,6 +540,14 @@ impl Simulator {
             mapped_keys: self.config.layers.iter().map(|l| l.bindings.len()).sum(),
             wheel_override: self.engine.active_override(),
         }
+    }
+
+    /// The Device test view's data for the simulated Speed Editor: the same
+    /// recorder the real device loop uses, fed the simulated reports.
+    pub fn diagnostics(&self) -> DeviceDiagnostics {
+        let mut d = self.manager.diagnostics();
+        d.simulated = true;
+        d
     }
 
     /// The config the session runs.
@@ -677,7 +700,11 @@ impl Simulator {
             info!("{line}");
             self.toasts.push(line);
         }
-        self.engine.take_reports();
+        // Output reports (the wheel mode) go to the simulated device, so the
+        // Device test view lists them as the real one would.
+        for report in self.engine.take_reports() {
+            let _ = self.manager.write(&report);
+        }
     }
 }
 
@@ -1326,5 +1353,49 @@ mod tests {
         );
         let c: Control = serde_json::from_str(r#"{"type":"LoadSampleMappings"}"#).unwrap();
         assert_eq!(c, Control::LoadSampleMappings);
+    }
+
+    #[test]
+    fn the_device_test_view_sees_the_simulated_reports_both_ways() {
+        let (_dir, mut sim, _mock) = connected(Bus::Bluetooth);
+        let d = sim.diagnostics();
+        assert!(d.simulated);
+        assert_eq!(d.status, Some(ConnectionStatus::Connected));
+        assert_eq!(d.device.as_ref().and_then(|i| i.bus), Some(Bus::Bluetooth));
+        assert_eq!(d.auth.state, crate::diagnostics::AuthState::Passed);
+        assert_eq!(d.auth.session_s, Some(600));
+        // The connect set the device wheel mode.
+        assert_eq!(d.reports[0].direction, crate::diagnostics::Direction::Out);
+        assert_eq!(d.reports[0].hex, "03 00 00 00 00 00 ff");
+
+        key(&mut sim, "Cut", true);
+        sim.apply(Control::Wheel { value: -3 });
+        sim.apply(Control::Battery {
+            level: 42,
+            charging: false,
+        });
+        let d = sim.diagnostics();
+        assert_eq!(d.held, ["CUT"]);
+        assert_eq!(d.presses, ["CUT"]);
+        assert_eq!(d.wheel.total, -3);
+        assert_eq!(d.battery.map(|b| b.level), Some(42));
+        assert_eq!(d.reports[0].hex, "07 00 2a");
+        assert_eq!(d.reports[1].decoded, "wheel mode 0 (relative) value -3");
+        assert_eq!(d.reports[2].decoded, "keys held: CUT");
+
+        sim.apply(Control::WheelMode {
+            mode: JogMode::Shuttle,
+        });
+        let d = sim.diagnostics();
+        assert_eq!(
+            d.reports[0].decoded,
+            "set wheel mode 3 (absolute, dead zero)"
+        );
+
+        sim.apply(Control::Disconnect);
+        let d = sim.diagnostics();
+        assert_eq!(d.status, Some(ConnectionStatus::Absent));
+        assert_eq!(d.disconnects, 1);
+        assert!(d.held.is_empty());
     }
 }

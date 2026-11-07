@@ -1,15 +1,28 @@
 //! The connection manager: opens the device through a factory, keeps it
 //! authenticated, retries every 3 s while it is absent and closes the
 //! handle on Off. Connection changes come out as [`ConnectionEvent`]s.
+//!
+//! It also records the Device test view's [`DeviceDiagnostics`] and, with
+//! detailed logs on, logs every raw report both ways.
 
 use std::time::{Duration, Instant};
 
+use tracing::{debug, info, warn};
+
 use crate::auth::{Authenticator, Clock};
+use crate::diagnostics::{self, DeviceDiagnostics, Recorder};
 use crate::hid::{HidError, HidTransport};
 use crate::report::{DeviceEvent, ReportParser};
 
 /// How often the manager tries to open the device while it is absent.
 pub const RETRY_INTERVAL: Duration = Duration::from_secs(3);
+/// After this long without an input report the manager re-runs the auth
+/// handshake ([`ConnectionManager::with_idle_reauth`]). A Speed Editor that
+/// slept (Bluetooth) or lost power over a PC sleep comes back
+/// unauthenticated and silent; without this it would stay dead until the
+/// session timeout (up to 10 minutes). A device that is gone fails the
+/// handshake, so it is reported as disconnected and reopened.
+pub const IDLE_REAUTH: Duration = Duration::from_secs(5);
 const REPORT_BUF: usize = 64;
 
 /// The connection part of the status event.
@@ -41,6 +54,9 @@ pub struct ConnectionManager<T, O, C, F> {
     enabled: bool,
     retry_at: Instant,
     status: Option<ConnectionStatus>,
+    idle_reauth: Option<Duration>,
+    last_activity: Instant,
+    diag: Recorder,
 }
 
 impl<T, O, C, F> ConnectionManager<T, O, C, F>
@@ -52,21 +68,66 @@ where
 {
     /// A manager that is On; the first [`tick`](Self::tick) opens the device.
     pub fn new(open: O, clock: C, respond: F) -> Self {
+        let now = clock.now();
         Self {
             open,
             auth: Authenticator::new(clock.clone(), respond),
-            retry_at: clock.now(),
+            retry_at: now,
             clock,
             parser: ReportParser::default(),
             handle: None,
             enabled: true,
             status: None,
+            idle_reauth: None,
+            last_activity: now,
+            diag: Recorder::new(now),
         }
+    }
+
+    /// Re-runs the handshake after `idle` without input (see [`IDLE_REAUTH`]).
+    pub fn with_idle_reauth(mut self, idle: Duration) -> Self {
+        self.idle_reauth = Some(idle);
+        self
     }
 
     /// The last published status; `None` before the first tick.
     pub fn status(&self) -> Option<ConnectionStatus> {
         self.status
+    }
+
+    /// The Device test view's data now.
+    pub fn diagnostics(&self) -> DeviceDiagnostics {
+        let next =
+            self.handle
+                .as_ref()
+                .and(self.auth.reauth_due())
+                .map(|due| match self.idle_reauth {
+                    Some(idle) => due.min(self.last_activity + idle),
+                    None => due,
+                });
+        self.diag.snapshot(self.clock.now(), next)
+    }
+
+    /// Whether the diagnostics changed since the last call.
+    pub fn take_diagnostics_changed(&mut self) -> bool {
+        self.diag.take_changed()
+    }
+
+    /// Writes an output report (wheel mode, LEDs) to the open device.
+    pub fn write(&mut self, report: &[u8]) -> Result<(), HidError> {
+        let Some(t) = self.handle.as_mut() else {
+            return Err(HidError::Disconnected);
+        };
+        let result = t.write(report).map(|_| ());
+        let now = self.clock.now();
+        match &result {
+            Ok(()) => debug!(report = %diagnostics::hex(report), "device report out"),
+            Err(e) => {
+                warn!(report = %diagnostics::hex(report), error = %e, "device report out failed")
+            }
+        }
+        self.diag.output(report, result.is_err(), now);
+        result
     }
 
     /// On re-opens the device on the next tick; Off closes the handle and
@@ -96,20 +157,67 @@ where
             }
             return events;
         };
-        let read = self.auth.maintain(t).and_then(|()| {
+        let now = self.clock.now();
+        let idle = self
+            .idle_reauth
+            .is_some_and(|d| now.saturating_duration_since(self.last_activity) >= d);
+        let mut read = Ok(());
+        if self.auth.is_due() || idle {
+            let why = if idle {
+                "idle check"
+            } else {
+                "session timeout"
+            };
+            match self.auth.authenticate(t) {
+                Ok(session) => {
+                    let took = self.clock.now().saturating_duration_since(now);
+                    if idle {
+                        debug!(
+                            session_s = session.as_secs(),
+                            took_ms = took.as_millis() as u64,
+                            "re-authenticated ({why})"
+                        );
+                    } else {
+                        info!(
+                            session_s = session.as_secs(),
+                            took_ms = took.as_millis() as u64,
+                            "re-authenticated ({why})"
+                        );
+                    }
+                    self.diag.auth_passed(session, self.clock.now());
+                    self.last_activity = self.clock.now();
+                }
+                Err(e) => {
+                    let took = self.clock.now().saturating_duration_since(now);
+                    warn!(error = %e, took_ms = took.as_millis() as u64, "re-auth failed ({why}): treating the device as gone");
+                    self.diag.auth_failed(e.to_string());
+                    read = Err(HidError::Disconnected);
+                }
+            }
+        }
+        let read = read.and_then(|()| {
             let mut buf = [0u8; REPORT_BUF];
             let n = t.read_timeout(&mut buf, read_timeout)?;
-            Ok(buf[..n].to_vec())
+            Ok(buf[..n.min(REPORT_BUF)].to_vec())
         });
         match read {
             Ok(report) if report.is_empty() => {}
             // Reports we cannot decode are skipped, not fatal.
             Ok(report) => {
-                if let Ok(evs) = self.parser.parse(&report) {
+                let now = self.clock.now();
+                self.last_activity = now;
+                let parsed = self.parser.parse(&report);
+                debug!(report = %diagnostics::hex(&report), "device report in");
+                if let Err(e) = &parsed {
+                    debug!(error = %e, "device report skipped");
+                }
+                self.diag.input(&report, &parsed, self.parser.held(), now);
+                if let Ok(evs) = parsed {
                     events.extend(evs.into_iter().map(ConnectionEvent::Device));
                 }
             }
-            Err(_) => {
+            Err(e) => {
+                info!(error = %e, "Speed Editor gone");
                 self.drop_handle(&mut events);
                 self.retry_later(ConnectionStatus::Absent, &mut events);
             }
@@ -120,14 +228,40 @@ where
     fn connect(&mut self, events: &mut Vec<ConnectionEvent>) {
         let mut t = match (self.open)() {
             Ok(t) => t,
-            Err(_) => return self.retry_later(ConnectionStatus::Absent, events),
+            Err(e) => {
+                let text = e.to_string();
+                if self.diagnostics().last_open_error.as_deref() != Some(text.as_str()) {
+                    info!(error = %e, "no Speed Editor to open (retrying every 3 s)");
+                }
+                self.diag.open_failed(text);
+                return self.retry_later(ConnectionStatus::Absent, events);
+            }
         };
-        if self.auth.authenticate(&mut t).is_err() {
-            t.close();
-            return self.retry_later(ConnectionStatus::AuthFailed, events);
+        let info = t.info();
+        info!(?info, "Speed Editor opened, authenticating");
+        self.diag.opened(info);
+        let started = self.clock.now();
+        match self.auth.authenticate(&mut t) {
+            Ok(session) => {
+                let took = self.clock.now().saturating_duration_since(started);
+                info!(
+                    session_s = session.as_secs(),
+                    took_ms = took.as_millis() as u64,
+                    "Speed Editor authenticated"
+                );
+                self.diag.auth_passed(session, self.clock.now());
+            }
+            Err(e) => {
+                warn!(error = %e, "Speed Editor auth failed (retrying in 3 s)");
+                self.diag.auth_failed(e.to_string());
+                t.close();
+                return self.retry_later(ConnectionStatus::AuthFailed, events);
+            }
         }
+        self.last_activity = self.clock.now();
         self.handle = Some(t);
         self.set_status(ConnectionStatus::Connected, events);
+        self.diag.connected();
         events.push(ConnectionEvent::Device(DeviceEvent::Connected));
     }
 
@@ -135,6 +269,7 @@ where
         if let Some(mut t) = self.handle.take() {
             t.close();
             self.parser = ReportParser::default();
+            self.diag.disconnected();
             events.push(ConnectionEvent::Device(DeviceEvent::Disconnected));
         }
     }
@@ -147,6 +282,7 @@ where
     fn set_status(&mut self, status: ConnectionStatus, events: &mut Vec<ConnectionEvent>) {
         if self.status != Some(status) {
             self.status = Some(status);
+            self.diag.status(status);
             events.push(ConnectionEvent::Status(status));
         }
     }
@@ -199,6 +335,9 @@ mod tests {
         }
         fn close(&mut self) {
             self.0.borrow_mut().close()
+        }
+        fn info(&self) -> Option<crate::diagnostics::DeviceInfo> {
+            self.0.borrow().info()
         }
     }
 
@@ -464,5 +603,132 @@ mod tests {
             m.tick(T),
             [Device(DeviceEvent::Disconnected), Status(Absent)]
         );
+    }
+
+    #[test]
+    fn an_idle_device_is_re_authenticated_and_a_silent_one_reopened() {
+        // Bluetooth sleep / PC sleep: the device comes back unauthenticated
+        // and silent. The idle check re-runs the handshake; one that fails
+        // reports the device gone, and the next open authenticates again.
+        let (f, clock) = setup();
+        let dev = Shared::default();
+        dev.handshake(600);
+        f.plug(&dev);
+        let mut m = manager(&f, &clock).with_idle_reauth(IDLE_REAUTH);
+        assert_eq!(m.tick(T), CONNECTED);
+
+        // Input keeps it from being idle.
+        clock.advance(IDLE_REAUTH - Duration::from_millis(1));
+        dev.0.borrow_mut().push_input([0x07, 0, 50]);
+        assert_eq!(m.tick(T).len(), 1);
+        clock.advance(IDLE_REAUTH - Duration::from_millis(1));
+        dev.timeouts(1);
+        assert_eq!(m.tick(T), []);
+        assert_eq!(dev.writes(), 3, "no handshake while input is recent");
+
+        // Idle: the handshake runs again and passes.
+        clock.advance(Duration::from_millis(1));
+        dev.handshake(600).timeouts(1);
+        assert_eq!(m.tick(T), []);
+        assert_eq!(dev.writes(), 6);
+        assert_eq!(m.diagnostics().auth.passed, 2);
+
+        // Asleep: the next idle handshake fails, so it is gone.
+        clock.advance(IDLE_REAUTH);
+        assert_eq!(
+            m.tick(T),
+            [Device(DeviceEvent::Disconnected), Status(Absent)]
+        );
+        assert!(m.diagnostics().auth.last_error.is_some());
+
+        // Awake again: reopened and authenticated on the next retry.
+        let woke = Shared::default();
+        woke.handshake(600);
+        f.plug(&woke);
+        clock.advance(RETRY_INTERVAL);
+        assert_eq!(m.tick(T), CONNECTED);
+        let d = m.diagnostics();
+        assert_eq!((d.connects, d.disconnects, d.auth.passed), (2, 1, 3));
+    }
+
+    #[test]
+    fn writes_go_to_the_open_device_and_into_the_diagnostics() {
+        let (f, clock) = setup();
+        let mut m = manager(&f, &clock);
+        assert_eq!(
+            m.write(&[0x03, 0, 0, 0, 0, 0, 0xff]),
+            Err(HidError::Disconnected)
+        );
+        let dev = Shared::default();
+        dev.handshake(600);
+        f.plug(&dev);
+        clock.advance(RETRY_INTERVAL);
+        m.tick(T);
+        assert_eq!(m.write(&[0x03, 3, 0, 0, 0, 0, 0xff]), Ok(()));
+        assert_eq!(
+            dev.0.borrow().written().last(),
+            Some(&crate::hid::Written::Output(vec![
+                0x03, 3, 0, 0, 0, 0, 0xff
+            ]))
+        );
+        let d = m.diagnostics();
+        assert_eq!(d.reports[0].direction, crate::diagnostics::Direction::Out);
+        assert_eq!(
+            d.reports[0].decoded,
+            "set wheel mode 3 (absolute, dead zero)"
+        );
+        assert!(!d.reports[0].failed);
+    }
+
+    #[test]
+    fn diagnostics_follow_open_auth_reports_and_disconnect() {
+        let (f, clock) = setup();
+        let mut m = manager(&f, &clock);
+        m.tick(T);
+        assert_eq!(
+            m.diagnostics().last_open_error.as_deref(),
+            Some("HID I/O error: no device")
+        );
+        assert!(m.take_diagnostics_changed());
+        assert!(!m.take_diagnostics_changed());
+
+        let bad = Shared::default();
+        bad.handshake(5);
+        f.plug(&bad);
+        clock.advance(RETRY_INTERVAL);
+        m.tick(T);
+        let d = m.diagnostics();
+        assert_eq!(d.auth.state, crate::diagnostics::AuthState::Failed);
+        assert_eq!(
+            d.auth.last_error.as_deref(),
+            Some("auth rejected, status 06 04 (10 bytes), session 5 s")
+        );
+
+        let dev = Shared::default();
+        dev.handshake(600);
+        dev.0
+            .borrow_mut()
+            .set_info(crate::diagnostics::DeviceInfo {
+                vendor_id: 0x1edb,
+                product_id: 0xda0e,
+                ..Default::default()
+            })
+            .push_input([0x04, 0x0f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        f.plug(&dev);
+        clock.advance(RETRY_INTERVAL);
+        m.tick(T);
+        m.tick(T);
+        let d = m.diagnostics();
+        assert_eq!(d.status, Some(Connected));
+        assert_eq!(d.device.as_ref().map(|i| i.product_id), Some(0xda0e));
+        assert_eq!(d.auth.session_s, Some(600));
+        assert_eq!(d.auth.next_in_s, Some(590));
+        assert_eq!(d.held, ["CUT"]);
+        assert_eq!(d.open_attempts, 3);
+        m.tick(T); // empty script: gone
+        let d = m.diagnostics();
+        assert_eq!(d.status, Some(Absent));
+        assert!(d.held.is_empty());
+        assert_eq!(d.auth.next_in_s, None);
     }
 }

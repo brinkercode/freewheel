@@ -76,14 +76,36 @@ pub enum AuthError {
     BadStatus(Vec<u8>),
 }
 
+/// A report as the logs and the Device test view may show it: its header
+/// (report id and step) and length, never the auth bytes.
+fn header(report: &[u8]) -> String {
+    match report {
+        [id, step, ..] => format!("{id:02x} {step:02x} ({} bytes)", report.len()),
+        [id] => format!("{id:02x} (1 byte)"),
+        [] => "nothing (0 bytes)".into(),
+    }
+}
+
 impl fmt::Display for AuthError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AuthError::Hid(e) => write!(f, "auth transport error: {e}"),
-            AuthError::UnexpectedReport { expected, got } => {
-                write!(f, "auth expected report {expected:02x?}, got {got:02x?}")
+            AuthError::UnexpectedReport { expected, got } => write!(
+                f,
+                "auth expected report {:02x} {:02x}, got {}",
+                expected[0],
+                expected[1],
+                header(got)
+            ),
+            AuthError::BadStatus(got) => {
+                let session = match got.as_slice() {
+                    [0x06, 0x04, lo, hi, ..] => {
+                        format!(", session {} s", u16::from_le_bytes([*lo, *hi]))
+                    }
+                    _ => String::new(),
+                };
+                write!(f, "auth rejected, status {}{session}", header(got))
             }
-            AuthError::BadStatus(got) => write!(f, "auth rejected, status {got:02x?}"),
         }
     }
 }
@@ -96,10 +118,24 @@ impl From<HidError> for AuthError {
     }
 }
 
+/// Feature-report buffer for a retry: some Windows stacks reject a buffer
+/// shorter than the device's longest feature report.
+const RETRY_BUF: usize = 64;
+
 fn read_report(t: &mut dyn HidTransport, sub: u8) -> Result<[u8; REPORT_LEN], AuthError> {
-    let mut buf = [0u8; REPORT_LEN];
+    let mut buf = [0u8; RETRY_BUF];
     buf[0] = REPORT_ID;
-    let n = t.get_feature_report(&mut buf)?;
+    // Exactly 10 bytes first, as bmd.py and every other driver asks.
+    let n = match t.get_feature_report(&mut buf[..REPORT_LEN]) {
+        Err(HidError::Io(e)) => {
+            tracing::debug!(error = %e, "auth: 10-byte feature read failed, retrying with 64");
+            buf.fill(0);
+            buf[0] = REPORT_ID;
+            t.get_feature_report(&mut buf)?
+        }
+        other => other?,
+    };
+    let n = n.min(buf.len());
     if n < REPORT_LEN || buf[..2] != [REPORT_ID, sub] {
         let got = buf[..n].to_vec();
         return Err(if sub == 4 {
@@ -111,7 +147,9 @@ fn read_report(t: &mut dyn HidTransport, sub: u8) -> Result<[u8; REPORT_LEN], Au
             }
         });
     }
-    Ok(buf)
+    let mut report = [0u8; REPORT_LEN];
+    report.copy_from_slice(&buf[..REPORT_LEN]);
+    Ok(report)
 }
 
 fn send_report(t: &mut dyn HidTransport, sub: u8, payload: u64) -> Result<(), AuthError> {
@@ -166,12 +204,18 @@ impl<C: Clock, F: Fn(u64) -> u64> Authenticator<C, F> {
         self.reauth_due
     }
 
-    /// Authenticates now and schedules the next re-auth.
-    pub fn authenticate(&mut self, t: &mut dyn HidTransport) -> Result<(), AuthError> {
+    /// Whether a re-auth is due now (always before the first success).
+    pub fn is_due(&self) -> bool {
+        self.reauth_due.is_none_or(|due| self.clock.now() >= due)
+    }
+
+    /// Authenticates now and schedules the next re-auth. Returns the
+    /// session the device granted.
+    pub fn authenticate(&mut self, t: &mut dyn HidTransport) -> Result<Duration, AuthError> {
         self.reauth_due = None;
         let timeout = handshake(t, &self.respond)?;
         self.reauth_due = Some(self.clock.now() + timeout.min(MAX_TIMEOUT) - REAUTH_MARGIN);
-        Ok(())
+        Ok(timeout)
     }
 
     /// Re-authenticates if it is due. A failed re-auth means the device is
@@ -179,7 +223,10 @@ impl<C: Clock, F: Fn(u64) -> u64> Authenticator<C, F> {
     pub fn maintain(&mut self, t: &mut dyn HidTransport) -> Result<(), HidError> {
         match self.reauth_due {
             Some(due) if self.clock.now() < due => Ok(()),
-            _ => self.authenticate(t).map_err(|_| HidError::Disconnected),
+            _ => self
+                .authenticate(t)
+                .map(|_| ())
+                .map_err(|_| HidError::Disconnected),
         }
     }
 }
@@ -374,5 +421,86 @@ mod tests {
             .push_feature(report(4, 0));
         assert_eq!(auth.maintain(&mut fake), Err(HidError::Disconnected));
         assert_eq!(auth.reauth_due(), None);
+    }
+
+    /// A device whose 10-byte feature reads fail, as some Windows stacks
+    /// do when the device has a longer feature report.
+    struct WantsLongBuffer(FakeTransport);
+
+    impl HidTransport for WantsLongBuffer {
+        fn read_timeout(&mut self, buf: &mut [u8], t: Duration) -> Result<usize, HidError> {
+            self.0.read_timeout(buf, t)
+        }
+        fn write(&mut self, data: &[u8]) -> Result<usize, HidError> {
+            self.0.write(data)
+        }
+        fn get_feature_report(&mut self, buf: &mut [u8]) -> Result<usize, HidError> {
+            if buf.len() < 64 {
+                return Err(HidError::Io("The parameter is incorrect.".into()));
+            }
+            self.0.get_feature_report(buf)
+        }
+        fn send_feature_report(&mut self, data: &[u8]) -> Result<(), HidError> {
+            self.0.send_feature_report(data)
+        }
+        fn close(&mut self) {
+            self.0.close()
+        }
+    }
+
+    #[test]
+    fn a_rejected_10_byte_feature_read_is_retried_with_64_bytes() {
+        let mut fake = FakeTransport::new();
+        script(&mut fake, 600);
+        let mut dev = WantsLongBuffer(fake);
+        assert_eq!(handshake(&mut dev, respond), Ok(Duration::from_secs(600)));
+    }
+
+    #[test]
+    fn longer_feature_reports_are_read_by_their_first_10_bytes() {
+        let mut fake = FakeTransport::new();
+        for (sub, payload) in [(0u8, 0x1122_3344_5566_7788u64), (2, 0), (4, 600)] {
+            let mut r = report(sub, payload);
+            r.resize(64, 0xee);
+            fake.push_feature(r);
+        }
+        assert_eq!(handshake(&mut fake, respond), Ok(Duration::from_secs(600)));
+        assert_eq!(
+            fake.written()[2],
+            Written::Feature(report(3, !0x1122_3344_5566_7788))
+        );
+    }
+
+    #[test]
+    fn auth_errors_never_show_auth_bytes() {
+        let challenge = report(2, 0x1122_3344_5566_7788);
+        let e = AuthError::UnexpectedReport {
+            expected: [REPORT_ID, 0],
+            got: challenge,
+        };
+        let text = e.to_string();
+        assert_eq!(text, "auth expected report 06 00, got 06 02 (10 bytes)");
+        assert!(!text.contains("88") && !text.contains("11"));
+        assert_eq!(
+            AuthError::BadStatus(report(5, 600)).to_string(),
+            "auth rejected, status 06 05 (10 bytes)"
+        );
+        assert_eq!(
+            AuthError::BadStatus(vec![]).to_string(),
+            "auth rejected, status nothing (0 bytes)"
+        );
+    }
+
+    #[test]
+    fn is_due_before_the_first_success_and_at_the_reauth_time() {
+        let clock = FakeClock::new();
+        let mut auth = Authenticator::new(clock.clone(), respond);
+        assert!(auth.is_due());
+        let mut fake = FakeTransport::new();
+        script(&mut fake, 100);
+        assert_eq!(auth.authenticate(&mut fake), Ok(Duration::from_secs(100)));
+        assert!(!auth.is_due());
+        clock.advance(Duration::from_secs(90));
+        assert!(auth.is_due());
     }
 }

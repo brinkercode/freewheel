@@ -13,6 +13,10 @@ use crate::config::{
     OverrideMode, OverrideSettings, SaveError, Settings,
 };
 use crate::connection::ConnectionStatus;
+use crate::diagnostics::{
+    AuthDiagnostics, AuthState, DeviceDiagnostics, DeviceInfo, Direction, RawReport,
+    WheelDiagnostics,
+};
 use crate::permissions::Grant;
 use crate::simulator::Bus;
 use crate::status::{KeyPressed, OverrideErrorStatus, StatusEvent};
@@ -42,6 +46,13 @@ fn generated() -> String {
         Grant::decl(),
         KeyPressed::decl(),
         Bus::decl(),
+        DeviceDiagnostics::decl(),
+        DeviceInfo::decl(),
+        AuthDiagnostics::decl(),
+        AuthState::decl(),
+        WheelDiagnostics::decl(),
+        RawReport::decl(),
+        Direction::decl(),
     ];
     let mut out = String::from(HEADER);
     for decl in decls {

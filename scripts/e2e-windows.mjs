@@ -613,6 +613,41 @@ async function main() {
       await flip("Let restored keys open apps", true);
       await flip("Let restored keys open apps", false);
     });
+    // Help & backup > More > Device test: read-only, live from the
+    // device-diagnostics event, fed by the simulated Speed Editor.
+    const reportShows = (what, js) =>
+      waitFor("settings", what, `return [...document.querySelectorAll(".diag-report")].some((li) => ${js})`, [], 10000);
+    await step("Help: Device test shows the simulated device", async () => {
+      await click("settings", "#device-test button", "Open device test");
+      await waitFor("settings", "the Device test view", `return document.querySelector('[data-screen-label="Device test"]')`);
+      await shows("settings", "Simulated Speed Editor: these reports come from the Simulator window.");
+      await waitFor("settings", "Connected", `return document.querySelector(".diag-status .status-dot.dot-green")`);
+      await waitFor("settings", "no switches or inputs", `return !document.querySelector('[data-screen-label="Device test"] input, [data-screen-label="Device test"] [role=switch]')`);
+    }, ["settings"]);
+    await step("Device test: a key press arrives live as its raw report", async () => {
+      await click("simulator", ".fw-sim-quick button", "CUT");
+      await reportShows("the CUT key report", `li.querySelector(".diag-hex").textContent.startsWith("04 0f 00") && li.textContent.includes("keys held: CUT")`);
+      await waitFor("settings", "CUT in the presses", `return document.body.innerText.includes("Pressed (newest first)") && document.querySelector('[aria-label="Keys"]').textContent.includes("CUT")`);
+    }, ["settings", "simulator"]);
+    await step("Device test: a wheel turn arrives live", async () => {
+      await click("simulator", ".fw-sim-line button", "Turn right");
+      await reportShows("the wheel report", `li.querySelector(".diag-hex").textContent.startsWith("03 ") && li.textContent.includes("wheel mode")`);
+    }, ["settings", "simulator"]);
+    await sim("Speed Editor", "Bluetooth 64%");
+    await step("Device test: battery and the wheel-mode write", async () => {
+      await waitFor("settings", "64% on Bluetooth", `const t = document.querySelector('[data-screen-label="Device test"]')?.innerText ?? ""; return t.includes("Bluetooth") && t.includes("64%")`);
+      await reportShows("the wheel mode set on connect", `li.dataset.direction === "Out" && li.textContent.includes("set wheel mode")`);
+    }, ["settings"]);
+    await step("Device test: Copy diagnostics", async () => {
+      await click("settings", '[data-screen-label="Device test"] button.btn-primary', "Copy diagnostics");
+      const line = await waitFor("settings", "the copy confirmation", `return document.querySelector('[data-screen-label="Device test"] .success-line')?.textContent`);
+      say(`  copy: ${line}`);
+      if (!line.includes("Diagnostics copied")) throw new Error(`Copy diagnostics: ${line}`);
+    }, ["settings"]);
+    await step("Device test: back to Help & backup", async () => {
+      await click("settings", '[data-screen-label="Device test"] button.more', "Help & backup");
+      await waitFor("settings", "Help & backup", `return document.querySelector("#backup")`);
+    });
 
     await tab("General", "Appearance");
     await step("General: start at login on and off (simulated)", async () => {

@@ -38,6 +38,7 @@ use std::time::Duration;
 
 use freewheel_core::clock::SystemClock;
 use freewheel_core::config::{Config, ConfigStore};
+use freewheel_core::diagnostics::DEVICE_DIAGNOSTICS_EVENT;
 use freewheel_core::inject::{KeyInjector, MockInjector};
 use freewheel_core::logging::Logger;
 use freewheel_core::resolve::{POLL_INTERVAL, ResolveWatcher};
@@ -72,6 +73,22 @@ fn auth_response(challenge: u64) -> u64 {
     freewheel_core::auth::compute_response(challenge)
 }
 
+/// The response function the device loop authenticates with.
+const AUTH_RESPONSE: fn(u64) -> u64 = auth_response;
+
+/// The device loop's connection manager: the real auth response and the
+/// idle re-auth that brings a slept Bluetooth device back.
+fn device_manager<T, O>(
+    open: O,
+) -> freewheel_core::connection::ConnectionManager<T, O, SystemClock, fn(u64) -> u64>
+where
+    T: freewheel_core::hid::HidTransport,
+    O: FnMut() -> Result<T, freewheel_core::hid::HidError>,
+{
+    freewheel_core::connection::ConnectionManager::new(open, SystemClock, AUTH_RESPONSE)
+        .with_idle_reauth(freewheel_core::connection::IDLE_REAUTH)
+}
+
 /// Starts the device loop on its own thread; the tray shows its state and
 /// the settings window hears the `status` and `key-pressed` events.
 fn spawn_device(
@@ -81,12 +98,12 @@ fn spawn_device(
     toggle: tauri::menu::CheckMenuItem<tauri::Wry>,
     commands: mpsc::Receiver<device::Command>,
 ) {
-    use freewheel_core::connection::{ConnectionManager, ConnectionStatus};
+    use freewheel_core::connection::ConnectionStatus;
     use freewheel_core::engine::Engine;
     use freewheel_core::overrides::{OverrideRunner, OverrideWorker};
 
     std::thread::spawn(move || {
-        let (mut injector, api) = match (inject::EnigoInjector::new(), hidapi::HidApi::new()) {
+        let (mut injector, mut api) = match (inject::EnigoInjector::new(), hidapi::HidApi::new()) {
             (Ok(injector), Ok(api)) => (injector, api),
             (Err(e), _) => return tracing::error!(error = %e, "no key injection"),
             (_, Err(e)) => return tracing::error!(error = %e, "no HID access"),
@@ -96,13 +113,13 @@ fn spawn_device(
         let open = {
             let bus = Arc::clone(&bus);
             move || {
-                let device = hidapi_transport::HidapiTransport::open(&api)?;
+                let device = hidapi_transport::HidapiTransport::open(&mut api)?;
                 *bus.lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner) = device.bus();
                 Ok(device)
             }
         };
-        let manager = ConnectionManager::new(open, SystemClock, auth_response as fn(u64) -> u64);
+        let manager = device_manager(open);
         let overrides = OverrideWorker::spawn(OverrideRunner::new(
             controls::os_controls(),
             config.overrides.clone(),
@@ -123,6 +140,9 @@ fn spawn_device(
                 move |update| {
                     if let device::Update::KeyPressed(key) = &update {
                         let _ = app.emit(KEY_PRESSED_EVENT, key);
+                    }
+                    if let device::Update::Diagnostics(d) = &update {
+                        let _ = app.emit(DEVICE_DIAGNOSTICS_EVENT, d);
                     }
                     let settings = app.state::<settings::Settings>();
                     if update == device::Update::State(ConnectionStatus::Connected) {
@@ -236,6 +256,7 @@ fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::
             settings::get_config,
             settings::save_config,
             settings::get_status,
+            settings::get_device_diagnostics,
             settings::set_enabled,
             settings::get_start_at_login,
             settings::set_start_at_login,
@@ -308,6 +329,7 @@ fn main() {
             settings::get_config,
             settings::save_config,
             settings::get_status,
+            settings::get_device_diagnostics,
             settings::set_enabled,
             settings::get_start_at_login,
             settings::set_start_at_login,
@@ -415,6 +437,73 @@ fn updater_pubkey_set(plugins: &tauri::utils::config::PluginConfig) -> bool {
 #[cfg(test)]
 mod tests {
     use super::updater_pubkey_set;
+
+    /// #140: the device loop once authenticated with a stub that always
+    /// answered 0, and nothing noticed. The manager the app builds must send
+    /// bmd.py's response to a recorded challenge.
+    #[test]
+    fn the_device_loop_authenticates_with_the_bmd_py_response() {
+        use freewheel_core::hid::{FakeTransport, HidError, Written};
+        use std::sync::{Arc, Mutex};
+
+        let vectors = include_str!("../../crates/freewheel-core/src/auth_vectors.txt");
+        let pairs: Vec<(u64, u64)> = vectors
+            .lines()
+            .filter(|l| l.starts_with("0x"))
+            .map(|l| {
+                let mut f = l
+                    .split_whitespace()
+                    .map(|h| u64::from_str_radix(h.trim_start_matches("0x"), 16).unwrap());
+                (f.next().unwrap(), f.next().unwrap())
+            })
+            .collect();
+        assert_eq!(pairs.len(), 8);
+        for (challenge, response) in pairs {
+            assert_eq!(super::AUTH_RESPONSE(challenge), response);
+            let fake = Arc::new(Mutex::new(FakeTransport::new()));
+            for (sub, payload) in [(0u8, challenge), (2, 0), (4, 600)] {
+                let mut r = vec![0x06, sub];
+                r.extend_from_slice(&payload.to_le_bytes());
+                fake.lock().unwrap().push_feature(r);
+            }
+            #[derive(Clone)]
+            struct Dev(Arc<Mutex<FakeTransport>>);
+            impl freewheel_core::hid::HidTransport for Dev {
+                fn read_timeout(
+                    &mut self,
+                    b: &mut [u8],
+                    t: std::time::Duration,
+                ) -> Result<usize, HidError> {
+                    self.0.lock().unwrap().read_timeout(b, t)
+                }
+                fn write(&mut self, d: &[u8]) -> Result<usize, HidError> {
+                    self.0.lock().unwrap().write(d)
+                }
+                fn get_feature_report(&mut self, b: &mut [u8]) -> Result<usize, HidError> {
+                    self.0.lock().unwrap().get_feature_report(b)
+                }
+                fn send_feature_report(&mut self, d: &[u8]) -> Result<(), HidError> {
+                    self.0.lock().unwrap().send_feature_report(d)
+                }
+                fn close(&mut self) {}
+            }
+            let mut once = Some(Dev(Arc::clone(&fake)));
+            let mut manager =
+                super::device_manager(move || once.take().ok_or(HidError::Disconnected));
+            manager.tick(std::time::Duration::ZERO);
+            assert_eq!(
+                manager.status(),
+                Some(freewheel_core::connection::ConnectionStatus::Connected)
+            );
+            let mut sent = vec![0x06, 0x03];
+            sent.extend_from_slice(&response.to_le_bytes());
+            assert_eq!(
+                fake.lock().unwrap().written()[2],
+                Written::Feature(sent),
+                "challenge {challenge:#018x}"
+            );
+        }
+    }
     use tauri::utils::config::PluginConfig;
 
     fn plugins(updater: serde_json::Value) -> PluginConfig {

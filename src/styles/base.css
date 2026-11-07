@@ -289,6 +289,18 @@ input[type="range"] { accent-color: var(--accent); border: none; background: tra
 .success-line { display: flex; gap: 8px; align-items: center; min-height: 42px; padding: 10px 12px; border-radius: var(--r-btn); background: var(--sunk); font-size: var(--fs-small); animation: fwpop-in 0.2s var(--ease); }
 .success-icon { color: var(--good); }
 
+/* Help & backup > More > Device test (read-only diagnostics) */
+.diag-row { align-items: baseline; gap: 12px; font-size: var(--fs-body); }
+.diag-label { width: 168px; flex: none; color: var(--ink2); }
+.diag-value { min-width: 0; overflow-wrap: anywhere; }
+.diag-status { gap: 8px; align-items: center; }
+.diag-reports { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow: auto; }
+.diag-report { display: flex; gap: 10px; align-items: baseline; padding: 6px 10px; border-radius: var(--r-sm); background: var(--sunk); font-size: var(--fs-small); }
+.diag-dir { width: 26px; flex: none; color: var(--ink3); font-weight: var(--fw-semibold); }
+.diag-report[data-direction="Out"] .diag-dir { color: var(--accent); }
+.diag-hex { flex: none; font-family: ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace; font-size: 12px; color: var(--ink); }
+.diag-decoded { min-width: 0; color: var(--ink2); overflow-wrap: anywhere; }
+
 /* General: appearance cards */
 .appearance-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .appearance-option { height: auto; flex-direction: column; align-items: stretch; gap: 8px; padding: 8px; border-radius: var(--r-row); border: 2px solid var(--line); }
