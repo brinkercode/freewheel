@@ -191,10 +191,34 @@ impl HidTransport for HidapiTransport {
     }
 }
 
+/// The open error when the OS refuses access to the device (Linux without
+/// freewheel's udev rule); the Device test shows it with the rule's
+/// install button.
+pub const NO_ACCESS: &str = "permission denied: freewheel's device rule is not installed (Permissions: Install the device rule)";
+
+/// True for a hidapi error that is the OS refusing access (EACCES/EPERM).
+fn denied(err: &hidapi::HidError) -> bool {
+    match err {
+        hidapi::HidError::IoError { error } => {
+            error.kind() == std::io::ErrorKind::PermissionDenied
+                || matches!(error.raw_os_error(), Some(1 | 13))
+        }
+        hidapi::HidError::HidApiError { message } => {
+            let m = message.to_ascii_lowercase();
+            m.contains("permission denied") || m.contains("operation not permitted")
+        }
+        _ => false,
+    }
+}
+
 /// Maps a hidapi error to the kinds [`freewheel_core::hid::FakeTransport`]
-/// returns: a gone device is [`HidError::Disconnected`], anything else `Io`.
+/// returns: a gone device is [`HidError::Disconnected`], anything else `Io`
+/// (access refused on Linux: [`NO_ACCESS`]).
 fn map_error(err: hidapi::HidError) -> HidError {
     use std::io::ErrorKind;
+    if cfg!(target_os = "linux") && denied(&err) {
+        return HidError::Io(NO_ACCESS.into());
+    }
     let gone = match &err {
         hidapi::HidError::IoError { error } => {
             matches!(
@@ -312,6 +336,20 @@ mod tests {
     #[test]
     fn the_open_probe_is_the_handshakes_own_reset() {
         assert_eq!(AUTH_RESET, [0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn access_refused_on_linux_names_the_device_rule() {
+        let eacces = hidapi::HidError::IoError {
+            error: std::io::Error::from_raw_os_error(13),
+        };
+        assert!(denied(&eacces));
+        assert!(denied(&api_error("hid_open_path: Permission denied")));
+        assert!(!denied(&api_error("device disconnected")));
+        if cfg!(target_os = "linux") {
+            assert_eq!(map_error(eacces), HidError::Io(NO_ACCESS.into()));
+            assert!(NO_ACCESS.contains("device rule"));
+        }
     }
 
     #[test]

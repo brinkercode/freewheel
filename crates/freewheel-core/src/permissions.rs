@@ -1,4 +1,5 @@
-//! macOS permissions freewheel needs, and what the tray shows for them.
+//! The permissions freewheel needs (macOS: Accessibility and Input
+//! Monitoring; Linux: the device rule), and what the tray shows for them.
 //!
 //! Input Monitoring: ADR-002 (HID access through the hidapi crate) leaves open
 //! whether macOS needs Input Monitoring before hidapi can read the Speed
@@ -14,24 +15,35 @@ pub enum Permission {
     Accessibility,
     /// Reading the Speed Editor through hidapi (ADR-002).
     InputMonitoring,
+    /// Linux: freewheel's udev rule (`60-freewheel.rules`), which gives the
+    /// logged-in user the Speed Editor's hidraw node and `/dev/uinput`.
+    DeviceAccess,
 }
 
 impl Permission {
+    /// The macOS permissions.
     pub const ALL: [Permission; 2] = [Permission::Accessibility, Permission::InputMonitoring];
+    /// The Linux permission: the device rule.
+    pub const LINUX: [Permission; 1] = [Permission::DeviceAccess];
 
     /// The name the UI and the `open_permission_pane` command use.
     pub fn name(self) -> &'static str {
         match self {
             Permission::Accessibility => "Accessibility",
             Permission::InputMonitoring => "InputMonitoring",
+            Permission::DeviceAccess => "DeviceAccess",
         }
     }
 
     pub fn from_name(name: &str) -> Option<Permission> {
-        Permission::ALL.into_iter().find(|p| p.name() == name)
+        Permission::ALL
+            .into_iter()
+            .chain(Permission::LINUX)
+            .find(|p| p.name() == name)
     }
 
-    /// The System Settings pane where the user grants it.
+    /// The System Settings pane where the user grants it (none for the
+    /// Linux device rule: freewheel installs it).
     pub fn pane_url(self) -> &'static str {
         match self {
             Permission::Accessibility => {
@@ -40,6 +52,7 @@ impl Permission {
             Permission::InputMonitoring => {
                 "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
             }
+            Permission::DeviceAccess => "",
         }
     }
 }
@@ -55,10 +68,17 @@ pub enum Grant {
 /// Every permission and its grant.
 pub type Permissions = BTreeMap<Permission, Grant>;
 
-/// Asks `check` about every permission.
-pub fn check_all(mut check: impl FnMut(Permission) -> bool) -> Permissions {
-    Permission::ALL
-        .into_iter()
+/// Asks `check` about every macOS permission.
+pub fn check_all(check: impl FnMut(Permission) -> bool) -> Permissions {
+    check_each(Permission::ALL, check)
+}
+
+/// Asks `check` about each of `list`.
+pub fn check_each(
+    list: impl IntoIterator<Item = Permission>,
+    mut check: impl FnMut(Permission) -> bool,
+) -> Permissions {
+    list.into_iter()
         .map(|p| {
             (
                 p,
@@ -131,8 +151,18 @@ mod tests {
     }
 
     #[test]
+    fn linux_asks_only_for_the_device_rule() {
+        let p = check_each(Permission::LINUX, |_| false);
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[&Permission::DeviceAccess], Grant::Missing);
+        assert_eq!(status_line(&p), Some(NEEDS_PERMISSION));
+        assert_eq!(status_line(&check_each(Permission::LINUX, |_| true)), None);
+        assert_eq!(Permission::DeviceAccess.pane_url(), "");
+    }
+
+    #[test]
     fn names_round_trip() {
-        for p in Permission::ALL {
+        for p in Permission::ALL.into_iter().chain(Permission::LINUX) {
             assert_eq!(Permission::from_name(p.name()), Some(p));
         }
         assert_eq!(Permission::from_name("Camera"), None);

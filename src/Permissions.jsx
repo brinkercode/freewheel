@@ -2,22 +2,31 @@ import { useEffect, useState } from "react";
 import Icon from "./Icon.jsx";
 
 // The prototype's row icons.
-const ROW_ICON = { Accessibility: "keyboard", InputMonitoring: "usb" };
+const ROW_ICON = { Accessibility: "keyboard", InputMonitoring: "usb", DeviceAccess: "usb" };
 
-// macOS only: get_permissions is empty elsewhere (src-tauri permissions.rs).
+// macOS's two privacy panes and Linux's device rule; get_permissions is empty on Windows (src-tauri permissions.rs).
 const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
 
-export const LABELS = { Accessibility: "Accessibility", InputMonitoring: "Input Monitoring" };
+export const LABELS = { Accessibility: "Accessibility", InputMonitoring: "Input Monitoring", DeviceAccess: "the device rule" };
 
 // The prototype's row titles and helper text; the pane name closes the helper text.
 const TITLES = {
   Accessibility: "Allow freewheel to press keys for you",
   InputMonitoring: "Allow freewheel to notice your Speed Editor",
+  DeviceAccess: "Allow freewheel to use your Speed Editor",
 };
 const ABOUT = {
   Accessibility: "So your Speed Editor can send shortcuts and change the volume. Opens Privacy & Security → ",
   InputMonitoring: "So it knows when you press a key. Opens Privacy & Security → ",
+  DeviceAccess: "So it can read your Speed Editor and type for you. Asks for your password once to install ",
 };
+/** The row's button: Linux installs its device rule, macOS opens a pane. */
+export const BUTTON = (name) => (name === "DeviceAccess" ? "Install the device rule" : "Open System Settings");
+/** The screen's lead line for these permissions. */
+export const leadFor = (names) =>
+  names.includes("DeviceAccess")
+    ? "Linux asks for your password once, so freewheel can use your Speed Editor. Then unplug it and plug it in again."
+    : "macOS asks you to allow these once. Click a button, switch freewheel on in System Settings, then come back here.";
 
 // Runs `check` now, every `poll` ms and whenever `target` (the window) regains
 // focus, e.g. on coming back from System Settings; returns the unsubscribe.
@@ -58,7 +67,11 @@ export const openPane = (name, onToast) =>
     (said) => {
       if (said) onToast?.(said);
     },
-    (error) => console.error("freewheel: opening the", name, "pane failed:", String(error)),
+    (error) => {
+      console.error("freewheel: opening the", name, "pane failed:", String(error));
+      // Installing Linux's device rule says why it did not (cancelled, no pkexec) and how to do it by hand.
+      if (name === "DeviceAccess") onToast?.(String(error));
+    },
   );
 
 export default function Permissions({ initial = null, poll = 2000, onToast }) {
@@ -90,7 +103,7 @@ export default function Permissions({ initial = null, poll = 2000, onToast }) {
             </span>
           ) : (
             <button className="btn-primary" onClick={() => openPane(name, onToast)}>
-              Open System Settings
+              {BUTTON(name)}
             </button>
           )}
         </div>
@@ -114,9 +127,7 @@ export function PermissionsScreen({ initial = null, initialAsked = [], poll = 20
   return (
     <section className="first-run permissions">
       <h1>{button === "Done" ? "freewheel needs your permission" : "Let freewheel do its job"}</h1>
-      <p className="lead">
-        macOS asks you to allow these once. Click a button, switch freewheel on in System Settings, then come back here.
-      </p>
+      <p className="lead">{leadFor(names)}</p>
       {names.map((name) => {
         const state = rowState(permissions[name], asked.includes(name));
         return (
@@ -147,7 +158,7 @@ export function PermissionsScreen({ initial = null, initialAsked = [], poll = 20
                   openPane(name, onToast);
                 }}
               >
-                Open System Settings
+                {BUTTON(name)}
               </button>
             )}
           </div>

@@ -1,6 +1,8 @@
 # CI for freewheel: a fast Linux lint job that needs no system packages (fmt,
 # workflow lint, npm test, UI build), then npm test, the UI build, clippy and
-# cargo test on hosted Windows and macOS runners. Reusable via workflow_call (the release workflow
+# cargo test on hosted Windows, macOS and Linux runners (Linux also proves
+# real key injection: XTest into an X11 window under Xvfb, and the uinput
+# virtual keyboard into the kernel). Reusable via workflow_call (the release workflow
 # gates on it). Tests use fakes only; no secrets, no real input.
 # .opal/checks.toml lists the same Linux checks for local pre-push runs.
 name: ci
@@ -64,7 +66,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-2025, macos-15, macos-15-intel]
+        os: [windows-2025, macos-15, macos-15-intel, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -88,6 +90,14 @@ jobs:
         with:
           workspaces: ". -> target"
 
+      # WebKitGTK, the tray's AppIndicator, OpenSSL (the updater's TLS), and
+      # Xvfb for the real injection test below.
+      - name: Install Tauri Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev xvfb
+
       - run: npm ci
       - run: npm test
       # The UI build runs before cargo: tauri::generate_context! needs dist/.
@@ -96,6 +106,24 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
       - run: cargo test --workspace --locked
+
+      # Real key injection on Linux: an XTest key press reaches a focused
+      # X11 window (Xvfb), and the uinput virtual keyboard's presses reach
+      # the kernel (its own evdev node). The shipped udev rule is linted and
+      # installed; a runner has no logged-in seat for `uaccess`, so CI opens
+      # /dev/uinput and the test keyboard's event node itself.
+      - name: Real key injection (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          udevadm verify --resolve-names=never src-tauri/linux/60-freewheel.rules
+          sudo modprobe uinput
+          sudo install -m 0644 src-tauri/linux/60-freewheel.rules /etc/udev/rules.d/60-freewheel.rules
+          echo 'KERNEL=="event*", ATTRS{name}=="freewheel virtual keyboard", MODE="0666"' | sudo tee /etc/udev/rules.d/99-freewheel-ci.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --subsystem-match=misc --sysname-match=uinput --action=change
+          sudo chmod 0666 /dev/uinput
+          ls -l /dev/uinput
+          xvfb-run -a cargo test -p freewheel --locked -- --ignored --nocapture xtest_ uinput_
 
       # Zero-install gate: the exe imports only Windows system DLLs (static
       # CRT) and `--simulate --smoke` loads the main window and exits 0.

@@ -4,7 +4,7 @@ import { renderToString } from "react-dom/server";
 import { expect, test, vi } from "vitest";
 import App from "./App.jsx";
 import KeysTab from "./KeysTab.jsx";
-import ActionEditor, { ActionForm, KeyPanel, appHue, blank, filterApps, saveAction, validate, websiteAction } from "./ActionEditor.jsx";
+import ActionEditor, { ActionForm, KeyPanel, appHue, blank, filterApps, openerFor, saveAction, validate, websiteAction } from "./ActionEditor.jsx";
 
 const config = (bindings = {}) => ({
   version: 1,
@@ -169,4 +169,12 @@ test("the Simulator's Record a key opens the key panel on Press a shortcut, reco
   expect(html).toContain("All choices");
   expect(html).toContain("record-box");
   expect(html).toContain("When you press CUT, freewheel presses this");
+});
+
+test("a website opens with each OS's opener (xdg-open on Linux)", () => {
+  expect(openerFor("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")).toBe("/usr/bin/open");
+  expect(openerFor("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15")).toBe("xdg-open");
+  expect(openerFor("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")).toBe("explorer.exe");
+  expect(openerFor("Mozilla/5.0 (Linux; Android 14)")).toBe("explorer.exe");
+  expect(websiteAction("example.com", "xdg-open").LaunchApp).toEqual({ path: "xdg-open", args: ["https://example.com"], enabled: true });
 });

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { renderToString } from "react-dom/server";
 import { expect, test, vi } from "vitest";
-import Permissions, { watch } from "./Permissions.jsx";
+import Permissions, { BUTTON, PermissionsScreen, leadFor, watch } from "./Permissions.jsx";
 
 test("the status is checked again when the window regains focus, until unmounted", () => {
   vi.useFakeTimers();
@@ -46,4 +46,15 @@ test("the buttons call open_permission_pane and the section polls get_permission
   expect(src).toContain('invoke("open_permission_pane", { permission: name })');
   expect(src).toContain('invoke("get_permissions")');
   expect(src).not.toMatch(/fonts\.googleapis|fonts\.gstatic|Material\sSymbols|https?:\/\//);
+});
+
+test("Linux's one permission is the device rule, installed with one button", () => {
+  const html = renderToString(<Permissions initial={{ DeviceAccess: "Missing" }} />);
+  for (const text of ["Needs permission", "Allow freewheel to use your Speed Editor", "the device rule", "Install the device rule"]) expect(html).toContain(text);
+  expect(html).not.toContain("Open System Settings");
+  const screen = renderToString(<PermissionsScreen initial={{ DeviceAccess: "Missing" }} button="Done" />);
+  expect(screen).toContain("Linux asks for your password once");
+  expect(screen).toContain("Install the device rule");
+  expect(BUTTON("Accessibility")).toBe("Open System Settings");
+  expect(leadFor(["Accessibility", "InputMonitoring"])).toMatch(/^macOS asks you/);
 });

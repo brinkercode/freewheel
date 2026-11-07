@@ -1,0 +1,15 @@
+# freewheel: lets the person logged in at this computer use the Speed Editor
+# and type through a virtual keyboard. Installed once, by freewheel's first
+# run (pkexec) or by hand:
+#   sudo install -m 644 60-freewheel.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+# "uaccess" gives the device to the active local session only (systemd-logind).
+
+# Blackmagic Design DaVinci Resolve Speed Editor (1edb:da0e), USB.
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1edb", ATTRS{idProduct}=="da0e", TAG+="uaccess"
+# The same over Bluetooth (BlueZ HID): the parent HID device is named
+# <bus>:1EDB:DA0E.<n>.
+SUBSYSTEM=="hidraw", KERNELS=="*:1EDB:DA0E.*", TAG+="uaccess"
+
+# The virtual keyboard freewheel types with on Wayland (uinput).
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"
