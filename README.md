@@ -1,10 +1,41 @@
 # freewheel
 
-## Install on Windows
+## Download
 
-The NSIS installer needs nothing else: it downloads and installs WebView2 if
-it is missing. The portable `freewheel.exe` has the C runtime built in but
-needs WebView2, which every Windows 11 has built in.
+freewheel is portable: nothing to install, one folder, and it adds nothing
+outside it but its settings. Get the newest release from
+[Releases](../../releases/latest):
+
+- **Windows**: `freewheel-<version>-windows-x64.zip`. Unzip it to a folder
+  you can change (Documents, Desktop, a USB stick; not Program Files) and run
+  `freewheel.exe`. It has the C runtime built in and needs WebView2, which
+  every Windows 11 has built in. `freewheel-simulate.cmd` next to it starts
+  the simulator. The exe is unsigned: SmartScreen asks once (**More info**,
+  then **Run anyway**).
+- **macOS 15**: `freewheel-<version>-macos-universal.zip` (Apple Silicon and
+  Intel). Unzip it and move `freewheel.app` to Applications (or anywhere you
+  can change). Until it is notarized, open it the first time with right-click
+  → **Open**.
+
+Settings live in your user config folder (Windows `%APPDATA%\freewheel`,
+macOS `~/Library/Application Support/freewheel`), never next to the app, so
+moving or replacing the app keeps them. To remove freewheel, quit it, turn off
+Start at login, and delete the folder (and the config folder, if you want).
+
+## Updates
+
+freewheel checks the newest release once at start (and when you click
+**Check for updates** in General): it reads the release's `latest.json`,
+compares versions, downloads the zip for your OS to a temp folder with
+progress, and verifies its signature against the key built into your copy
+before it touches anything. **Restart to update** then puts the new
+`freewheel.exe` (or `freewheel.app`) in place of the running one, keeping the
+old one aside as `freewheel.exe.old` until the new one starts, restarts into
+it and shows **What's new**. The new one deletes the old copy and the
+download. If any step fails the old version stays (or is put back) and the
+General tab says why; if the app's folder can't be changed (e.g. Program
+Files) it tells you to move freewheel or download the new version yourself.
+Your settings and the Start at login entry (same path) are untouched.
 
 ## First run
 
@@ -45,9 +76,10 @@ Every push to main (or a manual **Run workflow**) runs the `test-build`
 workflow. To get a Windows build, open the latest run of
 [test-build on the **Actions** tab](../../actions/workflows/test-build.yml)
 and download the `freewheel-windows-…` artifact from the run's
-**Artifacts** section at the bottom of its summary page. It holds only the
-portable `freewheel.exe`, which runs with nothing to install, and is kept for
-1 day.
+**Artifacts** section at the bottom of its summary page. It holds the
+portable `freewheel.exe` (and `freewheel-simulate.cmd`), which runs with
+nothing to install, and is kept for 1 day. Test builds can't update
+themselves (they have no updater key).
 
 The build is unsigned, so Windows SmartScreen warns when you start it: click
 **More info**, then **Run anyway**.
@@ -89,13 +121,13 @@ the draft unpublished. Tick the items in a copy of this list for each release.
 - [ ] Battery: on Bluetooth the tray tooltip shows the battery level, and one notification appears when it drops below 15%.
 - [ ] Start at login: on a fresh install the tray's "Start at login" is unchecked. Checking it adds freewheel to Settings > Apps > Startup and freewheel starts after signing out and in; unchecking it removes the entry and freewheel no longer starts. The checkbox matches the Startup entry after a restart, including when the entry was switched off there.
 - [ ] Import and export: export writes freewheel-mappings.json; importing it asks for confirmation, backs up the current config first, and an imported LaunchApp stays disabled until opted in.
-- [ ] SmartScreen on install: running the unsigned NSIS installer shows SmartScreen or not (record what is shown); "More info > Run anyway" installs per-user.
-- [ ] Update: installing the previous release and starting it offers the new version; accepting downloads, installs and restarts into it. SmartScreen on update: record whether the update's installer prompts again.
-- [ ] [T3] Update with a tampered .sig: serving a latest.json whose signature is altered (one character changed) makes the update fail with a signature error and is rejected; the installed version is unchanged.
+- [ ] SmartScreen on install: running the unzipped, unsigned `freewheel.exe` the first time shows SmartScreen or not (record what is shown); "More info > Run anyway" starts it.
+- [ ] Update: unzipping the previous release into a folder and starting it offers the new version; accepting downloads it with progress, Restart to update restarts into it from the same folder, What's new shows, the keys and settings are unchanged and `freewheel.exe.old` is gone. SmartScreen on update: record whether the updated exe prompts again (it should not: the app downloads it, so it has no mark of the web). In a folder you can't change (Program Files) the update says to move freewheel or download it.
+- [ ] [T3] Update with a tampered .sig: serving a latest.json whose signature is altered (one character changed) makes the update fail with a signature error and is rejected; the folder's version is unchanged.
 
 ### macOS 15 (Apple Silicon and Intel)
 
-Run every item on an Apple Silicon Mac and on an Intel Mac, from the universal dmg.
+Run every item on an Apple Silicon Mac and on an Intel Mac, from the universal zip.
 
 - [ ] [C9a] USB: plugged in, the Speed Editor opens and authenticates (status shows connected over USB); a Press fires its binding and a Jog turn scrolls.
 - [ ] [C9a] Bluetooth: paired and with the USB cable out, the Speed Editor opens and authenticates (status shows connected over Bluetooth); a Press fires its binding and a Jog turn scrolls.
@@ -115,8 +147,8 @@ Run every item on an Apple Silicon Mac and on an Intel Mac, from the universal d
 - [ ] Battery: on Bluetooth the menu bar tooltip shows the battery level, and one notification appears when it drops below 15%.
 - [ ] Start at login: on a fresh install the menu bar's "Start at login" is unchecked. Checking it adds freewheel to System Settings > General > Login Items and freewheel starts after logging out and in; unchecking it removes the item and freewheel no longer starts. The checkbox matches Login Items after a restart, including when the item was removed there.
 - [ ] Import and export: export writes freewheel-mappings.json; importing it asks for confirmation, backs up the current config first, and an imported LaunchApp stays disabled until opted in.
-- [ ] Update: installing the previous release and starting it offers the new version; accepting downloads, installs and restarts into it, and Gatekeeper accepts the notarized app.
-- [ ] [T3] Update with a tampered .sig: serving a latest.json whose signature is altered (one character changed) makes the update fail with a signature error and is rejected; the installed version is unchanged.
+- [ ] Update: unzipping the previous release, moving freewheel.app to Applications and starting it offers the new version; accepting downloads it, Restart to update replaces freewheel.app in place and restarts into it (no Gatekeeper prompt), What's new shows, Login Items and Accessibility/Input Monitoring still list freewheel (record whether the permissions had to be granted again: ad-hoc signed builds may need it), and `freewheel.app.old` is gone.
+- [ ] [T3] Update with a tampered .sig: serving a latest.json whose signature is altered (one character changed) makes the update fail with a signature error and is rejected; the app's version is unchanged.
 
 ### Open items the hardware spike left unconfirmed
 
@@ -125,4 +157,4 @@ Each is confirmed only by its real-device check above; record the result in the 
 - C9a: Bluetooth on Windows 11 (open, auth, Press and Jog over Bluetooth), checked by the [C9a] items.
 - R1: Resolve re-acquire on Windows (does Resolve take the device back without a replug), checked by the [R1] item.
 - P1: macOS Input Monitoring (is it needed to read the device), checked by the [P1] item.
-- SmartScreen on the unsigned NSIS build, on install and on each update (default: accept the prompt for v1 and note it in the release notes).
+- SmartScreen on the unsigned portable exe, on first start and after each update (default: accept the prompt for v1 and note it in the release notes).

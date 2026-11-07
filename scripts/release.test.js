@@ -3,9 +3,11 @@ import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import { checkLatestJson } from "./check-latest-json.mjs";
 import { checkReleaseWorkflow } from "./check-workflow.mjs";
+import { PACKAGES, PLATFORMS as SERVED, manifest, parseArgs as packageArgs } from "./portable-release.mjs";
+import { binaryProblems } from "./check-release-binary.mjs";
 import { appleEnv, releaseArgs } from "./tauri-release.mjs";
 import { pickReleases, versionOf } from "./update-e2e.mjs";
-import { latestProblems, signatureProblem, verifyLatest } from "./verify-update-sig.mjs";
+import { boundVersion, latestProblems, signatureProblem, verifyLatest } from "./verify-update-sig.mjs";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const release = read("../.github/workflows/release.yml");
@@ -16,11 +18,13 @@ test("release.yml passes the release lint", () => {
 });
 
 test.each([
-  ["an unpinned action", release.replace(/tauri-action@[0-9a-f]{40}/, "tauri-action@v0"), "not pinned to a 40-hex SHA"],
+  ["an unpinned action", release.replace(/checkout@[0-9a-f]{40}/, "checkout@v4"), "not pinned to a 40-hex SHA"],
   ["a short SHA", release.replace(/checkout@[0-9a-f]{40}/, "checkout@11bd719"), "not pinned to a 40-hex SHA"],
-  ["no release environment", release.replace("    environment: release\n", ""), "'environment: release'"],
-  ["an APPLE_ secret in the job env", release.replace("    runs-on: ${{ matrix.os }}\n", "    runs-on: ${{ matrix.os }}\n    env:\n      APPLE_ID: ${{ secrets.APPLE_ID }}\n"), "outside the tauri-action step env"],
-  ["a TAURI_SIGNING_ secret in another step", release.replace("      - run: npm ci\n", "      - run: npm ci\n        env:\n          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}\n"), "outside the tauri-action step env"],
+  ["no release environment on the build", release.replace("  build:\n    needs: [test, notes]\n    environment: release\n", "  build:\n    needs: [test, notes]\n"), "'Build freewheel.app (macOS)' does not declare 'environment: release'"],
+  ["no release environment on the signing", release.replace("  publish:\n    needs: [build, notes]\n    environment: release\n", "  publish:\n    needs: [build, notes]\n"), "'Sign the packages' does not declare 'environment: release'"],
+  ["an APPLE_ secret in the job env", release.replace("    runs-on: ${{ matrix.os }}\n", "    runs-on: ${{ matrix.os }}\n    env:\n      APPLE_ID: ${{ secrets.APPLE_ID }}\n"), "APPLE_* outside the 'Build freewheel.app (macOS)' step env"],
+  ["a TAURI_SIGNING_ secret in another step", release.replace("      - run: npm ci\n", "      - run: npm ci\n        env:\n          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}\n"), "TAURI_SIGNING_* outside the 'Sign the packages' step env"],
+  ["the signing key in the build", release.replace("          TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}\n        run: npm run tauri -- build --no-bundle", "          TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}\n          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}\n        run: npm run tauri -- build --no-bundle"), "TAURI_SIGNING_* outside"],
   ["secrets: inherit", release.replace("    uses: ./.github/workflows/ci.yml\n", "    uses: ./.github/workflows/ci.yml\n    secrets: inherit\n"), "secrets: inherit"],
 ])("the release lint fails on %s", (_name, text, msg) => {
   expect(checkReleaseWorkflow(text).join("\n")).toContain(msg);
@@ -31,7 +35,8 @@ test("release.yml runs on v* tags (pushed, or dispatched on the tag by release-p
   expect(release).not.toMatch(/pull_request|branches:/);
   expect(release).toMatch(/^ {2}test:\n {4}if: startsWith\(github\.ref, 'refs\/tags\/v'\)\n {4}uses: \.\/\.github\/workflows\/ci\.yml$/m);
   expect(release).toMatch(/^ {2}notes:\n {4}if: startsWith\(github\.ref, 'refs\/tags\/v'\)$/m);
-  expect(release).toMatch(/^ {2}release:\n {4}needs: \[test, notes\]$/m);
+  expect(release).toMatch(/^ {2}build:\n {4}needs: \[test, notes\]$/m);
+  expect(release).toMatch(/^ {2}publish:\n {4}needs: \[build, notes\]$/m);
   expect(release.match(/- os: \S+/g)).toEqual(["- os: windows-2025", "- os: macos-15"]);
   expect(release).not.toMatch(/\bstable\b|dtolnay\/rust-toolchain|self-hosted/);
   expect(release).toContain("rustup toolchain install");
@@ -40,71 +45,111 @@ test("release.yml runs on v* tags (pushed, or dispatched on the tag by release-p
   expect(release).toContain('test "v$version" = "$GITHUB_REF_NAME"');
 });
 
-test("release.yml publishes the release with release-please's notes, in latest.json too, and verifies it", () => {
-  expect(release).toContain("releaseDraft: false");
-  expect(release).not.toContain("releaseDraft: true");
-  expect(release).toContain("releaseBody: ${{ needs.notes.outputs.body }}");
+test("release.yml uploads the portable packages, their signatures and latest.json with release-please's notes to the published release", () => {
+  expect(release).not.toMatch(/tauri-action|releaseDraft|uploadUpdaterJson|nsis|NSIS|dmg|msi|setup\.exe/);
   expect(release).toContain("gh release view \"$GITHUB_REF_NAME\" --repo \"$GITHUB_REPOSITORY\" --json body --jq .body");
-  expect(release).toContain("uploadUpdaterJson: true");
-  expect(release).toMatch(/- os: macos-15\n\s+args: "--target universal-apple-darwin -- --locked"/);
-  expect(release).toContain("run: npm ci");
+  expect(release).toContain("NOTES: ${{ needs.notes.outputs.body }}");
+  expect(release).toContain("run: npm run tauri -- build --no-bundle -- --locked");
+  expect(release).toContain("run: npm run tauri -- build --target universal-apple-darwin --bundles app -- --locked");
+  expect(release).toContain("node scripts/portable-release.mjs package --os ${{ matrix.package }} --version \"$VERSION\" --out packages");
+  expect(release).toContain('node node_modules/@tauri-apps/cli/tauri.js signer sign --app-version "$VERSION" "$f"');
+  expect(release).toContain("node scripts/portable-release.mjs manifest --version \"$VERSION\" --notes-file \"$RUNNER_TEMP/notes.md\" --dir packages");
+  expect(release).toContain('node scripts/verify-update-sig.mjs packages/latest.json --version "$GITHUB_REF_NAME" --dir packages');
+  expect(release).toContain('gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber packages/*');
   expect(release).toContain("node scripts/check-latest-json.mjs latest.json");
   expect(release).toContain('node scripts/verify-update-sig.mjs latest.json --version "$GITHUB_REF_NAME"');
   expect(release).toContain("--json isDraft --jq .isDraft)\" = false");
-  expect(release).toContain("TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}");
   expect(release).toMatch(/^ {2}update-e2e:\n {4}needs: latest-json\n {4}uses: \.\/\.github\/workflows\/update-e2e\.yml$/m);
 });
 
-test("bundles: per-user unsigned NSIS on Windows, macOS 15.0 dmg, no MSI", () => {
-  expect(conf.bundle.targets).toEqual(["nsis", "app", "dmg"]);
-  expect(conf.bundle.createUpdaterArtifacts).toBe(true);
+test("what ships is checked: no e2e-only code, the pubkey baked in, the Windows zero-install gate, the macOS signature", () => {
+  expect(release).toContain('node scripts/check-release-binary.mjs "$bin" --pubkey "$TAURI_UPDATER_PUBKEY"');
+  expect(release).toContain('node scripts/check-windows-exe.mjs "$bin"');
+  expect(release).toContain('codesign --verify --deep --strict --verbose=2 "$app"');
+  const e2e = Buffer.from("x FREEWHEEL_E2E_UPDATE_URL x");
+  expect(binaryProblems(e2e)).toEqual(["contains FREEWHEEL_E2E_UPDATE_URL: built with the e2e feature, never ship it"]);
+  expect(binaryProblems(Buffer.from("x PUBKEY x"), { pubkey: "PUBKEY" })).toEqual([]);
+  expect(binaryProblems(Buffer.from("x x"), { pubkey: "PUBKEY" })).toEqual(["the updater pubkey is not baked in (FREEWHEEL_UPDATER_PUBKEY at build)"]);
+  // The Rust side names the override exactly so, and only under the e2e feature.
+  const rust = read("../src-tauri/src/selfupdate.rs");
+  expect(rust).toMatch(/#\[cfg\(feature = "e2e"\)\]\npub const E2E_MANIFEST_URL_ENV: &str = "FREEWHEEL_E2E_UPDATE_URL";/);
+  expect(rust.match(/"FREEWHEEL_E2E_UPDATE_URL"/g)).toHaveLength(2); // the const, and the test that a shipped build ignores it
+});
+
+test("no installer: the bundle is the macOS .app only, macOS 15.0", () => {
+  expect(conf.bundle.targets).toEqual(["app"]);
+  expect(conf.bundle.createUpdaterArtifacts).toBeUndefined();
+  expect(conf.bundle.windows).toBeUndefined();
   expect(conf.bundle.macOS.minimumSystemVersion).toBe("15.0");
-  expect(conf.bundle.windows).toEqual({
-    nsis: { installMode: "currentUser" },
-    webviewInstallMode: { type: "downloadBootstrapper" },
-  });
   expect(release).not.toMatch(/WINDOWS_CERTIFICATE|certificateThumbprint|signCommand|AZURE_/);
 });
 
-test("[T3][T7] the release build's tauriScript goes through the pubkey override, and no pubkey is committed", () => {
-  expect(release).toContain("tauriScript: npm run tauri");
-  expect(release.match(/vars\.TAURI_UPDATER_PUBKEY/g)).toHaveLength(2);
+test("[T3][T7] the release build bakes in the pubkey variable, and no key is committed", () => {
+  expect(release.match(/run: npm run tauri -- build/g)).toHaveLength(2);
   const pkg = JSON.parse(read("../package.json"));
   expect(pkg.scripts.tauri).toBe("node scripts/tauri-release.mjs");
   expect(release).not.toMatch(/secrets\.TAURI_UPDATER_PUBKEY/);
-  expect(conf.plugins.updater.pubkey ?? "").toBe("");
+  expect(conf.plugins).toBeUndefined();
 });
 
-const releaseEnv = {
-  TAURI_UPDATER_PUBKEY: "public-key-from-vars",
-  TAURI_SIGNING_PRIVATE_KEY: "x",
-  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: "y",
-};
-
-test("tauri build gets a --config override of plugins.updater.pubkey", () => {
-  const { problems, args } = releaseArgs(["build", "--target", "universal-apple-darwin"], releaseEnv);
+test("tauri build gets the pubkey as FREEWHEEL_UPDATER_PUBKEY, the args unchanged", () => {
+  const { problems, args, env } = releaseArgs(["build", "--target", "universal-apple-darwin"], { TAURI_UPDATER_PUBKEY: " public-key-from-vars\n" });
   expect(problems).toEqual([]);
-  expect(args.slice(0, 2)).toEqual(["build", "--config"]);
-  expect(JSON.parse(args[2])).toEqual({ plugins: { updater: { pubkey: "public-key-from-vars" } } });
-  expect(args.slice(3)).toEqual(["--target", "universal-apple-darwin"]);
+  expect(args).toEqual(["build", "--target", "universal-apple-darwin"]);
+  expect(env).toEqual({ FREEWHEEL_UPDATER_PUBKEY: "public-key-from-vars" });
 });
 
-test.each(Object.keys(releaseEnv))("the release build fails naming a missing %s", (name) => {
-  const { problems, args } = releaseArgs(["build"], { ...releaseEnv, [name]: "" });
+test("the release build fails naming a missing TAURI_UPDATER_PUBKEY", () => {
+  const { problems, args } = releaseArgs(["build"], { TAURI_UPDATER_PUBKEY: " " });
   expect(args).toBeNull();
   expect(problems).toHaveLength(1);
-  expect(problems[0]).toMatch(new RegExp(`^release build needs ${name}:`));
+  expect(problems[0]).toMatch(/^release build needs TAURI_UPDATER_PUBKEY:/);
 });
 
 test("other Tauri commands pass through without the release env", () => {
-  expect(releaseArgs(["info"], {})).toEqual({ problems: [], args: ["info"] });
+  expect(releaseArgs(["info"], {})).toEqual({ problems: [], args: ["info"], env: {} });
 });
 
-const platform = { url: "https://github.com/x/freewheel/releases/download/v1/a", signature: "sig" };
+const at = (file) => ({ url: `https://github.com/brinkercode/freewheel/releases/download/v0.1.0/${file}`, signature: "sig" });
 const latest = {
   version: "0.1.0",
-  platforms: { "windows-x86_64": platform, "darwin-aarch64": platform, "darwin-x86_64": platform },
+  platforms: {
+    "windows-x86_64": at("freewheel-0.1.0-windows-x64.zip"),
+    "darwin-aarch64": at("freewheel-0.1.0-macos-universal.zip"),
+    "darwin-x86_64": at("freewheel-0.1.0-macos-universal.zip"),
+  },
 };
+
+test("latest.json must point each platform at its portable package", () => {
+  const platforms = { ...latest.platforms, "darwin-aarch64": at("freewheel-0.1.0-windows-x64.zip") };
+  expect(checkLatestJson({ ...latest, platforms })).toEqual([
+    "'darwin-aarch64' is not freewheel-0.1.0-macos-universal.zip: https://github.com/brinkercode/freewheel/releases/download/v0.1.0/freewheel-0.1.0-windows-x64.zip",
+  ]);
+});
+
+test("the packages and the manifest the release writes are what the updater reads", () => {
+  expect(PACKAGES.windows("0.1.1")).toBe("freewheel-0.1.1-windows-x64.zip");
+  expect(PACKAGES.macos("0.1.1")).toBe("freewheel-0.1.1-macos-universal.zip");
+  expect(SERVED).toEqual({ "windows-x86_64": "windows", "darwin-aarch64": "macos", "darwin-x86_64": "macos" });
+  const fixture = JSON.parse(read("./fixtures/portable-latest.json"));
+  const signatures = { "freewheel-0.1.1-windows-x64.zip": "c2ln\n", "freewheel-0.1.1-macos-universal.zip": "c2ln" };
+  const made = manifest({
+    version: "0.1.1",
+    notes: fixture.notes,
+    baseUrl: "https://github.com/brinkercode/freewheel/releases/download/v0.1.1/",
+    signatures,
+    pubDate: fixture.pub_date,
+  });
+  // The fixture is what src-tauri/src/selfupdate.rs parses in its test.
+  expect(made).toEqual(fixture);
+  expect(checkLatestJson(made)).toEqual([]);
+  expect(manifest({ version: "0.1.1", notes: "", baseUrl: "https://x", signatures, only: ["windows"] }).platforms).toEqual({
+    "windows-x86_64": { url: "https://x/freewheel-0.1.1-windows-x64.zip", signature: "c2ln" },
+  });
+  expect(() => manifest({ version: "0.1.1", baseUrl: "https://x", signatures: {} })).toThrow(/no signature for freewheel-0.1.1-windows-x64.zip/);
+  expect(() => manifest({ version: "nope", baseUrl: "https://x", signatures })).toThrow(/not a version/);
+  expect(packageArgs(["package", "--os", "macos", "--version", "0.1.1"])).toEqual({ command: "package", os: "macos", version: "0.1.1" });
+});
 
 test("latest.json with every platform passes", () => {
   expect(checkLatestJson(latest)).toEqual([]);
@@ -155,14 +200,19 @@ test("without the Apple secrets the macOS build drops the empty APPLE_* variable
   expect(set).toEqual({ APPLE_CERTIFICATE: "cert", APPLE_CERTIFICATE_PASSWORD: "pw", APPLE_SIGNING_IDENTITY: "Developer ID", APPLE_ID: "a@b" });
 });
 
-// A fixture signed by a throwaway key (only its pubkey is committed), as `tauri signer sign` signs updates.
-const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url));
-const data = fixture("update-fixture.bin");
-const signature = fixture("update-fixture.bin.sig").toString("utf8");
-const pubkey = fixture("update-fixture.pub").toString("utf8");
+// The fixture the Rust updater tests too, signed by a throwaway key (only its
+// pubkey is committed) with `tauri signer sign --app-version 0.2.0`.
+const fixture = (name) => readFileSync(new URL(`../src-tauri/fixtures/update/${name}`, import.meta.url));
+const data = fixture("package.bin");
+const signature = fixture("package.bin.sig").toString("utf8");
+const pubkey = fixture("test.pub").toString("utf8");
 
-test("[T3] an update file verifies against the updater pubkey", () => {
+test("[T3] an update file verifies against the updater pubkey, bound to its version", () => {
   expect(signatureProblem(data, signature, pubkey)).toBeNull();
+  expect(signatureProblem(data, signature, pubkey, "0.2.0")).toBeNull();
+  expect(boundVersion(signature)).toBe("0.2.0");
+  expect(signatureProblem(data, signature, pubkey, "0.3.0")).toBe("signed for version 0.2.0, not 0.3.0");
+  expect(signatureProblem(data, signature, fixture("other.pub").toString("utf8"))).toBe("signed by another key");
 });
 
 test("[T3] a tampered file, a tampered .sig or another key is rejected", () => {
@@ -187,8 +237,9 @@ test("latest.json must carry the tag's version and the release notes", () => {
 });
 
 test("each platform's download is fetched once and checked against its signature", async () => {
-  const url = "https://github.com/brinkercode/freewheel/releases/download/v0.1.0/freewheel.app.tar.gz";
+  const url = "https://github.com/brinkercode/freewheel/releases/download/v0.2.0/freewheel-0.2.0-macos-universal.zip";
   const json = {
+    version: "0.2.0",
     platforms: {
       "darwin-aarch64": { url, signature },
       "darwin-x86_64": { url, signature },
@@ -242,18 +293,20 @@ test("release-please runs on main, pinned, and dispatches the release PR's CI an
 
 const e2e = read("../.github/workflows/update-e2e.yml");
 
-test("update-e2e installs the previous release on Windows and updates it with the installed app's updater", () => {
+test("update-e2e unzips the previous release into a folder and updates it with that app's own updater", () => {
   expect(e2e).toMatch(/^on:\n {2}workflow_dispatch:/m);
   expect(e2e).toMatch(/^ {2}workflow_call:$/m);
   expect(e2e).toMatch(/^permissions:\n {2}contents: read$/m);
-  expect(e2e).not.toMatch(/secrets\.|: write\b/);
+  expect(e2e).not.toMatch(/secrets\.|: write\b|setup\.exe|\/S'/);
   expect(e2e).toContain("runs-on: windows-2025");
-  expect(e2e).toContain("--pattern '*-setup.exe'");
-  expect(e2e).toContain("-ArgumentList '/S' -Wait -PassThru");
+  expect(e2e).toContain('--pattern "freewheel-$env:FROM_VERSION-windows-x64.zip"');
+  expect(e2e).toContain("Expand-Archive");
   expect(e2e.match(/-ArgumentList '--update-check-and-install'/g)).toHaveLength(2);
-  expect(e2e).toContain('if ($installed -ne $env:TO_VERSION)');
+  expect(e2e).toContain("if ($now -ne $env:TO_VERSION)");
+  expect(e2e).toContain('if (Test-Path "$exe.old")');
   expect(e2e).toContain("node scripts/check-windows-exe.mjs $exe");
   expect(e2e).toContain("if ($run.ExitCode -ne 2)");
+  expect(read("../src-tauri/src/selfupdate.rs")).toContain('pub const HEADLESS_FLAG: &str = "--update-check-and-install";');
 });
 
 test("update-e2e updates from the release before the newest one (or the one asked for)", () => {

@@ -1,37 +1,32 @@
 #!/usr/bin/env node
-// The Windows update e2e's `tauri build --config` override (e2e builds only,
-// never a shipped build): the version to build, the throwaway test pubkey
-// generated in the job, and the updater endpoint on the runner's local
-// release server (scripts/update-server.mjs), plain http on 127.0.0.1.
+// The Windows update e2e's build settings (e2e builds only, never a shipped
+// build): the `tauri build --config` override with the version to build,
+// and the env that bakes the throwaway test pubkey (generated in the job)
+// into it. The updater's manifest URL is set at run time instead
+// (FREEWHEEL_E2E_UPDATE_URL, read only by `e2e` feature builds).
 //
-//   node scripts/e2e-update-config.mjs <version> <test key .pub file> <server port> > config.json
-//   node scripts/e2e-update-config.mjs --next <version>     prints the next minor version
-import { readFileSync } from "node:fs";
+//   node scripts/e2e-update-config.mjs <version>       prints the --config JSON
+//   node scripts/e2e-update-config.mjs --next <version> prints the next minor version
 import { fileURLToPath } from "node:url";
-import { nextVersion } from "../src/simUpdate.js";
 
-/** The override for one e2e build. */
-export function e2eConfig({ version, pubkey, port }) {
-  if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error(`not a version: ${version}`);
-  if (!pubkey?.trim()) throw new Error("no test pubkey");
-  const p = Number(port);
-  if (!Number.isInteger(p) || p < 1 || p > 65535) throw new Error(`not a port: ${port}`);
-  return {
-    version,
-    bundle: { createUpdaterArtifacts: true },
-    plugins: {
-      updater: {
-        pubkey: pubkey.trim(),
-        endpoints: [`http://127.0.0.1:${p}/latest.json`],
-        // Local, loopback-only http for the e2e's server; shipped builds keep https (updater.test.jsx).
-        dangerousInsecureTransportProtocol: true,
-      },
-    },
-  };
+/** The next minor version: "0.1.0" -> "0.2.0". */
+export function nextVersion(version) {
+  const [major = 0, minor = 0] = String(version ?? "0.0.0")
+    .replace(/^v/, "")
+    .split("-")[0]
+    .split(".")
+    .map((n) => Number.parseInt(n, 10) || 0);
+  return `${major}.${minor + 1}.0`;
+}
+
+/** The --config override for one e2e build. */
+export function e2eConfig({ version }) {
+  if (!/^\d+\.\d+\.\d+$/.test(version ?? "")) throw new Error(`not a version: ${version}`);
+  return { version };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const [a, b, c] = process.argv.slice(2);
+  const [a, b] = process.argv.slice(2);
   if (a === "--next") console.log(nextVersion(b));
-  else console.log(JSON.stringify(e2eConfig({ version: a, pubkey: readFileSync(b, "utf8"), port: c })));
+  else console.log(JSON.stringify(e2eConfig({ version: a })));
 }

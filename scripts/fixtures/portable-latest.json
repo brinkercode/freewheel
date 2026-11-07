@@ -1,0 +1,19 @@
+{
+  "version": "0.1.1",
+  "notes": "## [0.1.1](https://github.com/brinkercode/freewheel/compare/v0.1.0...v0.1.1) (2026-11-08)\n\n\n### Features\n\n* **updates:** portable self-update ([#144](https://github.com/brinkercode/freewheel/issues/144)) ([abcdef1](https://github.com/brinkercode/freewheel/commit/abcdef1))\n",
+  "pub_date": "2026-11-08T12:00:00.000Z",
+  "platforms": {
+    "windows-x86_64": {
+      "url": "https://github.com/brinkercode/freewheel/releases/download/v0.1.1/freewheel-0.1.1-windows-x64.zip",
+      "signature": "c2ln"
+    },
+    "darwin-aarch64": {
+      "url": "https://github.com/brinkercode/freewheel/releases/download/v0.1.1/freewheel-0.1.1-macos-universal.zip",
+      "signature": "c2ln"
+    },
+    "darwin-x86_64": {
+      "url": "https://github.com/brinkercode/freewheel/releases/download/v0.1.1/freewheel-0.1.1-macos-universal.zip",
+      "signature": "c2ln"
+    }
+  }
+}

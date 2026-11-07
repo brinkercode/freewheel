@@ -20,6 +20,20 @@ const ERROR_TITLE = {
   install: "The new version didn’t install",
 };
 
+/** The failed step's title: why it failed, when the updater said. */
+export function errorTitle(update) {
+  if (update.notWritable) return "freewheel can’t update itself in this folder";
+  if (update.badSignature) return "The new version couldn’t be verified";
+  return ERROR_TITLE[update.during];
+}
+
+/** What to do about it. */
+export function errorSub(update) {
+  if (update.notWritable) return "Move the freewheel folder somewhere you can change, like Documents, or download the new version from GitHub.";
+  if (update.badSignature) return "Nothing was changed. Try again.";
+  return "Check your internet connection and try again.";
+}
+
 /** The update banner for each updater state; renders nothing without an update. */
 export default function UpdateBanner({ update, onInstall, onLater, onRestart }) {
   // Checking, up to date and a failed check show only on the General tab.
@@ -45,8 +59,8 @@ export default function UpdateBanner({ update, onInstall, onLater, onRestart }) 
         {status === "restarting" && <span className="update-title">Restarting freewheel…</span>}
         {status === "error" && (
           <>
-            <span className="update-title">{ERROR_TITLE[update.during]}</span>
-            <span className="update-sub">Check your internet connection and try again.</span>
+            <span className="update-title">{errorTitle(update)}</span>
+            <span className="update-sub">{errorSub(update)}</span>
           </>
         )}
       </div>

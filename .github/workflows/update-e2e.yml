@@ -1,25 +1,27 @@
-# Update end to end for freewheel, on a hosted Windows runner: installs the
-# previous published release's NSIS installer silently, runs the installed
-# app's real updater (`freewheel --update-check-and-install`: the updater
-# plugin, the release endpoint, signature checked against the pubkey built
-# into that release) and requires the installed exe to become the newest
-# release, start (--simulate --smoke) and then report itself up to date.
-# Runs after each release (release.yml calls it) and on demand. Public
-# releases only: no secrets, read-only token.
+# Update end to end for freewheel against the real published releases, on
+# a hosted Windows runner: unzips the previous release's portable package
+# into a folder, runs that app's own updater headless
+# (`freewheel --update-check-and-install`: the release manifest on GitHub,
+# the package for this OS, its signature checked against the pubkey built
+# into that release, the exe swapped in place) and requires the same path
+# to become the newest release, start (--simulate --smoke), remove the old
+# exe it left aside and then report itself up to date. Runs after each
+# release (release.yml calls it) and on demand. Public releases only: no
+# secrets, read-only token.
 name: update-e2e
 
 on:
   workflow_dispatch:
     inputs:
       from:
-        description: "Release tag to install first (default: the one before the latest)"
+        description: "Release tag to start from (default: the one before the latest)"
         type: string
         required: false
         default: ""
   workflow_call:
     inputs:
       from:
-        description: "Release tag to install first (default: the one before the latest)"
+        description: "Release tag to start from (default: the one before the latest)"
         type: string
         required: false
         default: ""
@@ -33,7 +35,7 @@ permissions:
 
 jobs:
   windows:
-    name: update e2e (windows-2025)
+    name: update e2e (windows-2025, published releases)
     runs-on: windows-2025
     timeout-minutes: 20
     steps:
@@ -60,7 +62,7 @@ jobs:
         shell: bash
         run: echo "::notice::update-e2e needs two published releases; skipped"
 
-      - name: Install the previous release
+      - name: Unzip the previous release into a folder
         if: steps.pick.outputs.skip != 'true'
         shell: pwsh
         env:
@@ -68,50 +70,41 @@ jobs:
           FROM: ${{ steps.pick.outputs.from }}
           FROM_VERSION: ${{ steps.pick.outputs.from_version }}
         run: |
-          gh release download $env:FROM --repo $env:GITHUB_REPOSITORY --pattern '*-setup.exe' --dir old
-          $setup = Get-ChildItem old/*-setup.exe | Select-Object -First 1
-          $install = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait -PassThru
-          if ($install.ExitCode -ne 0) { throw "installer exit $($install.ExitCode)" }
-          $exe = "$env:LOCALAPPDATA\freewheel\freewheel.exe"
+          gh release download $env:FROM --repo $env:GITHUB_REPOSITORY --pattern "freewheel-$env:FROM_VERSION-windows-x64.zip" --dir old
+          Expand-Archive "old/freewheel-$env:FROM_VERSION-windows-x64.zip" -DestinationPath "$env:RUNNER_TEMP\freewheel"
+          $exe = "$env:RUNNER_TEMP\freewheel\freewheel.exe"
           $v = (Get-Item $exe).VersionInfo
-          $installed = "{0}.{1}.{2}" -f $v.FileMajorPart, $v.FileMinorPart, $v.FileBuildPart
-          Write-Host "installed $installed from $($setup.Name)"
-          if ($installed -ne $env:FROM_VERSION) { throw "installed $installed, expected $env:FROM_VERSION" }
+          $found = "{0}.{1}.{2}" -f $v.FileMajorPart, $v.FileMinorPart, $v.FileBuildPart
+          Write-Host "unzipped $found"
+          if ($found -ne $env:FROM_VERSION) { throw "unzipped $found, expected $env:FROM_VERSION" }
 
-      - name: Update with the installed app's updater
+      - name: Update with the app's own updater
         if: steps.pick.outputs.skip != 'true'
         shell: pwsh
         env:
           TO_VERSION: ${{ steps.pick.outputs.to_version }}
         run: |
-          $exe = "$env:LOCALAPPDATA\freewheel\freewheel.exe"
+          $exe = "$env:RUNNER_TEMP\freewheel\freewheel.exe"
           $run = Start-Process -FilePath $exe -ArgumentList '--update-check-and-install' -Wait -PassThru
-          # 0: the update verified and the installer started; 2: up to date; 3: no pubkey; 1: failed.
+          # 0: verified and swapped in; 2: up to date; 3: no pubkey; 1: failed.
           if ($run.ExitCode -ne 0) { throw "update run exit $($run.ExitCode)" }
-          # The passive NSIS installer replaces the app after the updater exits.
-          $deadline = (Get-Date).AddMinutes(5)
-          do {
-            Start-Sleep -Seconds 3
-            $v = (Get-Item $exe -ErrorAction SilentlyContinue).VersionInfo
-            $installed = if ($v) { "{0}.{1}.{2}" -f $v.FileMajorPart, $v.FileMinorPart, $v.FileBuildPart } else { "" }
-          } while ($installed -ne $env:TO_VERSION -and (Get-Date) -lt $deadline)
-          Write-Host "installed after the update: $installed"
-          if ($installed -ne $env:TO_VERSION) { throw "installed $installed, expected $env:TO_VERSION" }
-          $reg = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\freewheel' -ErrorAction SilentlyContinue
-          Write-Host "uninstall entry DisplayVersion: $($reg.DisplayVersion)"
-          # Let the installer finish before the next steps touch the exe.
-          $deadline = (Get-Date).AddMinutes(2)
-          while ((Get-Process | Where-Object { $_.ProcessName -like '*-setup' }) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
+          $v = (Get-Item $exe).VersionInfo
+          $now = "{0}.{1}.{2}" -f $v.FileMajorPart, $v.FileMinorPart, $v.FileBuildPart
+          Write-Host "the same path after the update: $now"
+          if ($now -ne $env:TO_VERSION) { throw "the exe is $now, expected $env:TO_VERSION" }
+          Get-ChildItem "$env:RUNNER_TEMP\freewheel" | Format-Table Name, Length
 
-      - name: The updated app starts and is up to date
+      - name: The updated app starts, cleans up and is up to date
         if: steps.pick.outputs.skip != 'true'
         shell: pwsh
         run: |
-          $exe = "$env:LOCALAPPDATA\freewheel\freewheel.exe"
-          node scripts/check-windows-exe.mjs $exe
-          if ($LASTEXITCODE -ne 0) { throw "smoke failed" }
+          $exe = "$env:RUNNER_TEMP\freewheel\freewheel.exe"
           $run = Start-Process -FilePath $exe -ArgumentList '--update-check-and-install' -Wait -PassThru
           if ($run.ExitCode -ne 2) { throw "second update run exit $($run.ExitCode), expected 2 (up to date)" }
+          if (Test-Path "$exe.old") { throw "freewheel.exe.old is still there" }
+          if (Test-Path "$env:TEMP\freewheel-update") { throw "the update's temp dir is still there" }
+          node scripts/check-windows-exe.mjs $exe
+          if ($LASTEXITCODE -ne 0) { throw "smoke failed" }
 
       - name: Keep the app's logs
         if: failure()

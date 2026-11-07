@@ -23,25 +23,25 @@ function fakeUpdate() {
   };
 }
 
-test("[A11][T3] the updater commits no pubkey (release builds inject it), https endpoints only and no insecure transport", () => {
-  const updater = conf.plugins.updater;
-  expect(updater.pubkey ?? "").toBe("");
-  expect(updater.endpoints.length).toBeGreaterThan(0);
-  for (const url of updater.endpoints) expect(url).toMatch(/^https:\/\/github\.com\/[^/]+\/freewheel\/releases\//);
-  expect(read("../src-tauri/tauri.conf.json")).not.toContain("dangerousInsecureTransportProtocol");
+test("[A11][T3] no updater plugin, no installer, no key committed: the Rust updater asks GitHub over https", () => {
+  expect(conf.plugins).toBeUndefined();
+  expect(conf.bundle.targets).toEqual(["app"]);
+  expect(conf.bundle.createUpdaterArtifacts).toBeUndefined();
+  const rust = read("../src-tauri/src/selfupdate.rs");
+  expect(rust).toContain('"https://github.com/brinkercode/freewheel/releases/latest/download/latest.json"');
+  expect(rust).toContain('option_env!("FREEWHEEL_UPDATER_PUBKEY")');
+  expect(read("../src-tauri/Cargo.toml")).not.toMatch(/tauri-plugin-(updater|process)/);
+  expect(JSON.stringify(JSON.parse(read("../package.json")))).not.toMatch(/plugin-(updater|process)/);
 });
 
 test("[T7] tauri.conf.json holds no key of any kind", () => {
-  expect(read("../src-tauri/tauri.conf.json")).not.toMatch(/private|secret|password/i);
+  expect(read("../src-tauri/tauri.conf.json")).not.toMatch(/private|secret|password|pubkey/i);
 });
 
-test("Windows installs updates with the passive NSIS mode", () => {
-  expect(conf.plugins.updater.windows.installMode).toBe("passive");
-});
-
-test("the webview may only check, download, install and restart", () => {
-  const cap = JSON.parse(read("../src-tauri/capabilities/default.json"));
-  expect(cap.permissions).toEqual(["updater:default", "process:allow-restart"]);
+test("the settings window may check, download and install through the Rust updater only", () => {
+  const cap = JSON.parse(read("../src-tauri/capabilities/settings.json"));
+  expect(cap.permissions).toEqual(expect.arrayContaining(["allow-update-check", "allow-update-download", "allow-update-install"]));
+  expect(cap.permissions.filter((p) => /updater|process/.test(p))).toEqual([]);
 });
 
 test("'Update automatically' is on by default: a newer version starts at downloading, then ready", async () => {
@@ -95,9 +95,19 @@ test("a failed install is logged and is an error to retry", async () => {
   expect(relaunch).not.toHaveBeenCalled();
 });
 
-test("a build without the updater (no pubkey) reads as not configured, a network failure does not", () => {
-  expect(errorState("check", "plugin updater not found").notConfigured).toBe(true);
-  expect(errorState("check", new Error("Could not fetch a valid release JSON from the remote")).notConfigured).toBeUndefined();
+test("the Rust updater's error codes read as their states", () => {
+  expect(errorState("check", "not-configured: this build has no updater pubkey").notConfigured).toBe(true);
+  expect(errorState("check", new Error("network: error sending request")).notConfigured).toBeUndefined();
+  expect(errorState("download", "not-writable: C:\\Program Files\\freewheel", "0.2.0")).toEqual({
+    status: "error",
+    during: "download",
+    version: "0.2.0",
+    message: "not-writable: C:\\Program Files\\freewheel",
+    notWritable: true,
+    folder: "C:\\Program Files\\freewheel",
+  });
+  expect(errorState("download", "bad-signature: the package does not match its signature").badSignature).toBe(true);
+  expect(errorState("download", "network: reset").badSignature).toBeUndefined();
 });
 
 test("Check for updates shows checking for at least the minimum time, even when the answer is instant", async () => {
