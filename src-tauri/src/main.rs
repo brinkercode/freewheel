@@ -66,10 +66,10 @@ fn init_logging() -> Option<Logger> {
     Some(logger)
 }
 
-/// The Speed Editor's auth response algorithm is not in freewheel-core yet,
-/// so the handshake is rejected and the tray shows Not connected until it is.
-fn auth_response(_challenge: u64) -> u64 {
-    0
+/// The Speed Editor's auth response (freewheel-core's port of bmd.py's
+/// `bmd_kbd_auth`, checked against recorded vectors).
+fn auth_response(challenge: u64) -> u64 {
+    freewheel_core::auth::compute_response(challenge)
 }
 
 /// Starts the device loop on its own thread; the tray shows its state and
