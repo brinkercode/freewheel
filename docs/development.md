@@ -36,10 +36,7 @@ On Windows, `freewheel-simulate.cmd` (in `src-tauri/windows/`, and next to
 the exe in the test-build and e2e artifacts) starts `freewheel.exe
 --simulate` with a double-click. Release zips do not include it.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/dark-simulator.png">
-  <img alt="The Simulator window" src="images/light-simulator.png" width="600">
-</picture>
+<img alt="The Simulator window: the simulated Speed Editor's keys, wheel, log, connection and tray menu" src="images/simulator.png" width="320">
 
 ## Tests
 
@@ -65,9 +62,10 @@ holds the stills used in the README (`docs/images/`). The same workflow
 measures the footprint (memory, CPU, size) and runs a full portable update
 against a local release server.
 
-To refresh the README screenshots, download `e2e-screenshots` from a green
-run, copy `readme/*.png` over `docs/images/` and optimise them (for example
-oxipng or pngquant).
+To refresh the screenshots, download `e2e-screenshots` from a green run,
+copy the `readme/` stills the README and this page use into `docs/images/`
+(`light-simulator.png` is `simulator.png` here) and optimise them losslessly
+(e.g. oxipng).
 
 ## Test builds
 
