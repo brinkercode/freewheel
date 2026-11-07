@@ -7,7 +7,7 @@ import App from "./App.jsx";
 test("App renders the prototype's window, never the old pre-design shell", () => {
   const done = { getItem: () => "1" };
   const html = renderToString(<App storage={done} />);
-  expect(html).toMatch(/^<div class="app"><nav class="toolbar" data-tauri-drag-region="deep">/);
+  expect(html).toMatch(/^<div class="app( is-mac)?"><nav class="toolbar" data-tauri-drag-region="deep">/);
   expect(html).not.toContain("freewheel settings");
   expect(html).not.toContain("<h1");
   expect(html).not.toContain("Speed Editor:");
