@@ -197,9 +197,10 @@ input[type="range"] { accent-color: var(--accent); border: none; background: tra
 .tab[aria-pressed="true"]:hover:not(:disabled) { background: var(--accent-soft); color: var(--accent); font-weight: var(--fw-semibold); }
 .toolbar-right { display: flex; align-items: center; gap: 12px; flex: 1 1 auto; margin-left: 8px; }
 .toolbar-right > :not(.status-slot) { flex: none; }
-/* The status' room: all the free width, measured as a container, so the
-   text shortens with an ellipsis and below 96px only the dot is left;
-   anything that still does not fit is clipped, never drawn over a tab. */
+/* The status' room: all the free width, measured as a container. Its
+   short label fits whole at the default 1000px; below 96px only the dot is
+   left. A text size too big for it still ends in an ellipsis and is
+   clipped, never drawn over a tab. */
 .status-slot { flex: 1 1 0; min-width: 0; display: flex; justify-content: flex-end; overflow: hidden; container-type: inline-size; }
 .status { height: auto; display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; padding: 6px 8px; border: none; border-radius: var(--r-sm); background: transparent; font-size: var(--fs-small); color: var(--ink2); cursor: default; }
 .status-text { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

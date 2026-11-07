@@ -27,6 +27,7 @@ const COMMANDS: &[&str] = &[
     "choose_app",
     "app_icons",
     "tray_update_state",
+    "settings_ready",
     "update_check",
     "update_download",
     "update_install",

@@ -26,7 +26,7 @@ const publish = (version) => {
 const SIM_NOTES = "## [0.2.0](https://github.com/brinkercode/freewheel/compare) (simulated)\n\n### Features\n\n* **wheel:** smoother scrolling when you turn the wheel fast\n";
 
 /** The Rust updater's commands, as selfupdate.rs answers them; `check` replaces update_check. */
-function fakeTauri({ simulate = false, check, autoUpdate = true, install = simulate ? "simulated" : "restarting" } = {}) {
+function fakeTauri({ simulate = false, check, autoUpdate = true, install = simulate ? "simulated" : "restarting", listenMs = 0, onReady } = {}) {
   listeners = {};
   updates = { current: "0.1.0", published: null, offer: null };
   const config = sampleConfig();
@@ -61,11 +61,16 @@ function fakeTauri({ simulate = false, check, autoUpdate = true, install = simul
       case "update_install":
         updates.current = updates.offer;
         return install;
+      case "settings_ready":
+        onReady?.();
+        return null;
       default:
         return null;
     }
   });
   const listen = async (event, handler) => {
+    // Attaching a listener is an IPC round trip in Tauri: it takes a while.
+    if (listenMs) await new Promise((r) => setTimeout(r, listenMs));
     (listeners[event] ??= []).push(handler);
     return () => {};
   };
@@ -249,3 +254,43 @@ test("the tray's Download logs opens Help & backup with the saved file (or why n
   listeners["logs-saved"].forEach((f) => f({ payload: { error: "the disk is full" } }));
   await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("The logs could not be saved: the disk is full"));
 });
+
+test("a window built again for the tray says it is ready only once every listener is attached, then runs the tray's check where it shows", async () => {
+  // What app_windows.rs keeps for a window that is still loading: the tray's Check for updates.
+  const queued = [["tray-update", "check"]];
+  let heard = null;
+  const invoke = fakeTauri({
+    simulate: true,
+    listenMs: 120,
+    onReady: () => {
+      heard = Object.keys(listeners).sort();
+      for (const [event, payload] of queued.splice(0)) listeners[event].forEach((f) => f({ payload }));
+    },
+  });
+  render(<App storage={memoryStorage({ "freewheel.first-run-done": "1" })} />);
+  await openGeneral();
+  await waitFor(() => expect(heard).not.toBeNull());
+  expect(heard).toEqual(expect.arrayContaining(["fix-permissions", "logs-saved", "sim-record-key", "sim-update", "status", "tray-update"]));
+  expect(invoke.mock.calls.filter(([cmd]) => cmd === "settings_ready")).toHaveLength(1);
+  // The tray's check, visibly: Checking…, then You're up to date (the silent startup check gives way).
+  await waitFor(() => expect(reported(invoke)).toContain("checking"));
+  await waitFor(() => expect(sub().dataset.update).toBe("current"));
+  expect(document.body.textContent).toContain("You’re up to date.");
+  // One check ran, not the tray's and a startup one at once.
+  expect(invoke.mock.calls.filter(([cmd]) => cmd === "update_check").length).toBeLessThanOrEqual(2);
+}, 20000);
+
+test("the tray's Download in a window built again finds the update first, then downloads it once", async () => {
+  const queued = [["tray-update", "download"]];
+  const invoke = fakeTauri({
+    autoUpdate: false,
+    onReady: () => {
+      for (const [event, payload] of queued.splice(0)) listeners[event].forEach((f) => f({ payload }));
+    },
+  });
+  updates.published = "0.2.0";
+  render(<App storage={memoryStorage({ "freewheel.first-run-done": "1" })} />);
+  await openGeneral();
+  await waitFor(() => expect(reported(invoke)).toContain("ready"), { timeout: 10000 });
+  expect(invoke.mock.calls.filter(([cmd]) => cmd === "update_download")).toHaveLength(1);
+}, 20000);

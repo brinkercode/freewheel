@@ -15,13 +15,15 @@ export const simulating = (win = globalThis.window) => Boolean(win?.__FREEWHEEL_
 
 /**
  * Listens for the Simulator's "Record a key" (`onRecordKey(keyName)`) and
- * "New version" (`onUpdate(state or null)`); returns the stop function.
- * Each event is ignored unless simulating() when it arrives.
+ * "New version" (`onUpdate(state or null)`); returns the stop function,
+ * whose `ready` promise settles once both listeners are attached. Each
+ * event is ignored unless simulating() when it arrives.
  */
 export function listenSimulate({ onRecordKey, onUpdate }, win = globalThis.window) {
   const listen = win?.__TAURI__?.event?.listen;
-  if (!listen) return () => {};
+  if (!listen) return Object.assign(() => {}, { ready: Promise.resolve() });
   const gated = (fn) => (event) => simulating(win) && fn(event.payload);
   const stops = [listen(SIM_RECORD_KEY_EVENT, gated(onRecordKey)), listen(SIM_UPDATE_EVENT, gated(onUpdate))];
-  return () => stops.forEach((p) => Promise.resolve(p).then((stop) => stop(), () => {}));
+  const stop = () => stops.forEach((p) => Promise.resolve(p).then((s) => s(), () => {}));
+  return Object.assign(stop, { ready: Promise.allSettled(stops) });
 }
