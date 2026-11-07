@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Icon from "./Icon.jsx";
 import { PermissionsScreen } from "./Permissions.jsx";
 import { openBluetoothSettings } from "./settingsApi.js";
 import { connectionText } from "./shell.js";
@@ -9,9 +10,9 @@ const openBluetooth = () =>
 /** Progress dots, the current step wider. */
 function Dots({ step, steps }) {
   return (
-    <div className="first-run-dots" style={{ display: "flex", gap: 6, marginBottom: 30 }}>
+    <div className="first-run-dots">
       {Array.from({ length: steps }, (_, i) => (
-        <span key={i} aria-current={i === step} style={{ width: i === step ? 22 : 6, height: 6, borderRadius: 3 }} />
+        <span key={i} className={`dot${i <= step ? " is-done" : ""}`} aria-current={i === step} />
       ))}
     </div>
   );
@@ -27,37 +28,49 @@ export default function FirstRun({ state, permissions, step: first = 0, initialP
   const asksPermissions = Object.keys(permissions ?? {}).length > 0;
   const next = () => (step === 1 && !asksPermissions ? onFinish() : setStep(step + 1));
   return (
-    <main className="first-run" style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: 32 }}>
+    <main className="first-run">
       <Dots step={step} steps={asksPermissions ? 3 : 2} />
       {step === 0 && (
-        <section style={{ maxWidth: 440, textAlign: "center" }}>
+        <section className="first-run-step">
+          <span className="logo-disc logo-welcome" aria-hidden="true" />
           <h1>Welcome to freewheel</h1>
           <p>
             Use your Speed Editor for everyday things — copy and paste, volume, opening your favorite apps — whenever
             DaVinci Resolve is closed.
           </p>
-          <button onClick={next}>Get started</button>
-          <div>Takes about a minute</div>
+          <button className="btn-primary btn-lg" onClick={next}>Get started</button>
+          <div className="hint">Takes about a minute</div>
         </section>
       )}
       {step === 1 && (
-        <section style={{ maxWidth: 460, textAlign: "center" }}>
+        <section className="first-run-step">
           <h1>Plug in or pair your Speed Editor</h1>
           <p>Connect it with its USB cable. Or switch it on and pair it in your computer’s Bluetooth settings.</p>
           {state.connected ? (
             <div className="found" role="status">
-              <span aria-hidden="true">✓</span> <strong>Found it!</strong> <span>{connectionText(state.bus)}</span>
+              <Icon name="check" className="icon found-icon" />
+              <div>
+                <strong>Found it!</strong>
+                <div className="card-sub">{connectionText(state.bus)}</div>
+              </div>
             </div>
           ) : (
             <div className="looking" role="status">
-              <span className="spinner" aria-hidden="true" /> <strong>Looking for your Speed Editor…</strong>{" "}
-              <span>This usually takes a few seconds.</span>
+              <span className="spinner spinner-lg" aria-hidden="true" />
+              <div>
+                <strong>Looking for your Speed Editor…</strong>
+                <div className="card-sub">This usually takes a few seconds.</div>
+              </div>
             </div>
           )}
-          <button onClick={onBluetooth}>Open Bluetooth settings</button>{" "}
-          <button disabled={!state.connected} onClick={next}>
-            Continue
-          </button>
+          <div className="button-row first-run-buttons">
+            <button className="btn-lg" onClick={onBluetooth}>
+              Open Bluetooth settings
+            </button>
+            <button className="btn-primary btn-lg" disabled={!state.connected} onClick={next}>
+              Continue
+            </button>
+          </div>
         </section>
       )}
       {step === 2 && <PermissionsScreen initial={initialPermissions} button="Start using freewheel" onDone={onFinish} />}

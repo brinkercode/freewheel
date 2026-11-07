@@ -1,4 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 import { renderToString } from "react-dom/server";
 import { expect, test, vi } from "vitest";
 import App from "./App.jsx";
@@ -125,9 +127,10 @@ const networkAssets = new RegExp(
 );
 
 test("no network fonts or icons; the UI uses the system font", () => {
-  const files = ["../index.html", ...readdirSync(new URL(".", import.meta.url))
-    .filter((f) => !f.includes(".test."))
-    .map((f) => `./${f}`)];
+  // src/ has subfolders (styles/, assets/): scan every file in them too.
+  const files = ["../index.html", ...readdirSync(new URL(".", import.meta.url), { recursive: true, withFileTypes: true })
+    .filter((d) => d.isFile() && !d.name.includes(".test."))
+    .map((d) => `./${relative(fileURLToPath(new URL(".", import.meta.url)), join(d.parentPath, d.name)).replaceAll("\\", "/")}`)];
   for (const f of files) {
     expect(read(f)).not.toMatch(networkAssets);
   }
