@@ -498,7 +498,10 @@ async function main() {
       await waitFor("settings", "Saved", `return document.querySelector(".panel-try.is-saved")`);
       const saved = await d.execAsync(`const done = arguments[0];
         window.__TAURI__.core.invoke("get_config").then((c) => done(JSON.stringify(c.layers.find((l) => l.id === c.base_layer).bindings.Cut ?? null)), (e) => done("error " + e));`);
-      if (!saved.includes("example.com")) throw new Error(`CUT not saved in the config: ${saved}`);
+      const site = JSON.parse(saved)?.LaunchApp?.args?.[0] ?? "";
+      if (URL.canParse(site) ? new URL(site).hostname !== "example.com" : true) {
+        throw new Error(`CUT not saved in the config: ${saved}`);
+      }
       say(`  CUT saved: ${saved}`);
     });
     await tab("Wheel", "When I turn the wheel");

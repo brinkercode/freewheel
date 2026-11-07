@@ -95,7 +95,7 @@ test("ci.yml uses the pinned toolchain, caches, and runs every check", () => {
   }
   expect(job("test")).toMatch(/uses: Swatinem\/rust-cache@[0-9a-f]{40} # v2\r?\n\s+with:\r?\n\s+workspaces: "\. -> target"/);
   for (const j of ["lint", "test"]) {
-    expect(job(j)).toMatch(/uses: actions\/setup-node@[0-9a-f]{40}.*\r?\n\s+with:\r?\n(?:\s+.*\r?\n)*?\s+cache: npm/);
+    expect(job(j)).toMatch(/uses: actions\/setup-node@[0-9a-f]{40}[^\r\n]*\r?\n[ \t]+with:\r?\n(?:[ \t]+[^\r\n]*\r?\n)*?[ \t]+cache: npm/);
   }
   const toolchain = readFileSync(new URL("../rust-toolchain.toml", import.meta.url), "utf8");
   expect(toolchain).toMatch(/channel = "1\.99\.1"/);
