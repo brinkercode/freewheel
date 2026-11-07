@@ -26,10 +26,9 @@ export function Toolbar({ tab, onTab, state, onToggle, onFix }) {
         ))}
       </div>
       <div className="toolbar-right">
-        {/* The status takes only the room the tabs and the switch leave: the
-            text ends in an ellipsis, then only the dot shows (the
-            stylesheet's .status-slot); the tooltip and the notice bar say
-            it in full. */}
+        {/* The status says it short, so it fits the default 1000px window
+            whole; narrower, only the dot shows (the stylesheet's
+            .status-slot). The tooltip and the notice bar say it in full. */}
         <div className="status-slot">
           <button
             className={`status${fix ? " is-link" : ""}`}
@@ -40,7 +39,7 @@ export function Toolbar({ tab, onTab, state, onToggle, onFix }) {
             data-dot={status.dot}
           >
             <span className={`status-dot dot-${status.dot}`} />
-            <span className="status-text">{status.text}</span>
+            <span className="status-text">{status.short}</span>
           </button>
         </div>
         <span className="toolbar-sep" />

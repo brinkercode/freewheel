@@ -36,13 +36,26 @@ export function connectedText(s) {
   return bus ? `Connected by ${bus}${battery}` : `Connected${battery}`;
 }
 
-/** The toolbar status, first match wins (the prototype's statusText). */
+/** The header's short connected label: "Connected · USB", "Bluetooth · 64%" (the battery says it is wireless). */
+export function connectedShort(s) {
+  if (s.bus === "Bluetooth" && s.battery != null) return `Bluetooth · ${s.battery}%`;
+  const bus = BUS[s.bus];
+  if (bus) return `Connected · ${bus}`;
+  return s.battery == null ? "Connected" : `Connected · ${s.battery}%`;
+}
+
+/**
+ * The toolbar status, first match wins (the prototype's statusText):
+ * `text` is the full sentence (the tooltip, and the notice bar says it in
+ * full too), `short` the label the header has room for at the default
+ * 1000px width.
+ */
 export function deriveStatus(s) {
-  if (!s.enabled) return { text: "Off: Resolve can use it", dot: "gray" };
-  if (s.permissionMissing) return { text: "Needs permission (click to fix)", dot: "orange" };
-  if (!s.connected) return { text: "Looking for your Speed Editor…", dot: "gray" };
-  if (s.paused) return { text: "Paused: DaVinci Resolve is open", dot: "gray" };
-  return { text: connectedText(s), dot: lowBattery(s) ? "orange" : "green" };
+  if (!s.enabled) return { text: "Off: Resolve can use it", short: "Off", dot: "gray" };
+  if (s.permissionMissing) return { text: "Needs permission (click to fix)", short: "Needs permission", dot: "orange" };
+  if (!s.connected) return { text: "Looking for your Speed Editor…", short: "Looking for device", dot: "gray" };
+  if (s.paused) return { text: "Paused: DaVinci Resolve is open", short: "Paused for Resolve", dot: "gray" };
+  return { text: connectedText(s), short: connectedShort(s), dot: lowBattery(s) ? "orange" : "green" };
 }
 
 /** The one notice to show, or null; `action` names the button, if any. */

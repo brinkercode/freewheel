@@ -44,6 +44,7 @@ test("the settings window may call exactly the commands its UI invokes", () => {
     "set_detailed_logs",
     "set_enabled",
     "set_start_at_login",
+    "settings_ready",
     "show_logs_file",
     "tray_update_state",
     "update_check",

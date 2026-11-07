@@ -459,7 +459,7 @@ fn menu<R: Runtime>(
 /// When it was closed it is built again (app_windows.rs); returns whether it
 /// was there.
 pub fn show_settings<R: Runtime>(app: &AppHandle<R>) -> bool {
-    crate::app_windows::show_settings(app, |_| {})
+    crate::app_windows::show_settings(app)
 }
 
 /// What changes in the menu, kept to answer clicks and the Simulator.
@@ -573,10 +573,10 @@ impl<R: Runtime> TrayMenu<R> {
                 emit_status(app, &status);
             }
             STATUS => {
-                let existed = show_settings(app);
+                show_settings(app);
                 let fix = lock(&self.live).status.fix;
                 if fix {
-                    crate::app_windows::emit_to_settings(app, FIX_PERMISSIONS_EVENT, (), existed);
+                    crate::app_windows::emit_to_settings(app, FIX_PERMISSIONS_EVENT, ());
                 }
             }
             OPEN_SETTINGS => {
@@ -610,17 +610,17 @@ impl<R: Runtime> TrayMenu<R> {
             UPDATE => {
                 let action = lock(&self.live).update_action;
                 match action.event() {
-                    // A closed settings window opens instead: it checks
-                    // as it opens (src/App.jsx).
-                    Some(what) if app.get_webview_window("main").is_none() => {
-                        tracing::info!(what, "tray: update, opening the settings window");
-                        show_settings(app);
-                    }
+                    // The flow lives in the settings window's script. A
+                    // closed one opens and, once its page listens, runs the
+                    // action: a check shows Checking… then the answer, as in
+                    // an open window (its own startup check stays silent).
                     Some(what) => {
-                        tracing::info!(what, "tray: update");
-                        if let Err(e) = app.emit_to("main", TRAY_UPDATE_EVENT, what) {
-                            tracing::warn!(error = %e, "asking the settings window to update failed");
+                        let closed = app.get_webview_window("main").is_none();
+                        tracing::info!(what, closed, "tray: update");
+                        if closed {
+                            show_settings(app);
                         }
+                        crate::app_windows::emit_to_settings(app, TRAY_UPDATE_EVENT, what);
                     }
                     None => tracing::info!("tray: the update item is disabled now"),
                 }
@@ -788,8 +788,8 @@ fn download_logs<R: Runtime>(app: &AppHandle<R>) {
             LogsSaved::Error(e)
         }
     };
-    let existed = show_settings(app);
-    crate::app_windows::emit_to_settings(app, LOGS_SAVED_EVENT, &saved, existed);
+    show_settings(app);
+    crate::app_windows::emit_to_settings(app, LOGS_SAVED_EVENT, &saved);
 }
 
 /// What the tray shows from the device loop: the battery tooltip and the

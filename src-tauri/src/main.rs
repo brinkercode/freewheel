@@ -242,6 +242,7 @@ fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::
             simulate::sim_notes,
             tray::sim_tray,
             tray::tray_update_state,
+            app_windows::settings_ready,
             app_icons::app_icons,
             settings::show_logs_file,
             settings::exit_wheel_override,
@@ -348,6 +349,7 @@ fn main() {
             apps::choose_app,
             app_icons::app_icons,
             tray::tray_update_state,
+            app_windows::settings_ready,
             updates::open_release_page,
             selfupdate::update_check,
             selfupdate::update_download,
@@ -403,6 +405,13 @@ fn main() {
             Ok(())
         })
         .on_page_load(move |webview, payload| {
+            // A new or reloading settings page has no listeners yet: what is
+            // sent to it waits for its settings_ready (app_windows.rs).
+            if webview.label() == app_windows::SETTINGS_WINDOW
+                && payload.event() == tauri::webview::PageLoadEvent::Started
+            {
+                app_windows::not_ready(webview.app_handle());
+            }
             if simulate
                 && webview.label() == "main"
                 && payload.event() == tauri::webview::PageLoadEvent::Finished

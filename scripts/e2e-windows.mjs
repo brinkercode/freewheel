@@ -173,7 +173,9 @@ export const HEADER_JS = `const box = (e) => e.getBoundingClientRect();
   const row = q("nav.toolbar");
   if (row.scrollWidth > row.clientWidth + 1) bad.push("header overflows (" + row.scrollWidth + " > " + row.clientWidth + ")");
   const last = [...document.querySelectorAll(".toolbar .tab")].pop();
-  return { bad, width: innerWidth, label: status.getAttribute("aria-label"), status: [Math.round(s.left), Math.round(s.right)], text: Math.round(t.width), lastTab: Math.round(box(last).right), switch: Math.round(box(q(".toolbar .switch")).left) };`;
+  // The short label is cut (an ellipsis) when its text is wider than its box.
+  const cut = getComputedStyle(text).display !== "none" && text.scrollWidth > text.clientWidth;
+  return { bad, width: innerWidth, label: status.getAttribute("aria-label"), shown: text.textContent, cut, status: [Math.round(s.left), Math.round(s.right)], text: Math.round(t.width), lastTab: Math.round(box(last).right), switch: Math.round(box(q(".toolbar .switch")).left) };`;
 
 
 // In-page helper: the first element matching `css` whose text contains `text`.
@@ -427,6 +429,15 @@ async function main() {
   const keyIn = (key) => click("settings", `.device [data-binding="${key}"]`);
   const tray = (id) => click("simulator", `[role=group][aria-label="Tray menu"] button[data-tray="${id}"]`);
   const jumpTo = (text) => click("simulator", ".fw-sim-grid button", text);
+  /** The newest Simulator log line's number (Simulator.jsx data-n). */
+  const lastLine = async () => (await use("simulator"), d.exec(`return Number(document.querySelector(".fw-sim-log li[data-n]")?.dataset.n ?? 0);`));
+  /** Clicks tray item `id` and waits for its own new log line `Tray: <text>` (never an older one). */
+  const trayClick = async (id, text) => {
+    const before = await lastLine();
+    await tray(id);
+    await waitFor("simulator", `a new log line "Tray: ${text}"`, `const [n, text] = arguments;
+      return [...document.querySelectorAll(".fw-sim-log li[data-n]")].some((li) => Number(li.dataset.n) > n && li.textContent.includes("Tray: " + text));`, [before, text]);
+  };
 
   /** Both windows: the settings window ("main") and the Simulator (#simulator). */
   const findWindows = async () => {
@@ -1068,7 +1079,7 @@ async function main() {
 
     await step("Toolbar: switch Off, then the notice's Turn on", async () => {
       await click("settings", 'button.switch[aria-label="Turn freewheel on or off"]');
-      await waitFor("settings", "Off", `return document.querySelector("button.status")?.textContent.includes("Off: Resolve can use it")`);
+      await waitFor("settings", "Off", `return document.querySelector("button.status")?.getAttribute("aria-label") === "Off: Resolve can use it"`);
       await click("settings", ".notice-off button", "Turn on");
       await waitFor("settings", "On again", `return document.querySelector("button.status")?.textContent.includes("Connected")`);
     }, ["settings", "simulator"]);
@@ -1193,7 +1204,7 @@ async function main() {
     await step("tray: freewheel is On / Off", async () => {
       await tray("toggle");
       await logged("Tray: freewheel is");
-      await waitFor("settings", "Off", `return document.querySelector("button.status")?.textContent.includes("Off: Resolve can use it")`);
+      await waitFor("settings", "Off", `return document.querySelector("button.status")?.getAttribute("aria-label") === "Off: Resolve can use it"`);
       await waitFor("simulator", "the tray's Off", `return document.querySelector('[data-tray="toggle"]')?.textContent.includes("Off")`);
       await allRead(false, "tray Off");
       await tray("toggle");
@@ -1265,17 +1276,50 @@ async function main() {
       await use("settings");
       await d.exec(`document.querySelector(".toolbar .status-text").firstChild.nodeValue = arguments[0]; return true;`, [before]);
     }, ["settings"]);
+    /** At 1000px the header shows `short` whole (no ellipsis), the full sentence as its tooltip. */
+    const wholeAt1000 = async (short, full) => {
+      const r = await headerOk(`1000px ${short}`);
+      if (r.shown !== short || r.label !== full) throw new Error(`the header says ${JSON.stringify(r.shown)} (${r.label}), not ${short} (${full})`);
+      if (r.cut || r.text === 0) throw new Error(`at 1000px "${short}" is cut or hidden: ${JSON.stringify(r)}`);
+    };
     await step("header: every status at 820px and 1000px, light and dark", async () => {
-      for (const [device, label] of [["USB", "Connected by USB"], ["Bluetooth 64%", "Connected by Bluetooth · 64%"], ["Not found", "Looking for your Speed Editor…"]]) {
+      for (const [device, label, short] of [
+        ["USB", "Connected by USB", "Connected · USB"],
+        ["Bluetooth 64%", "Connected by Bluetooth · 64%", "Bluetooth · 64%"],
+        ["Not found", "Looking for your Speed Editor…", "Looking for device"],
+      ]) {
         await click("simulator", `[role=group][aria-label="Speed Editor"] button`, device);
         await waitFor("settings", label, `return document.querySelector(".toolbar .status")?.getAttribute("aria-label") === arguments[0]`, [label]);
-        for (const width of [820, 1000]) {
-          await resize(width);
-          const r = await headerOk(`${width}px ${label}`);
-          if (width === 1000 && r.text === 0) throw new Error(`at 1000px the status text is hidden: ${JSON.stringify(r)}`);
-        }
+        await resize(820);
+        await headerOk(`820px ${label}`);
+        await resize(1000);
+        await wholeAt1000(short, label);
+        if (device === "Not found")
+          for (const appearance of ["Light", "Dark"]) {
+            await look(appearance);
+            await headerShot(`1000-looking-${appearance.toLowerCase()}`);
+          }
+        await look("Light");
       }
-      await resize(1000);
+      // The widest a battery gets: 100%.
+      await click("simulator", `[role=group][aria-label="Speed Editor"] button`, "Bluetooth 64%");
+      await waitFor("settings", "Bluetooth", `return document.querySelector(".toolbar .status-text")?.textContent === "Bluetooth · 64%"`);
+      await use("settings");
+      await d.exec(`document.querySelector(".toolbar .status-text").firstChild.nodeValue = "Bluetooth · 100%"; return true;`);
+      const widest = await headerOk("1000px Bluetooth · 100%");
+      if (widest.cut) throw new Error(`at 1000px "Bluetooth · 100%" is cut: ${JSON.stringify(widest)}`);
+      await click("simulator", `[role=group][aria-label="Speed Editor"] button`, "USB");
+      await waitFor("settings", "Connected by USB", `return document.querySelector(".toolbar .status-text")?.textContent === "Connected · USB"`);
+      // Resolve open: Paused; the permission missing: Needs permission.
+      await click("simulator", `[role=group][aria-label="DaVinci Resolve"] button`, "Open");
+      await waitFor("settings", "Paused", `return document.querySelector(".toolbar .status")?.getAttribute("aria-label") === "Paused: DaVinci Resolve is open"`);
+      await wholeAt1000("Paused for Resolve", "Paused: DaVinci Resolve is open");
+      await click("simulator", `[role=group][aria-label="DaVinci Resolve"] button`, "Closed");
+      await click("simulator", `[role=group][aria-label="macOS permission"] button`, "Missing");
+      await waitFor("settings", "Needs permission", `return document.querySelector(".toolbar .status")?.getAttribute("aria-label") === "Needs permission (click to fix)"`);
+      await wholeAt1000("Needs permission", "Needs permission (click to fix)");
+      await click("simulator", `[role=group][aria-label="macOS permission"] button`, "Allowed");
+      await waitFor("settings", "Connected by USB", `return document.querySelector(".toolbar .status")?.getAttribute("aria-label") === "Connected by USB"`);
       for (const appearance of ["Light", "Dark"]) {
         await look(appearance);
         await headerShot(`1000-${appearance.toLowerCase()}`);
@@ -1283,11 +1327,11 @@ async function main() {
       await look("Light");
       await windowSwitch();
       await allRead(false, "window switch Off");
+      await wholeAt1000("Off", "Off: Resolve can use it");
       await resize(820);
       await headerOk("820px Off");
       await windowSwitch();
       await allRead(true, "window switch On");
-      await click("simulator", `[role=group][aria-label="Speed Editor"] button`, "USB");
       await waitFor("settings", "Connected by USB", `return document.querySelector(".toolbar .status")?.getAttribute("aria-label") === "Connected by USB"`);
       await resize(1000);
     }, ["settings", "simulator"]);
@@ -1344,8 +1388,7 @@ async function main() {
     }, ["simulator", "settings"]);
     await step("tray: Check for updates, up to date", async () => {
       await trayShows("update", "Check for updates", `(t, off) => !off && /Check/.test(t)`);
-      await tray("update");
-      await logged("Tray: ");
+      await trayClick("update", "");
       await trayShows("update", "Checking (disabled)", `(t, off) => t === "Checking for updates…" && off`);
       await shows("settings", "You’re up to date.");
       await trayShows("update", "up to date", `(t, off) => t === "You’re up to date · Check again" && !off`);
@@ -1505,6 +1548,89 @@ async function main() {
       await allRead(true, "tray On");
       await waitFor("settings", "Connected", `return document.querySelector("button.status")?.textContent.includes("Connected")`);
     }, ["simulator", "settings"]);
+
+    // ---- A settings window closed and built again (#144) hears the tray -
+    /** Closes the settings window like a user (its close button) and waits until it is gone. */
+    const closeSettings = async () => {
+      const old = win.settings;
+      await click("settings", ".window-control.window-close");
+      const end = Date.now() + 15000;
+      while ((await d.handles()).includes(old)) {
+        if (Date.now() > end) throw new Error("the settings window did not close");
+        await sleep(150);
+      }
+      current = null;
+    };
+    /** After the window was built again: attach to it, wait for its tabs. */
+    const rebuilt = async () => {
+      await findWindows();
+      await waitFor("settings", "the settings tabs", `return document.querySelector("nav.toolbar")`, [], 30000);
+    };
+    const updateChecked = async () => {
+      await trayShows("update", "Checking (disabled)", `(t, off) => t === "Checking for updates…" && off`);
+      await shows("settings", "You’re up to date.");
+      await trayShows("update", "up to date", `(t, off) => t === "You’re up to date · Check again" && !off`);
+    };
+    const logsShown = () =>
+      waitFor("settings", "Help & backup's Downloaded line", `return document.querySelector('nav.toolbar button.tab[aria-pressed="true"]')?.textContent.includes("Help") && document.querySelector("#logs .success-line")?.textContent.includes("to your Downloads folder")`, [], 20000);
+    const permissionFix = async (closed) => {
+      await click("simulator", `[role=group][aria-label="macOS permission"] button`, "Missing");
+      await trayShows("status", "Needs permission", `(t, off) => t === "Needs permission (click to fix)" && !off`);
+      if (closed) await closeSettings();
+      await trayClick("status", "Needs permission");
+      if (closed) await rebuilt();
+      await waitFor("settings", "the permission fix", `return document.querySelector(".setup")`, [], 20000);
+      await click("simulator", `[role=group][aria-label="macOS permission"] button`, "Allowed");
+    };
+    const recording = async (closed) => {
+      if (closed) await closeSettings();
+      const before = await lastLine();
+      await jumpTo("Record a key");
+      if (closed) await rebuilt();
+      await waitFor("simulator", "a new Recording line", `const n = arguments[0]; return [...document.querySelectorAll(".fw-sim-log li[data-n]")].some((li) => Number(li.dataset.n) > n && li.textContent.includes("Recording a shortcut for CUT"));`, [before]);
+      await waitFor("settings", "CUT's panel recording", `return document.querySelector(".side-panel .panel-title")?.textContent.includes("CUT") && document.querySelector(".side-panel .mode-title")?.textContent.includes("Press a shortcut")`, [], 20000);
+    };
+    for (const round of [1, 2]) {
+      await step(`reopen ${round}: close the settings window, tray Open settings builds it again`, async () => {
+        await closeSettings();
+        await trayClick("open-settings", "Open settings");
+        await rebuilt();
+      }, ["simulator", "settings"]);
+      await step(`reopen ${round}: tray Check for updates acts in the new window`, async () => {
+        await trayShows("update", "Check for updates", `(t, off) => !off && /Check/.test(t)`);
+        await trayClick("update", "");
+        await updateChecked();
+      }, ["simulator", "settings"]);
+      await step(`reopen ${round}: tray Download logs opens Help & backup in the new window`, async () => {
+        await click("settings", "nav.toolbar button.tab", "Keys");
+        await trayClick("download-logs", "Download logs");
+        await logsShown();
+      }, ["simulator", "settings"]);
+      await step(`reopen ${round}: tray Needs permission opens the fix in the new window`, () => permissionFix(false), ["simulator", "settings"]);
+      await step(`reopen ${round}: Record a key opens CUT recording in the new window`, () => recording(false), ["simulator", "settings"]);
+      await step(`reopen ${round}: tray Open settings brings the minimised new window back`, async () => {
+        await ask("settings", `await window.__TAURI__.window.getCurrentWindow().minimize(); return "ok";`);
+        await waitAsk("settings", "minimised", `return await window.__TAURI__.window.getCurrentWindow().isMinimized();`, true);
+        await trayClick("open-settings", "Open settings");
+        await waitAsk("settings", "back from the taskbar", `return await window.__TAURI__.window.getCurrentWindow().isMinimized();`, false);
+      }, ["simulator", "settings"]);
+    }
+    // While it is closed: each tray item opens the window and acts in it.
+    await step("closed: tray Check for updates opens the window and checks there", async () => {
+      await closeSettings();
+      await trayShows("update", "Check for updates", `(t, off) => !off && /Check/.test(t)`);
+      await trayClick("update", "");
+      await rebuilt();
+      await updateChecked();
+    }, ["simulator", "settings"]);
+    await step("closed: tray Download logs opens the window on Help & backup", async () => {
+      await closeSettings();
+      await trayClick("download-logs", "Download logs");
+      await rebuilt();
+      await logsShown();
+    }, ["simulator", "settings"]);
+    await step("closed: tray Needs permission opens the window on the fix", () => permissionFix(true), ["simulator", "settings"]);
+    await step("closed: Record a key opens the window on CUT recording", () => recording(true), ["simulator", "settings"]);
 
     say("step: tray: Quit freewheel");
     // The app may be gone before the click answers.

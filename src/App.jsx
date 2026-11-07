@@ -26,6 +26,7 @@ import {
   onTrayUpdate,
   reportUpdateState,
   saveConfig,
+  settingsReady,
   setDetailedLogs,
   setEnabled,
   setStartAtLogin,
@@ -64,6 +65,9 @@ function Settings({ autoUpdate, storage }) {
   // The tray's update item runs these (set each render, so it acts on the current state).
   const trayActions = useRef({});
   const pending = useRef(null);
+  // Update checks running now, and whether one was asked for (the tray's or Check for updates).
+  const checks = useRef(0);
+  const manual = useRef(false);
   const toastTimer = useRef(null);
   // The Rust updater (in --simulate its simulated source) and, in --simulate
   // only, the version a simulated update "installed".
@@ -84,15 +88,41 @@ function Settings({ autoUpdate, storage }) {
       .then((c) => {
         setConfig(c);
         if (c?.settings) applyAppearance(c.settings.appearance);
-        return startupCheck({ check: () => source().check(), autoUpdate: c?.settings?.auto_update ?? autoUpdate, onState: setUpdate });
+        // A check asked for meanwhile (the tray's, which may be what opened this window) answers instead.
+        if (checks.current > 0) return null;
+        checks.current += 1;
+        const check = () => source().check().then((u) => (manual.current ? null : u));
+        return startupCheck({ check, autoUpdate: c?.settings?.auto_update ?? autoUpdate, onState: setUpdate }).finally(() => (checks.current -= 1));
       })
-      .then((u) => (pending.current = u));
+      .then((u) => u && (pending.current = u));
   }, [autoUpdate]);
   useEffect(() => {
     if (!globalThis.window?.__TAURI__) return undefined;
     getStartAtLogin().then(setLogin, () => {});
     getVersion().then(setVersion, () => {});
     getStatus().then(setStatus, () => {});
+    // --simulate only (src/simulateEvents.js): the Simulator's "Record a key" and "New version".
+    const sim = listenSimulate({
+      onRecordKey: (key) => {
+        setFixing(false);
+        setNewsOpen(false);
+        setTab("Keys");
+        setRecord((r) => ({ key, n: (r?.n ?? 0) + 1 }));
+      },
+      // "New version": the simulated source (Rust) published a newer version; freewheel finds it by itself.
+      onUpdate: () => {
+        const busy = ["checking", "downloading", "restarting"].includes(current.current.update?.status);
+        if (busy || checks.current > 0) return;
+        checks.current += 1;
+        startupCheck({
+          check: () => updates.current.check(),
+          autoUpdate: current.current.config?.settings?.auto_update ?? autoUpdate,
+          onState: setUpdate,
+        })
+          .then((u) => u && (pending.current = u))
+          .finally(() => (checks.current -= 1));
+      },
+    });
     const unlisten = [
       onStatus(setStatus),
       onFixPermissions(() => setFixing(true)),
@@ -106,34 +136,22 @@ function Settings({ autoUpdate, storage }) {
         setTrayLogs({ ...saved });
       }),
     ];
-    return () => unlisten.forEach((u) => u.then((stop) => stop(), () => {}));
+    // Every listener is attached: what the tray sent while this window was
+    // built or loading arrives now (app_windows.rs settings_ready). A status
+    // change between get_status and its listener is read again.
+    Promise.allSettled([...unlisten, sim.ready])
+      .then(() => settingsReady())
+      .then(() => getStatus().then(setStatus))
+      .catch((e) => console.error("freewheel: the settings window could not say it is ready:", String(e)));
+    return () => {
+      sim();
+      unlisten.forEach((u) => u.then((stop) => stop(), () => {}));
+    };
   }, []);
   // The tray's update item follows the update flow (src-tauri tray.rs update_item).
   useEffect(() => {
     if (globalThis.window?.__TAURI__) reportUpdateState(update).catch(() => {});
   }, [update]);
-  // --simulate only (src/simulateEvents.js): the Simulator's "Record a key" and "New version".
-  useEffect(
-    () =>
-      listenSimulate({
-        onRecordKey: (key) => {
-          setFixing(false);
-          setTab("Keys");
-          setRecord((r) => ({ key, n: (r?.n ?? 0) + 1 }));
-        },
-        // "New version": the simulated source (Rust) published a newer version; freewheel finds it by itself.
-        onUpdate: () => {
-          const busy = ["checking", "downloading", "restarting"].includes(current.current.update?.status);
-          if (busy) return;
-          startupCheck({
-            check: () => updates.current.check(),
-            autoUpdate: current.current.config?.settings?.auto_update ?? autoUpdate,
-            onState: setUpdate,
-          }).then((u) => u && (pending.current = u));
-        },
-      }),
-    [],
-  );
   // What's new: once per update, after the restart into the newer version.
   useEffect(() => {
     if (shownVersion) setNews(whatsNew(storage, shownVersion));
@@ -160,18 +178,24 @@ function Settings({ autoUpdate, storage }) {
     };
   };
   const autoUpdateOn = () => current.current.config?.settings?.auto_update ?? autoUpdate;
-  const onCheck = () => {
+  const runCheck = (auto) => {
     let last = null;
     const onState = (s) => {
       last = s;
       setUpdate(s);
     };
-    return checkNow({ check: source().check, autoUpdate: autoUpdateOn(), onState }).then((u) => {
-      pending.current = u;
-      if (last?.status === "current") say("You’re up to date.");
-    });
+    manual.current = true;
+    checks.current += 1;
+    return checkNow({ check: source().check, autoUpdate: auto, onState })
+      .then((u) => {
+        pending.current = u;
+        if (last?.status === "current") say("You’re up to date.");
+      })
+      .finally(() => (checks.current -= 1));
   };
-  const onDownload = () => pending.current && download(pending.current, setUpdate);
+  const onCheck = () => runCheck(autoUpdateOn());
+  // A window built again for the tray's 'Download freewheel …' has not found the update yet: find it, then download.
+  const onDownload = () => (pending.current ? download(pending.current, setUpdate) : runCheck(true));
   const onRestart = () => {
     const u = pending.current;
     if (!u) return;
