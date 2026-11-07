@@ -79,17 +79,22 @@ test("the Simulator's tray menu clicks each tray item and shows the checks", asy
   render(<Simulator />);
   await waitFor(() => expect(screen.getByText(/^Page base/)).toBeTruthy());
   const menu = within(screen.getByRole("group", { name: "Tray menu" }));
-  expect(menu.getAllByRole("button").map((b) => b.textContent)).toEqual(TRAY_ITEMS.map(([, text]) => text({ on: true })));
+  expect(menu.getAllByRole("button").map((b) => b.dataset.tray)).toEqual(TRAY_ITEMS.map(([id]) => id));
+  await waitFor(() => expect(menu.getByText("Check for updates")).toBeTruthy());
   await act(async () => fireEvent.click(menu.getByText("Start at login")));
   await waitFor(() => expect(menu.getByText("Start at login").getAttribute("aria-pressed")).toBe("true"));
   await act(async () => fireEvent.click(menu.getByText("freewheel is On")));
   await waitFor(() => expect(menu.getByText("freewheel is Off")).toBeTruthy());
-  for (const text of ["Open settings…", "Download logs for support…", "Quit freewheel"]) await act(async () => fireEvent.click(menu.getByText(text)));
-  expect(fake.trayClicks).toEqual(["start-at-login", "toggle", "open-settings", "download-logs", "quit"]);
-  // The permission line shows only while a permission is missing.
+  for (const text of ["Open settings…", "Download logs for support…", "Check for updates", "Quit freewheel"])
+    await act(async () => fireEvent.click(menu.getByText(text)));
+  expect(fake.trayClicks).toEqual(["start-at-login", "toggle", "open-settings", "download-logs", "update", "quit"]);
+  // The status line is always there; it is clickable only while a permission is missing.
   expect(menu.queryByText(/Needs permission/)).toBeNull();
+  const statusLine = () => menu.getAllByRole("button").find((b) => b.dataset.tray === "status");
+  expect(statusLine().getAttribute("aria-disabled")).toBe("true");
   await act(async () => fireEvent.click(within(screen.getByRole("group", { name: "macOS permission" })).getByText("Missing")));
   await waitFor(() => expect(menu.getByText("Needs permission (click to fix)")).toBeTruthy());
+  expect(statusLine().getAttribute("aria-disabled")).toBe("false");
   // What the app did shows in the log as it happens.
   await act(async () => listeners[SIM_LOG_EVENT]({ payload: ["Saved the logs to C:/Downloads/freewheel-logs.zip"] }));
   expect(screen.getByRole("list", { name: "What the Speed Editor did" }).textContent).toContain("Saved the logs to");

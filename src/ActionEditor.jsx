@@ -11,7 +11,7 @@ import {
   longLabel,
   setBinding,
 } from "./keys.js";
-import { chooseApp, getConfig, listApps, saveConfig, saveErrorText } from "./settingsApi.js";
+import { appIcons, chooseApp, getConfig, listApps, saveConfig, saveErrorText } from "./settingsApi.js";
 
 // The key panel ("When I press X…") of the design handoff (screens-and-components
 // 3b): the choices list, each choice's detail, the record box and the footer.
@@ -121,6 +121,9 @@ export const filterApps = (apps, query) => {
   return q ? apps.filter((a) => a.name.toLowerCase().includes(q)) : apps;
 };
 
+/** The file whose icon an app shows: the .lnk / .app it opens, or the program itself. */
+export const iconSource = (app) => app.args[0] ?? app.path;
+
 const sameLaunch = (v, app) => v.path === app.path && (v.args[0] ?? "") === (app.args[0] ?? "");
 const toAction = (app) => ({ LaunchApp: { path: app.path, args: app.args, enabled: true } });
 const tauriReady = () => Boolean(globalThis.window?.__TAURI__);
@@ -130,17 +133,30 @@ const tauriReady = () => Boolean(globalThis.window?.__TAURI__);
  * (`list_apps`), pick one, or 'Choose file…' (`choose_app`); or a website
  * with Use. Each pick saves at once through `onUse`.
  */
-export function ActionForm({ action, errors = {}, onUse, initialApps = null, loadApps = listApps, choose = chooseApp }) {
+export function ActionForm({ action, errors = {}, onUse, initialApps = null, loadApps = listApps, loadIcons = appIcons, choose = chooseApp }) {
   const v = action.LaunchApp;
   const web = v.path === OPENER && /^https?:\/\//.test(v.args[0] ?? "") ? v.args[0].replace(/^https?:\/\//, "") : "";
   const [apps, setApps] = useState(initialApps);
   const [query, setQuery] = useState("");
   const [site, setSite] = useState(web);
   const [chooseError, setChooseError] = useState(null);
+  // The apps' real icons (src-tauri app_icons.rs), by iconSource; letter avatars until they arrive.
+  const [icons, setIcons] = useState({});
   useEffect(() => {
     if (initialApps || !tauriReady()) return;
     loadApps().then(setApps, (e) => console.error("freewheel: listing the apps failed:", String(e)));
   }, [initialApps, loadApps]);
+  useEffect(() => {
+    if (!apps?.length || !loadIcons || (loadIcons === appIcons && !tauriReady())) return undefined;
+    let live = true;
+    new Promise((resolve) => resolve(loadIcons(apps.map(iconSource)))).then(
+      (found) => live && found && setIcons(found),
+      (e) => console.error("freewheel: loading the app icons failed:", String(e)),
+    );
+    return () => {
+      live = false;
+    };
+  }, [apps, loadIcons]);
   const shown = filterApps(apps ?? [], query);
   const useSite = () => site.trim() && onUse?.(websiteAction(site));
   const chooseFile = () => {
@@ -166,9 +182,13 @@ export function ActionForm({ action, errors = {}, onUse, initialApps = null, loa
           const current = sameLaunch(v, app);
           return (
             <button key={`${app.name}-${app.args[0] ?? app.path}`} role="option" aria-selected={current} className={`app-row${current ? " is-current" : ""}`} onClick={() => onUse?.(toAction(app))}>
-              <span className="app-initial" data-hue={appHue(app.name)} aria-hidden="true">
-                {app.name.charAt(0).toUpperCase()}
-              </span>
+              {icons[iconSource(app)] ? (
+                <img className="app-icon" src={icons[iconSource(app)]} alt="" aria-hidden="true" draggable={false} />
+              ) : (
+                <span className="app-initial" data-hue={appHue(app.name)} aria-hidden="true">
+                  {app.name.charAt(0).toUpperCase()}
+                </span>
+              )}
               <span className="grow">{app.name}</span>
               {current && <Icon name="check" className="icon app-check" />}
             </button>

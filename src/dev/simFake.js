@@ -21,7 +21,7 @@ export function createSimFake() {
     keys: KEYS, resolve_open: false, permissions: "Granted", update: null, first_run: false, mapped_keys: 0,
     wheel_override: null,
   };
-  const trayMenu = { on: true, start_at_login: false, status_line: null };
+  const trayMenu = { on: true, start_at_login: false, status_line: "", status_fix: false, update: "Check for updates", update_enabled: true, icon: null };
   const trayClicks = [];
   let map = {};
   const jumps = [];
@@ -110,7 +110,8 @@ export function createSimFake() {
     if (cmd === "sim_jump") return void jumps.push(args.to);
     if (cmd === "sim_tray") {
       trayMenu.on = s.enabled;
-      trayMenu.status_line = s.permissions === "Missing" ? "Needs permission (click to fix)" : null;
+      trayMenu.status_fix = s.permissions === "Missing";
+      trayMenu.status_line = trayMenu.status_fix ? "Needs permission (click to fix)" : s.enabled ? "Connected by USB" : "Off: Resolve can use it";
       if (args.item === "toggle") (trayMenu.on = !trayMenu.on), apply({ type: "SetEnabled", on: trayMenu.on });
       if (args.item === "start-at-login") trayMenu.start_at_login = !trayMenu.start_at_login;
       if (args.item !== "State") trayClicks.push(args.item);

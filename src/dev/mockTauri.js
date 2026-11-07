@@ -174,6 +174,14 @@ export function installMockTauri(win = window) {
       { name: "Spotify", path: "explorer.exe", args: ["C:\\Users\\you\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Spotify.lnk"] },
     ],
     choose_app: () => ({ name: "Budget 2026", path: "C:\\Tools\\Budget 2026.exe", args: [] }),
+    // A 1×1 blue PNG for Calculator; the others keep their letter avatars.
+    app_icons: ({ paths }) =>
+      Object.fromEntries(
+        paths
+          .filter((p) => p.endsWith("Calculator.lnk"))
+          .map((p) => [p, "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="]),
+      ),
+    tray_update_state: () => null,
     "plugin:updater|check": () => null,
   };
   const invoke = async (cmd, args = {}) => {

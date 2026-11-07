@@ -281,12 +281,10 @@ pub fn attach(
     threshold: u8,
     injector: impl FnOnce() -> Box<dyn KeyInjector> + Send + 'static,
     tray: tauri::tray::TrayIcon,
-    toggle: tauri::menu::CheckMenuItem<tauri::Wry>,
-    status_line: crate::tray::StatusLine<tauri::Wry>,
     commands: Receiver<Command>,
 ) {
     use freewheel_core::diagnostics::DEVICE_DIAGNOSTICS_EVENT;
-    use freewheel_core::status::{KEY_PRESSED_EVENT, STATUS_EVENT};
+    use freewheel_core::status::KEY_PRESSED_EVENT;
     use tauri::{Emitter, Manager};
 
     let handle = app.state::<SimHandle>();
@@ -304,7 +302,7 @@ pub fn attach(
                             let _ = app.emit(KEY_PRESSED_EVENT, key);
                         }
                         changed = settings.apply(&update).or(changed);
-                        view.apply(&tray, &toggle, update);
+                        view.apply(&tray, update);
                     }
                     changed
                 }
@@ -313,10 +311,7 @@ pub fn attach(
                     Some(settings.status())
                 }
                 Mirror::Paused(paused) => settings.set_paused(paused),
-                Mirror::Permissions(p) => {
-                    status_line.show(&p);
-                    settings.set_permissions(&p)
-                }
+                Mirror::Permissions(p) => settings.set_permissions(&p),
                 Mirror::Config(config) => {
                     // Saved through the settings window's own path (the
                     // simulator's store in this mode), then shown.
@@ -343,7 +338,7 @@ pub fn attach(
                 }
             };
             if let Some(status) = status {
-                let _ = app.emit(STATUS_EVENT, status);
+                crate::tray::emit_status(&app, &status);
             }
         }
     };
