@@ -129,6 +129,24 @@ export const iconSource = (app) => app.args[0] ?? app.path;
 
 const sameLaunch = (v, app) => v.path === app.path && (v.args[0] ?? "") === (app.args[0] ?? "");
 const toAction = (app) => ({ LaunchApp: { path: app.path, args: app.args, enabled: true } });
+
+// The OS this window runs on, as a mappings file's per-OS `open` names it.
+const THIS_OS = MAC ? "macos" : LINUX ? "linux" : "windows";
+const OS_NAMES = [
+  ["windows", "Windows"],
+  ["macos", "macOS"],
+  ["linux", "Linux"],
+];
+
+/** A new pick for a key restored from a per-OS file keeps the other OSes' apps. */
+export const keepPerOs = (current, picked) =>
+  current?.LaunchApp?.per_os && picked?.LaunchApp ? { LaunchApp: { ...picked.LaunchApp, per_os: current.LaunchApp.per_os } } : picked;
+
+/** "Also set for macOS and Linux." when a per-OS file gave this key an app on other OSes, else null. */
+export const otherOsNote = (perOs, os = THIS_OS) => {
+  const names = OS_NAMES.filter(([k]) => k !== os && perOs?.[k]?.trim()).map(([, n]) => n);
+  return names.length ? `Also set for ${names.join(" and ")}.` : null;
+};
 const tauriReady = () => Boolean(globalThis.window?.__TAURI__);
 
 /**
@@ -161,11 +179,13 @@ export function ActionForm({ action, errors = {}, onUse, initialApps = null, loa
     };
   }, [apps, loadIcons]);
   const shown = filterApps(apps ?? [], query);
-  const useSite = () => site.trim() && onUse?.(websiteAction(site));
+  const use = (picked) => onUse?.(keepPerOs(action, picked));
+  const alsoSet = otherOsNote(v.per_os);
+  const useSite = () => site.trim() && use(websiteAction(site));
   const chooseFile = () => {
     setChooseError(null);
     choose().then(
-      (app) => app && onUse?.(toAction(app)),
+      (app) => app && use(toAction(app)),
       (e) => setChooseError(`The file could not be chosen: ${String(e)}`),
     );
   };
@@ -176,6 +196,11 @@ export function ActionForm({ action, errors = {}, onUse, initialApps = null, loa
           This key came from a restored file, so it is off and opens nothing. Pick the app again to turn it on.
         </div>
       )}
+      {alsoSet && (
+        <div className="panel-note small" role="note">
+          {alsoSet} Picking an app here changes only this computer's.
+        </div>
+      )}
       <div className="input-icon-box app-search">
         <Icon name="search" />
         <input aria-label="Search your apps" value={query} placeholder="Search your apps" onChange={(e) => setQuery(e.target.value)} />
@@ -184,7 +209,7 @@ export function ActionForm({ action, errors = {}, onUse, initialApps = null, loa
         {shown.map((app) => {
           const current = sameLaunch(v, app);
           return (
-            <button key={`${app.name}-${app.args[0] ?? app.path}`} role="option" aria-selected={current} className={`app-row${current ? " is-current" : ""}`} onClick={() => onUse?.(toAction(app))}>
+            <button key={`${app.name}-${app.args[0] ?? app.path}`} role="option" aria-selected={current} className={`app-row${current ? " is-current" : ""}`} onClick={() => use(toAction(app))}>
               {icons[iconSource(app)] ? (
                 <img className="app-icon" src={icons[iconSource(app)]} alt="" aria-hidden="true" draggable={false} />
               ) : (

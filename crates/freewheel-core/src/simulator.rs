@@ -1618,6 +1618,7 @@ mod tests {
             args: vec!["https://example.com".into()],
             enabled: true,
             cwd: None,
+            per_os: None,
         };
         sim.apply(Control::SetBinding {
             key: "Cut".into(),

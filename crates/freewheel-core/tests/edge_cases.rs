@@ -246,6 +246,11 @@ fn every_action_type() -> Vec<Action> {
             args: vec![],
             enabled: true,
             cwd: None,
+            per_os: Some(freewheel_core::config::PerOsTargets {
+                windows: Some("app.exe".into()),
+                macos: None,
+                linux: Some("/usr/bin/app".into()),
+            }),
         },
         Action::LayerPush {
             target: "l1".into(),

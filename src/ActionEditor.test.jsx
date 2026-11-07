@@ -4,7 +4,7 @@ import { renderToString } from "react-dom/server";
 import { expect, test, vi } from "vitest";
 import App from "./App.jsx";
 import KeysTab from "./KeysTab.jsx";
-import ActionEditor, { ActionForm, KeyPanel, appHue, blank, filterApps, openerFor, saveAction, validate, websiteAction } from "./ActionEditor.jsx";
+import ActionEditor, { ActionForm, KeyPanel, appHue, blank, filterApps, keepPerOs, openerFor, otherOsNote, saveAction, validate, websiteAction } from "./ActionEditor.jsx";
 
 const config = (bindings = {}) => ({
   version: 1,
@@ -58,6 +58,29 @@ test("picking an app, Choose file… and a website each save at once", async () 
   fireEvent.change(screen.getByLabelText("Website"), { target: { value: "youtube.com" } });
   fireEvent.click(screen.getByText("Use"));
   expect(onUse.mock.lastCall[0].LaunchApp.args).toEqual(["https://youtube.com"]);
+  cleanup();
+});
+
+test("a key from a per-OS file says which other OSes have an app and keeps them on a new pick", async () => {
+  const per_os = { windows: "Spotify", macos: "com.spotify.client", linux: "spotify.desktop" };
+  expect(otherOsNote(per_os, "windows")).toBe("Also set for macOS and Linux.");
+  expect(otherOsNote(per_os, "macos")).toBe("Also set for Windows and Linux.");
+  expect(otherOsNote({ windows: "Spotify", linux: "spotify.desktop" }, "linux")).toBe("Also set for Windows.");
+  expect(otherOsNote({ windows: "Spotify" }, "windows")).toBe(null);
+  expect(otherOsNote(undefined)).toBe(null);
+  const onUse = vi.fn();
+  const apps = [{ name: "Notepad", path: "C:/Windows/notepad.exe", args: [] }];
+  const action = { LaunchApp: { path: "explorer.exe", args: ["C:/Start Menu/Spotify.lnk"], enabled: true, per_os } };
+  render(<ActionForm action={action} initialApps={apps} choose={() => Promise.resolve({ name: "Budget", path: "C:/Tools/Budget.exe", args: [] })} onUse={onUse} />);
+  expect(screen.getByRole("note").textContent).toContain("Also set for macOS and Linux.");
+  fireEvent.click(screen.getByText("Notepad"));
+  expect(onUse).toHaveBeenLastCalledWith({ LaunchApp: { path: "C:/Windows/notepad.exe", args: [], enabled: true, per_os } });
+  fireEvent.click(screen.getByText("Choose file…"));
+  await vi.waitFor(() => expect(onUse.mock.lastCall[0].LaunchApp).toEqual({ path: "C:/Tools/Budget.exe", args: [], enabled: true, per_os }));
+  fireEvent.change(screen.getByLabelText("Website"), { target: { value: "youtube.com" } });
+  fireEvent.click(screen.getByText("Use"));
+  expect(onUse.mock.lastCall[0].LaunchApp.per_os).toEqual(per_os);
+  expect(keepPerOs({ LaunchApp: { path: "a", args: [], enabled: true } }, { Hotkey: {} })).toEqual({ Hotkey: {} });
   cleanup();
 });
 

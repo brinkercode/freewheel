@@ -572,6 +572,7 @@ mod tests {
             args: vec!["https://example.com".into()],
             enabled: true,
             cwd: None,
+            per_os: None,
         };
         let config = with_binding(Key::Cut, site);
         let manager = connected_manager(vec![key_report(Key::Cut), jog_report(3)]);

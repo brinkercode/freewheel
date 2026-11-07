@@ -758,6 +758,7 @@ mod tests {
                 args: vec![],
                 enabled: true,
                 cwd: None,
+                per_os: None,
             },
         );
         config
