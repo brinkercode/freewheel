@@ -49,16 +49,16 @@ test("the Linux footprint job measures the release build under Xvfb and enforces
   expect(wf).toContain("name: footprint (ubuntu-24.04)");
   expect(wf).toContain('node "$TAURI_CLI" build --ci --no-bundle');
   expect(wf).toContain("node scripts/footprint-linux.mjs --app target/release/freewheel --budgets scripts/footprint-budgets-linux.json");
-  // Closed to the tray, only WebKit's network process stays.
-  for (const mode of ["normal", "simulate"]) expect(budgets.modes[mode].tray.webviewProcesses).toBe(1);
-  expect(budgets.idleCpuPercentOfOneCore).toBeLessThanOrEqual(3);
+  // Closed to the tray only freewheel is left: WebKit's network process ends too (linux_idle.rs).
+  for (const mode of ["normal", "simulate"]) expect(budgets.modes[mode].tray.webviewProcesses).toBe(0);
+  expect(budgets.idleCpuPercentOfOneCore).toBeLessThanOrEqual(1);
   expect(overBudget({ exe: 40 * 1024 * 1024, exeLabel: "exe", modes: {} }, budgets)).toEqual(["exe MB: 40.00 > budget 32"]);
 });
 
 test("the Linux e2e job builds the embedded UI with the dialog stubs and drives it through tauri-driver", () => {
   expect(wf).toMatch(/^on:\n {2}pull_request:/m);
   expect(wf).toContain("name: e2e (ubuntu-24.04)");
-  expect(wf.match(/runs-on: \S+/g)).toEqual(["runs-on: ubuntu-24.04", "runs-on: ubuntu-24.04"]);
+  expect(wf.match(/runs-on: \S+/g)).toEqual(["runs-on: ubuntu-24.04", "runs-on: ubuntu-24.04", "runs-on: ubuntu-24.04"]);
   expect(wf).toContain("cargo build --release --locked -p freewheel --features tauri/custom-protocol,e2e");
   expect(wf).toContain("webkit2gtk-driver xvfb openbox wmctrl");
   expect(wf).toContain("cargo install tauri-driver --locked --version 2.1.0");
