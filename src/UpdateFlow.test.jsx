@@ -209,6 +209,28 @@ test.each([
   expect(cardButton().textContent).toBe("Try again");
 }, 20000);
 
+test("an update this copy can't install is not offered: Check for updates says why and opens the download page (#198)", async () => {
+  const invoke = fakeTauri({ autoUpdate: true });
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  const base = invoke.getMockImplementation();
+  const reason = "freewheel updates itself only when it runs from its AppImage";
+  invoke.mockImplementation(async (cmd, args) => {
+    if (cmd === "update_check") throw `not-installable: 0.2.0: ${reason}`;
+    if (cmd === "open_release_page") return null;
+    return base(cmd, args);
+  });
+  render(<App storage={memoryStorage({ "freewheel.first-run-done": "1" })} />);
+  await openGeneral();
+  fireEvent.click(cardButton());
+  await waitFor(() => expect(sub().dataset.update).toBe("error"));
+  expect(sub().textContent).toBe(`freewheel 0.2.0 is available. ${reason}: download it from GitHub.`);
+  expect(document.querySelector(".update-banner")).toBeNull();
+  expect(cardButton().textContent).toBe("Open the download page");
+  fireEvent.click(cardButton());
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith("open_release_page", { version: "0.2.0" }));
+  expect(invoke.mock.calls.some(([cmd]) => cmd === "update_download")).toBe(false);
+}, 20000);
+
 const reported = (invoke) => invoke.mock.calls.filter(([cmd]) => cmd === "tray_update_state").map(([, a]) => a.state?.status ?? null);
 
 test("the tray's update item drives the flow: the window reports each state and runs check / restart from the tray", async () => {

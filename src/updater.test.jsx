@@ -110,6 +110,21 @@ test("the Rust updater's error codes read as their states", () => {
   expect(errorState("download", "network: reset").badSignature).toBeUndefined();
 });
 
+// #198: on Linux without $APPIMAGE the updater says why it can't install.
+test("an update this copy can't install reads as cantInstall with the updater's reason, not a network error", () => {
+  const reason = "freewheel updates itself only when it runs from its AppImage";
+  expect(errorState("check", `not-installable: 1.1.0: ${reason}`)).toEqual({
+    status: "error",
+    during: "check",
+    version: "1.1.0",
+    message: `not-installable: 1.1.0: ${reason}`,
+    cantInstall: true,
+    reason,
+  });
+  expect(errorState("download", `cant-install: ${reason}`, "1.1.0")).toMatchObject({ cantInstall: true, reason, version: "1.1.0" });
+  expect(errorState("download", "network: reset").cantInstall).toBeUndefined();
+});
+
 test("Check for updates shows checking for at least the minimum time, even when the answer is instant", async () => {
   const states = [];
   let release;

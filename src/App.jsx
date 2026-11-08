@@ -320,6 +320,7 @@ function Settings({ autoUpdate, storage }) {
               onCheck={onCheck}
               onDownload={onDownload}
               onRestart={onRestart}
+              onReleasePage={(v) => openReleasePage(v).catch((e) => console.error("freewheel: opening the release page failed:", String(e)))}
               onWhatsNew={
                 shownVersion
                   ? () => {

@@ -12,7 +12,7 @@
 //   { status: "ready", version }
 //   { status: "restarting", version }
 //   { status: "error", during: "check" | "download" | "install", version?, message,
-//     notConfigured?, notWritable?, folder?, badSignature? }
+//     notConfigured?, notWritable?, folder?, badSignature?, cantInstall?, reason? }
 
 /** How long 'Checking…' shows at least, so a fast answer still reads as a check. */
 export const MIN_CHECK_MS = 900;
@@ -23,7 +23,10 @@ const sleep = (ms) => new Promise((resolve) => globalThis.setTimeout(resolve, ms
  * The error state, from the Rust updater's error codes (selfupdate.rs
  * UpdateError): `notConfigured` when this build has no updater (dev and CI
  * builds have no pubkey), `notWritable` (+ `folder`) when the app's folder
- * can't be changed, `badSignature` when the download did not verify.
+ * can't be changed, `badSignature` when the download did not verify,
+ * `cantInstall` (+ `reason`, and the newer `version` a check found) when this
+ * copy of freewheel can't replace itself, e.g. on Linux when it doesn't run
+ * from its AppImage.
  */
 export function errorState(during, error, version) {
   const message = String(error?.message ?? error ?? "");
@@ -36,6 +39,19 @@ export function errorState(during, error, version) {
     state.folder = message.slice(code[0].length);
   }
   if (code?.[1] === "bad-signature") state.badSignature = true;
+  if (code?.[1] === "cant-install") {
+    state.cantInstall = true;
+    state.reason = message.slice(code[0].length);
+  }
+  if (code?.[1] === "not-installable") {
+    const rest = message.slice(code[0].length);
+    const at = rest.indexOf(": ");
+    state.cantInstall = true;
+    if (at > 0) {
+      state.version = rest.slice(0, at);
+      state.reason = rest.slice(at + 2);
+    } else state.reason = rest;
+  }
   return state;
 }
 

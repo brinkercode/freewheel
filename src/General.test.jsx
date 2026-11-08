@@ -1,7 +1,7 @@
 import { renderToString } from "react-dom/server";
 import { expect, test, vi } from "vitest";
 import General, { applyAppearance, changeSetting, switchLogin, updateButton, updateText } from "./General.jsx";
-import { checkNow } from "./updater.js";
+import { checkNow, errorState } from "./updater.js";
 
 const settings = { enabled: true, start_at_login: false, appearance: "System", auto_update: true };
 const config = { version: 1, settings };
@@ -95,6 +95,21 @@ test("checking finds no update: checking then up to date; a failure is an error 
   const html = general({ update: failed[1], onCheck: () => {} });
   expect(html).toContain("Couldn’t check for updates.");
   expect(html).toContain(">Try again</button>");
+});
+
+test("an update this copy can't install says why and opens the download page, not 'check your internet connection' (#198)", () => {
+  const reason = "freewheel updates itself only when it runs from its AppImage";
+  const update = errorState("check", `not-installable: 1.1.0: ${reason}`);
+  const opened = [];
+  const html = general({ update, onCheck: () => {}, onReleasePage: (v) => opened.push(v) });
+  expect(html).toContain(`freewheel 1.1.0 is available. ${reason}: download it from GitHub.`);
+  expect(html).not.toContain("internet connection");
+  expect(html).toContain(">Open the download page</button>");
+  updateButton(update, { onCheck: () => {}, onReleasePage: (v) => opened.push(v) }).onClick();
+  expect(opened).toEqual(["1.1.0"]);
+  // The same reason at download time (no version from the check).
+  const late = errorState("download", `cant-install: ${reason}`, "1.1.0");
+  expect(updateText(late)).toBe(`freewheel 1.1.0 is available. ${reason}: download it from GitHub.`);
 });
 
 test("a build without the updater says so instead of doing nothing", () => {
