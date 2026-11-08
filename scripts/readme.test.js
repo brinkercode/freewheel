@@ -78,6 +78,8 @@ test("the header's badges: the latest release's build, and the license, with no 
   // The release workflow runs only for version tags, so its badge is the latest release's build.
   const release = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
   expect(release).toMatch(/^on:\r?\n  push:\r?\n    tags: \["v\*"\]\r?\n  workflow_dispatch:/m);
+});
+
 test("the README's hero shows the profile picker", () => {
   expect(readme).toMatch(/alt="freewheel's Keys tab: the profile picker[^"]*"/);
 });
