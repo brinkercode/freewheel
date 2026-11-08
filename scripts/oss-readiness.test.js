@@ -104,15 +104,19 @@ test("pr-title: user-visible feat/fix/perf titles read as release notes", () => 
   ])
     expect(prTitleProblems(ok), ok).toEqual([]);
   expect(prTitleProblems("fix: reconnects after sleep")).toEqual([expect.stringMatching(/under 4 words/)]);
-  expect(prTitleProblems("fix: The Speed Editor reconnects after sleep")).toEqual([expect.stringMatching(/starts with a capital/)]);
+  // A product name may start the title, and "test" is a word users see ("Device test").
+  expect(prTitleProblems("fix: Speed Editor reconnects after sleep")).toEqual([]);
+  expect(prTitleProblems("feat: AppImage updates itself in place")).toEqual([]);
+  expect(prTitleProblems("feat(device): the Device test shows the battery")).toEqual([]);
   expect(prTitleProblems("fix: the Speed Editor reconnects after sleep.")).toEqual([expect.stringMatching(/ends with a period/)]);
-  for (const word of ["CI", "e2e", "refactor", "lint", "clippy", "CodeQL", "test", "tests", "workflow", "script", "bump"])
+  for (const word of ["CI", "e2e", "refactor", "lint", "clippy", "CodeQL", "workflow", "script", "bump"])
     expect(prTitleProblems(`fix(device): the wheel ${word} works after sleep`), word).toEqual([expect.stringMatching(new RegExp(`"${word}" is developer jargon`))]);
   // Jargon is whole words only.
   expect(prTitleProblems("feat(keys): a key can bumper the latest testament")).toEqual([]);
   // The message says how to write it.
   expect(prTitleProblems("fix: x")[0]).toContain("fix: the Speed Editor reconnects after sleep");
-  expect(PR_JARGON).toEqual(expect.arrayContaining(["CI", "e2e", "refactor", "lint", "clippy", "CodeQL", "test", "tests", "workflow", "script", "bump"]));
+  expect(PR_JARGON).toEqual(expect.arrayContaining(["CI", "e2e", "refactor", "lint", "clippy", "CodeQL", "workflow", "script", "bump"]));
+  expect(PR_JARGON).not.toContain("test");
 });
 
 test("pr-title: developer-only scopes and the other types are hidden from the notes, so only the format counts", () => {
