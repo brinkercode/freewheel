@@ -5,7 +5,8 @@
 //
 //   node scripts/oss-readiness.mjs tree                 # tracked files: contents and paths
 //   node scripts/oss-readiness.mjs range <base> <head>  # commits in base..head: messages, identities, added lines
-//   node scripts/oss-readiness.mjs text <ENV_VAR>...    # e.g. the PR title and body (the squash message)
+//   node scripts/oss-readiness.mjs text <ENV_VAR>...    # e.g. the PR title and body (the squash message);
+//                                                       # PR_TITLE also gets the pr-title rule (prTitleProblems)
 //   node scripts/oss-readiness.mjs history              # every blob, path and message of every ref
 //   node scripts/oss-readiness.mjs community            # community files, LICENSE, workflow pins
 //   node scripts/oss-readiness.mjs npm-licenses         # package-lock.json licences against the allow list
@@ -123,9 +124,41 @@ function scanRange(base, head) {
   console.log(`range ${base}..${head}: ${commits.length} commits scanned`);
 }
 
+/** Conventional commit types the history uses (release-please-config.json changelog-sections). */
+export const PR_TYPES = ["feat", "fix", "perf", "revert", "docs", "style", "chore", "refactor", "test", "build", "ci"];
+/** Words that mark a developer-facing change; user-visible titles (they are the release notes) avoid them. */
+export const PR_JARGON = ["CI", "e2e", "refactor", "lint", "clippy", "CodeQL", "test", "tests", "workflow", "workflows", "script", "scripts", "bump", "bumps"];
+const JARGON_RE = new RegExp(`(?<![\\w-])(${PR_JARGON.join("|")})(?![\\w-])`, "i");
+const HIDDEN_SCOPES = () => JSON.parse(readFileSync(path.join(root, "scripts/release-notes.json"), "utf8")).hidden_scopes;
+
+/**
+ * The pr-title rule (empty when the title is fine): a conventional commit; a
+ * feat/fix/perf title without a developer-only scope (scripts/release-notes.json
+ * hidden_scopes) is a release note, so its description has at least 4 words,
+ * starts lowercase, has no closing period and no developer jargon (PR_JARGON).
+ */
+export function prTitleProblems(title, { hiddenScopes = HIDDEN_SCOPES() } = {}) {
+  const t = String(title ?? "").trim();
+  if (/^Revert "[^"]+"$/.test(t)) return [];
+  const m = t.match(/^([a-z]+)(?:\(([^()\s]+)\))?(!)?: (\S.*)$/);
+  if (!m || !PR_TYPES.includes(m[1]))
+    return [`pr-title: "${t}" is not a conventional commit (type(scope): description, type one of ${PR_TYPES.join(", ")})`];
+  const [, type, scope, , description] = m;
+  if (!["feat", "fix", "perf"].includes(type) || (scope && hiddenScopes.includes(scope))) return [];
+  const problems = [];
+  const note = `(${type} titles are the release notes: write them for users, e.g. "fix: the Speed Editor reconnects after sleep"; developer-only changes take a hidden scope: ${hiddenScopes.join(", ")})`;
+  if (description.split(/\s+/).filter(Boolean).length < 4) problems.push(`pr-title: "${description}" is under 4 words ${note}`);
+  if (/^[A-Z]/.test(description)) problems.push(`pr-title: "${description}" starts with a capital; start lowercase ${note}`);
+  if (/\.$/.test(description)) problems.push(`pr-title: "${description}" ends with a period ${note}`);
+  const jargon = description.match(JARGON_RE);
+  if (jargon) problems.push(`pr-title: "${jargon[1]}" is developer jargon ${note}`);
+  return problems;
+}
+
 function scanText(vars) {
   const rs = rules();
   for (const v of vars) for (const h of textHits(process.env[v] ?? "", rs)) report(`${v}:${h.line}`, h);
+  if (vars.includes("PR_TITLE")) failures.push(...prTitleProblems(process.env.PR_TITLE));
   console.log(`text: ${vars.join(", ")} scanned`);
 }
 

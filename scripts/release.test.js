@@ -235,7 +235,7 @@ test("[T3] a tampered file, a tampered .sig or another key is rejected", () => {
 });
 
 test("latest.json must carry the tag's version and the release notes", () => {
-  expect(latestProblems({ ...latest, notes: "### Bug Fixes" }, { version: "v0.1.0" })).toEqual([]);
+  expect(latestProblems({ ...latest, notes: "### Fixed" }, { version: "v0.1.0" })).toEqual([]);
   expect(latestProblems({ ...latest, notes: "" }, { version: "v0.1.1" })).toEqual([
     "version is '0.1.0', not '0.1.1'",
     "has no release notes",

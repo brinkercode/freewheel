@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, configure, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import App from "./App.jsx";
 import { sampleConfig, sampleStatus } from "./dev/mockTauri.js";
@@ -17,17 +18,19 @@ import {
 
 // What latest.json carries: release-please's notes after scripts/release-notes.mjs filter.
 const NOTES = [
-  "## [0.1.1](https://github.com/brinkercode/freewheel/compare/v0.1.0...v0.1.1) (2026-11-07)",
+  "## 0.1.1 (2026-11-07)",
   "",
-  "### Features",
+  "### New",
   "",
-  "* **keys:** a key can open a folder, like `C:\\Music` ([#131](https://github.com/brinkercode/freewheel/issues/131))",
+  "* A key can open a folder, like `C:\\Music`",
   "",
-  "### Bug Fixes",
+  "### Fixed",
   "",
-  "* a held Shift is released when freewheel turns Off",
-  "* the wheel scrolls again after sleep",
+  "* A held Shift is released when freewheel turns Off",
+  "* The wheel scrolls again after sleep",
 ].join("\n");
+// Hand-written or pasted notes may use the rest of the subset: bold and links.
+const RICH = "### New\n\n* **Keys:** see [#131](https://github.com/brinkercode/freewheel/issues/131)\n";
 
 /** The webview's localStorage, in memory. */
 function memoryStorage(items = {}) {
@@ -94,24 +97,16 @@ test("clicking it opens the notes as markdown (headings, bullets, bold, code, li
   fireEvent.click(button());
   expect(screen.getByRole("heading", { name: "What’s new in v0.1.1" })).toBeTruthy();
   // The version heading is the page's title; the sections are headings.
-  expect(screen.getByRole("heading", { level: 4, name: "Features" })).toBeTruthy();
-  expect(screen.getByRole("heading", { level: 4, name: "Bug Fixes" })).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 4, name: "New" })).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 4, name: "Fixed" })).toBeTruthy();
   expect(container.textContent).not.toContain("2026-11-07");
   const notes = container.querySelector(".whats-new-notes");
   expect([...notes.querySelectorAll("li")].map((li) => li.textContent)).toEqual([
-    "keys: a key can open a folder, like C:\\Music (#131)",
-    "a held Shift is released when freewheel turns Off",
-    "the wheel scrolls again after sleep",
+    "A key can open a folder, like C:\\Music",
+    "A held Shift is released when freewheel turns Off",
+    "The wheel scrolls again after sleep",
   ]);
-  expect(notes.querySelector("li strong").textContent).toBe("keys:");
   expect(notes.querySelector("li code.whats-new-code").textContent).toBe("C:\\Music");
-  // A notes link opens in the browser through the opener, not in the window.
-  const pr = screen.getByRole("link", { name: "#131" });
-  expect(pr.getAttribute("href")).toBe("https://github.com/brinkercode/freewheel/issues/131");
-  fireEvent.click(pr);
-  await waitFor(() =>
-    expect(invoke).toHaveBeenCalledWith("plugin:opener|open_url", { url: "https://github.com/brinkercode/freewheel/issues/131" }),
-  );
   const link = screen.getByRole("link", { name: "See this release on GitHub" });
   expect(link.getAttribute("href")).toBe("https://github.com/brinkercode/freewheel/releases/tag/v0.1.1");
   fireEvent.click(link);
@@ -122,6 +117,43 @@ test("clicking it opens the notes as markdown (headings, bullets, bold, code, li
   expect(screen.queryByRole("heading", { name: "What’s new in v0.1.1" })).toBeNull();
   expect(button()).toBeNull();
   expect(storage.getItem(LAST_SEEN_VERSION)).toBe("0.1.1");
+});
+
+test("bold and links in hand-written notes render; a link opens in the browser through the opener", async () => {
+  const { container } = render(<App storage={updatedFrom("0.1.0", "0.1.1", RICH)} />);
+  await waitFor(() => expect(button()).not.toBeNull());
+  fireEvent.click(button());
+  const notes = container.querySelector(".whats-new-notes");
+  expect(notes.querySelector("li strong").textContent).toBe("Keys:");
+  const pr = screen.getByRole("link", { name: "#131" });
+  expect(pr.getAttribute("href")).toBe("https://github.com/brinkercode/freewheel/issues/131");
+  fireEvent.click(pr);
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("plugin:opener|open_url", { url: "https://github.com/brinkercode/freewheel/issues/131" }),
+  );
+});
+
+test("v0.1.1's app notes (scripts/release-notes.mjs filter): New, Fixed, Faster; capitalised lines, no scope labels or PR numbers; the GitHub link stays", async () => {
+  const appNotes = readFileSync("scripts/fixtures/release-notes/app-0.1.1.md", "utf8");
+  const { container } = render(<App storage={updatedFrom("0.1.0", "0.1.1", appNotes)} />);
+  await waitFor(() => expect(button()).not.toBeNull());
+  fireEvent.click(button());
+  const notes = container.querySelector(".whats-new-notes");
+  expect([...notes.querySelectorAll("h3, h4, li")].map((e) => e.textContent)).toEqual([
+    "New",
+    "A key can open a folder",
+    "Smoother scrolling when you turn the wheel fast",
+    "Fixed",
+    "The Speed Editor reconnects by itself after the computer wakes from sleep",
+    "The tray icon no longer shows Off after Resolve closes",
+    "Faster",
+    "Use less memory while freewheel sits in the tray",
+  ]);
+  expect(notes.querySelectorAll("a, strong")).toHaveLength(0);
+  expect(notes.textContent).not.toMatch(/#\d|keys:|device:|tray:/);
+  expect(screen.getByRole("link", { name: "See this release on GitHub" }).getAttribute("href")).toBe(
+    "https://github.com/brinkercode/freewheel/releases/tag/v0.1.1",
+  );
 });
 
 test("notes are never HTML: tags stay text, scripts never run, only GitHub links are links", async () => {
@@ -147,7 +179,7 @@ test("notes are never HTML: tags stay text, scripts never run, only GitHub links
 });
 
 test("long notes scroll inside the notes card", async () => {
-  const long = ["### Features", "", ...Array.from({ length: 80 }, (_, i) => `* change ${i + 1}`)].join("\n");
+  const long = ["### New", "", ...Array.from({ length: 80 }, (_, i) => `* change ${i + 1}`)].join("\n");
   const { container } = render(<App storage={updatedFrom("0.1.0", "0.1.1", long)} />);
   await waitFor(() => expect(button()).not.toBeNull());
   fireEvent.click(button());
@@ -223,14 +255,15 @@ test("Restart to update keeps the update's notes before installing it", async ()
 test("the markdown subset: headings, wrapped bullets, paragraphs, inline bold, code and links", () => {
   expect(parseNotes(NOTES).map((b) => b.type)).toEqual(["h3", "list", "h3", "list"]);
   expect(notesText(NOTES)).toEqual([
-    "Features",
-    "keys: a key can open a folder, like C:\\Music (#131)",
-    "Bug Fixes",
-    "a held Shift is released when freewheel turns Off",
-    "the wheel scrolls again after sleep",
+    "New",
+    "A key can open a folder, like C:\\Music",
+    "Fixed",
+    "A held Shift is released when freewheel turns Off",
+    "The wheel scrolls again after sleep",
   ]);
+  expect(notesText(RICH)).toEqual(["New", "Keys: see #131"]);
   expect(notesText("## What's Changed\n\n* one\n  two\n- three\n\nA paragraph\nwrapped.")).toEqual(["What's Changed", "one two", "three", "A paragraph wrapped."]);
-  expect(parseNotes("## 0.1.0 (2026-11-07)\n\n### Bug Fixes")).toEqual([{ type: "h3", inline: [{ text: "Bug Fixes" }] }]);
+  expect(parseNotes("## 0.1.0 (2026-11-07)\n\n### Fixed")).toEqual([{ type: "h3", inline: [{ text: "Fixed" }] }]);
   expect(parseInline("**a `b` [c](https://github.com/x)** d")).toEqual([
     { bold: [{ text: "a " }, { code: "b" }, { text: " " }, { link: "c", href: "https://github.com/x" }] },
     { text: " d" },

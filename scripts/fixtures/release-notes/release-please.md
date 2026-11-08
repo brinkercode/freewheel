@@ -5,7 +5,7 @@
 
 * **config:** mappings files from 0.0.x no longer load; export them again from 0.1.0
 
-### Features
+### New
 
 * **device:** Speed Editor key and wheel LEDs driven from the engine ([#141](https://github.com/brinkercode/freewheel/issues/141)) ([4025bcd](https://github.com/brinkercode/freewheel/commit/4025bcdf254e648917541da5428e7c5bb5918652))
 * **e2e:** the Windows e2e clicks every control ([#138](https://github.com/brinkercode/freewheel/issues/138)) ([1b2c3d4](https://github.com/brinkercode/freewheel/commit/1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e))
@@ -15,7 +15,7 @@
   for finer steps ([7a8b9c0](https://github.com/brinkercode/freewheel/commit/7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b))
 
 
-### Bug Fixes
+### Fixed
 
 * **ci:** survive hung apt installs ([#120](https://github.com/brinkercode/freewheel/issues/120)) ([aa11bb2](https://github.com/brinkercode/freewheel/commit/aa11bb22cc33dd44ee55ff66aa77bb88cc99dd00))
 * **deps-dev:** bump vitest to 4.0.1 ([#150](https://github.com/brinkercode/freewheel/issues/150)) ([bb22cc3](https://github.com/brinkercode/freewheel/commit/bb22cc33dd44ee55ff66aa77bb88cc99dd00ee11))
@@ -28,7 +28,7 @@
 * header status never overlaps; tray and window share one On/Off ([#146](https://github.com/brinkercode/freewheel/issues/146)) ([ae3cfe4](https://github.com/brinkercode/freewheel/commit/ae3cfe41b2c3d4e5f60718293a4b5c6d7e8f90ab))
 
 
-### Performance Improvements
+### Faster
 
 * **footprint:** measure the exe size ([0a1b2c3](https://github.com/brinkercode/freewheel/commit/0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d))
 

@@ -8,15 +8,15 @@
   "changelog-sections": [
     {
       "type": "feat",
-      "section": "Features"
+      "section": "New"
     },
     {
       "type": "fix",
-      "section": "Bug Fixes"
+      "section": "Fixed"
     },
     {
       "type": "perf",
-      "section": "Performance Improvements"
+      "section": "Faster"
     },
     {
       "type": "revert",
