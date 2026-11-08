@@ -1,7 +1,7 @@
 //! OS notifications, and when to show them.
 //!
 //! The design calls for three, each at most once per occasion:
-//! - **low battery**: the Speed Editor's battery drops below the threshold
+//! - **low battery**: the Speed Editor's battery drops to the threshold or below
 //!   (`settings.low_battery_threshold`, 15 % by default), again only after it
 //!   charged back up ([`freewheel_core::battery::LowBatteryAlert`]);
 //! - **stepped aside**: freewheel switched itself Off because DaVinci Resolve

@@ -200,6 +200,12 @@ impl Settings {
         lock(&self.status).clone()
     }
 
+    /// The running `settings.low_battery_threshold`: the tray reads it each
+    /// time, so a saved or restored threshold applies at once.
+    pub fn low_battery_threshold(&self) -> u8 {
+        lock(&self.config).settings.low_battery_threshold
+    }
+
     /// Validates `value`, writes it to `config.json` and applies it to the
     /// running engine. An invalid config changes nothing.
     pub fn save(&self, value: &serde_json::Value) -> Result<(), SaveError> {
@@ -268,6 +274,9 @@ impl Settings {
         let after = &config.settings;
         if before.step_aside_for_resolve != after.step_aside_for_resolve {
             let _ = lock(&self.manual).send(Message::StepAside(after.step_aside_for_resolve));
+        }
+        if before.resolve_process_name != after.resolve_process_name {
+            let _ = lock(&self.manual).send(Message::Program(after.resolve_process_name.clone()));
         }
         if before.detailed_logs != after.detailed_logs {
             self.apply_detailed(after.detailed_logs);
@@ -1034,6 +1043,24 @@ mod tests {
             .save(&serde_json::to_value(&config).unwrap())
             .unwrap();
         assert_eq!(manual.try_recv(), Ok(Message::StepAside(false)));
+    }
+
+    #[test]
+    fn saving_a_new_resolve_program_tells_the_resolve_watcher() {
+        let (_dir, settings, _commands, manual) = settings_with_manual();
+        let mut config = Config::default();
+        config.settings.resolve_process_name = "MyEditor".into();
+        config.settings.low_battery_threshold = 40;
+        settings
+            .save(&serde_json::to_value(&config).unwrap())
+            .unwrap();
+        assert_eq!(manual.try_recv(), Ok(Message::Program("MyEditor".into())));
+        assert!(manual.try_recv().is_err(), "sent once");
+        assert_eq!(settings.low_battery_threshold(), 40);
+        settings
+            .save(&serde_json::to_value(&config).unwrap())
+            .unwrap();
+        assert!(manual.try_recv().is_err(), "unchanged, nothing sent");
     }
 
     #[test]

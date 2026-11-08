@@ -641,7 +641,9 @@ impl Simulator {
                 .map(|p| p.bus),
             battery: self.battery.map(|(level, _)| level),
             charging: self.battery.is_some_and(|(_, c)| c),
-            low_battery: self.battery.is_some_and(|(level, _)| level < threshold),
+            low_battery: self
+                .battery
+                .is_some_and(|(level, _)| crate::battery::is_low(level, threshold)),
             page: self.engine.current_layer().to_string(),
             jog_mode,
             lit_leds: if connected { leds.names() } else { vec![] },
@@ -1023,17 +1025,17 @@ mod tests {
             (Some(80), true, false)
         );
         let s = sim.apply(Control::Battery {
-            level: 15,
+            level: 16,
             charging: false,
         });
-        assert_eq!((s.battery, s.low_battery), (Some(15), false));
+        assert_eq!((s.battery, s.low_battery), (Some(16), false));
         let s = sim.apply(Control::Battery {
-            level: 14,
+            level: 15,
             charging: false,
         });
         assert_eq!(
             (s.battery, s.charging, s.low_battery),
-            (Some(14), false, true)
+            (Some(15), false, true)
         );
         assert_eq!(sim.apply(Control::Disconnect).battery, None);
     }

@@ -335,11 +335,9 @@ pub fn forward_commands(handle: &SimHandle, commands: Receiver<Command>) {
 /// Runs the session as the app's device loop (in place of
 /// `spawn_device` and the permission watch): the tray, the settings
 /// window's events and its saved configs follow the simulated Speed Editor.
-#[allow(clippy::too_many_arguments)]
 pub fn attach(
     app: tauri::AppHandle,
     store: ConfigStore,
-    threshold: u8,
     injector: impl FnOnce() -> Box<dyn KeyInjector> + Send + 'static,
     tray: tauri::tray::TrayIcon,
     commands: Receiver<Command>,
@@ -350,7 +348,7 @@ pub fn attach(
 
     let handle = app.state::<SimHandle>();
     forward_commands(&handle, commands);
-    let mut view = crate::tray::TrayView::new(threshold);
+    let mut view = crate::tray::TrayView::new();
     let sink = {
         let app = app.clone();
         move |change: Mirror| {

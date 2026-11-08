@@ -57,7 +57,7 @@ export function createSimFake({ next = SIM_NEXT } = {}) {
         Object.assign(s, { connection: s.enabled ? "Absent" : "Off", bus: null, battery: null, low_battery: false, held_keys: [] });
         break;
       case "Battery":
-        if (connected()) Object.assign(s, { battery: c.level, charging: c.charging, low_battery: c.level < 15 });
+        if (connected()) Object.assign(s, { battery: c.level, charging: c.charging, low_battery: c.level <= 15 });
         break;
       case "Key": {
         if (!connected()) break;

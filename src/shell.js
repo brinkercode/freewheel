@@ -2,6 +2,7 @@
 // notice the notice bar shows and the toast timing.
 
 export const TABS = ["Keys", "Wheel", "DaVinci Resolve", "General", "Help & backup"];
+// The default low-battery threshold, for a status read before the config.
 export const LOW_BATTERY = 15;
 export const TOAST_MS = 2800;
 
@@ -15,7 +16,7 @@ const BUS = { Usb: "USB", Bluetooth: "Bluetooth" };
  * On and only lent the device to Resolve, so it reads as On and connected
  * and the status says Paused.
  */
-export function fromStatusEvent(event) {
+export function fromStatusEvent(event, lowBatteryAt = LOW_BATTERY) {
   const paused = event.paused ?? false;
   return {
     enabled: event.enabled ?? (paused || event.connection !== "Off"),
@@ -23,11 +24,13 @@ export function fromStatusEvent(event) {
     connected: paused || event.connection === "Connected",
     bus: event.bus ?? null,
     battery: event.battery?.level ?? null,
+    lowBatteryAt,
     paused,
   };
 }
 
-const lowBattery = (s) => s.battery != null && s.battery < LOW_BATTERY;
+// At or below settings.low_battery_threshold (SCHEMA.md low_battery_warning), as the tray.
+const lowBattery = (s) => s.battery != null && s.battery <= (s.lowBatteryAt ?? LOW_BATTERY);
 
 /** How the device is connected, in the prototype's words: "Connected by USB", "Connected by Bluetooth · 64%". */
 export function connectedText(s) {

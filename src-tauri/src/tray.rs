@@ -61,8 +61,17 @@ const DOWNLOAD_LOGS_TEXT: &str = "Download logs for support…";
 const QUIT_TEXT: &str = "Quit freewheel";
 /// The status line before the device loop has said anything.
 const LOOKING: &str = "Looking for your Speed Editor…";
-/// Below this battery level the icon needs attention (src/shell.js LOW_BATTERY).
+/// The default `settings.low_battery_threshold` (src/shell.js LOW_BATTERY):
+/// at or below it the icon needs attention. The tray uses the running
+/// setting ([`running_low_battery`]); this only when there is none.
 pub const LOW_BATTERY: u8 = 15;
+
+/// The running low-battery threshold, read each time so a saved or restored
+/// `low_battery_warning` applies at once.
+fn running_low_battery<R: Runtime>(app: &AppHandle<R>) -> u8 {
+    app.try_state::<crate::settings::Settings>()
+        .map_or(LOW_BATTERY, |s| s.low_battery_threshold())
+}
 
 /// Applies a Start at login toggle: `os` enables or disables the OS login
 /// item first, then `start_at_login` is saved to the config.
@@ -244,7 +253,7 @@ pub fn tray_status(status: &StatusEvent, low_battery: u8) -> TrayStatus {
     let missing = status.permissions.values().any(|g| *g == Grant::Missing);
     let connected = paused || status.connection == ConnectionStatus::Connected;
     let level = status.battery.map(|b| b.level);
-    let low = level.is_some_and(|l| l < low_battery);
+    let low = level.is_some_and(|l| battery::is_low(l, low_battery));
     let (line, fix) = if !on {
         ("Off: Resolve can use it".to_string(), false)
     } else if missing {
@@ -477,7 +486,6 @@ pub struct TrayMenu<R: Runtime> {
     status: MenuItem<R>,
     update: MenuItem<R>,
     updates_available: bool,
-    low_battery: u8,
     live: Mutex<Live>,
     notifier: Mutex<Notifier>,
 }
@@ -527,7 +535,7 @@ impl<R: Runtime> TrayMenu<R> {
     /// Shows `status` on the icon, the toggle and the status line; notifies
     /// when freewheel stepped aside for Resolve.
     fn show_status(&self, app: &AppHandle<R>, status: &StatusEvent) {
-        let view = tray_status(status, self.low_battery);
+        let view = tray_status(status, running_low_battery(app));
         let _ = self.toggle.set_checked(view.on);
         let _ = self.toggle.set_text(toggle_text(view.on));
         let _ = self.status.set_text(&view.line);
@@ -709,9 +717,8 @@ pub fn emit_status<R: Runtime>(app: &AppHandle<R>, status: &StatusEvent) {
 pub fn build<R: Runtime>(
     app: &AppHandle<R>,
     updates_available: bool,
-    low_battery: u8,
 ) -> tauri::Result<TrayIcon<R>> {
-    let menu = manage_menu(app, updates_available, low_battery)?;
+    let menu = manage_menu(app, updates_available)?;
     TrayIconBuilder::with_id("main")
         .icon(icon(IconState::Absent, taskbar()))
         .icon_as_template(cfg!(target_os = "macos"))
@@ -724,11 +731,7 @@ pub fn build<R: Runtime>(
 }
 
 /// Builds the tray menu and manages its live parts as [`TrayMenu`].
-fn manage_menu<R: Runtime>(
-    app: &AppHandle<R>,
-    updates_available: bool,
-    low_battery: u8,
-) -> tauri::Result<Menu<R>> {
+fn manage_menu<R: Runtime>(app: &AppHandle<R>, updates_available: bool) -> tauri::Result<Menu<R>> {
     // The checkbox shows the OS login item, not the config, at startup.
     let parts = menu(app, autostart_enabled(app), updates_available)?;
     let (_, update_action) = update_item(updates_available, &UpdateReport::default());
@@ -738,7 +741,6 @@ fn manage_menu<R: Runtime>(
         status: parts.status,
         update: parts.update,
         updates_available,
-        low_battery,
         live: Mutex::new(Live {
             status: TrayStatus {
                 on: true,
@@ -813,16 +815,20 @@ pub struct TrayView {
     state: TrayState,
     battery: Option<Battery>,
     alert: LowBatteryAlert,
-    threshold: u8,
+}
+
+impl Default for TrayView {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TrayView {
-    pub fn new(threshold: u8) -> Self {
+    pub fn new() -> Self {
         Self {
             state: TrayState::NotConnected,
             battery: None,
             alert: LowBatteryAlert::default(),
-            threshold,
         }
     }
 
@@ -841,7 +847,7 @@ impl TrayView {
             }
             Update::Battery(b) => {
                 self.battery = Some(b);
-                if self.alert.update(b, self.threshold) {
+                if self.alert.update(b, running_low_battery(tray.app_handle())) {
                     notify::show(tray.app_handle(), &notify::low_battery(b.level));
                 }
             }
@@ -1060,7 +1066,7 @@ mod tests {
         // The simulator's login item: the OS one is not touched.
         app.manage(crate::simulate::SimHandle::new());
         // The menu without the OS tray icon (no system tray in a test).
-        manage_menu(app.handle(), false, LOW_BATTERY).unwrap();
+        manage_menu(app.handle(), false).unwrap();
         (app, dir, rx)
     }
 
@@ -1098,6 +1104,43 @@ mod tests {
         menu.clicked(app, TOGGLE);
         assert!(menu.toggle.is_checked().unwrap());
         assert!(settings.status().enabled);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn the_tray_icon_follows_the_saved_low_battery_warning_at_once() {
+        let (app, _dir, _commands) = mock_tray();
+        let app = app.handle();
+        let menu = app.state::<TrayMenu<tauri::test::MockRuntime>>();
+        let settings = app.state::<crate::settings::Settings>();
+        let at = |level| {
+            let mut s = status(ConnectionStatus::Connected);
+            s.enabled = true;
+            s.battery = Some(Battery {
+                level,
+                charging: false,
+            });
+            emit_status(app, &s);
+            menu.state().icon
+        };
+        assert_eq!(at(30), IconState::On);
+        // At the default threshold itself: low (SCHEMA.md "at or below").
+        assert_eq!(at(LOW_BATTERY), IconState::Attention);
+        let mut config = settings.config();
+        config.settings.low_battery_threshold = 40;
+        settings
+            .save(&serde_json::to_value(&config).unwrap())
+            .unwrap();
+        assert_eq!(at(30), IconState::Attention, "no restart needed");
+        assert_eq!(at(41), IconState::On);
+    }
+
+    #[test]
+    fn the_fallback_low_battery_is_the_default_setting() {
+        assert_eq!(
+            freewheel_core::config::Settings::default().low_battery_threshold,
+            LOW_BATTERY
+        );
     }
 
     fn texts(model: &[Entry]) -> Vec<String> {
@@ -1326,7 +1369,7 @@ mod tests {
 
     #[test]
     fn tooltip_shows_the_battery_or_else_the_device_status() {
-        let mut view = TrayView::new(15);
+        let mut view = TrayView::new();
         assert_eq!(view.tooltip(), "Looking for device");
         view.state = TrayState::On;
         assert_eq!(view.tooltip(), "Connected");

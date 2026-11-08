@@ -76,12 +76,20 @@ test("the header says each status short (the full sentence is its tooltip): it f
 test("a StatusEvent maps to the shell state", () => {
   expect(
     fromStatusEvent({ connection: "Connected", battery: { level: 9, charging: false }, permissions: { Accessibility: "Missing" } }),
-  ).toEqual({ enabled: true, permissionMissing: true, connected: true, bus: null, battery: 9, paused: false });
+  ).toEqual({ enabled: true, permissionMissing: true, connected: true, bus: null, battery: 9, lowBatteryAt: 15, paused: false });
   expect(fromStatusEvent({ connection: "Off", battery: null, permissions: {} })).toMatchObject({ enabled: false, connected: false });
   const usb = { connection: "Connected", battery: null, permissions: {}, bus: "Usb", paused: false };
   expect(toolbar(fromStatusEvent(usb))).toContain("Connected by USB");
   const bt = { ...usb, bus: "Bluetooth", battery: { level: 42, charging: false } };
   expect(toolbar(fromStatusEvent(bt))).toContain("Connected by Bluetooth · 42%");
+});
+
+test("the low-battery notice follows the configured threshold, at or below it", () => {
+  const at = (level, threshold) => fromStatusEvent({ connection: "Connected", battery: { level, charging: false }, permissions: {} }, threshold);
+  expect(notice(at(15))).toContain("Battery is low (15%).");
+  expect(notice(at(16))).not.toContain("Battery is low");
+  expect(notice(at(30, 40))).toContain("Battery is low (30%).");
+  expect(notice(at(30, 20))).not.toContain("Battery is low");
 });
 
 test("stepped aside for Resolve the status says Paused, never Off or Turn on", () => {
@@ -119,7 +127,8 @@ test("the notice bar shows one notice, in priority: permission, Off, looking, Re
   expect(notice({ ...all, permissionMissing: false, enabled: true })).toContain("Looking for your Speed Editor…");
   expect(notice({ ...ok, battery: 5, paused: true })).toContain("Paused while DaVinci Resolve is open.");
   expect(notice({ ...ok, battery: 14 })).toContain("Battery is low (14%).");
-  expect(notice({ ...ok, battery: 15 })).toBe("");
+  expect(notice({ ...ok, battery: 15 })).toContain("Battery is low (15%).");
+  expect(notice({ ...ok, battery: 16 })).toBe("");
   expect(notice(ok)).toBe("");
 });
 
