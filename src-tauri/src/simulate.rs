@@ -452,6 +452,50 @@ pub fn browser_args_for(simulate: bool, port: Option<&str>) -> Option<String> {
     simulate.then(|| format!("{WRY_DEFAULT_ARGS} --remote-debugging-port={port}"))
 }
 
+/// The folder `--simulate`'s webviews keep their storage in (localStorage:
+/// the first-run flag, What's new's last seen version and notes), inside
+/// the app's local data folder `local`, where the real app's webview keeps
+/// its own (Windows' `EBWebView`, WebKitGTK's `localstorage`). Apart from
+/// the real app's, as the simulator's config is (#202). On Windows a
+/// folder of its own is also what lets `--simulate` (with its DevTools
+/// arguments) open its windows while the real freewheel runs: WebView2
+/// can't share one folder between different browser arguments.
+#[cfg(any(not(target_os = "macos"), test))]
+pub fn webview_data_dir(local: &std::path::Path) -> std::path::PathBuf {
+    local.join(SIMULATOR_WEBVIEW_DIR)
+}
+
+/// [`webview_data_dir`]'s folder name.
+#[cfg(any(not(target_os = "macos"), test))]
+pub const SIMULATOR_WEBVIEW_DIR: &str = "simulator-webview";
+
+/// macOS has no webview data folders: WKWebView keeps a data store per
+/// identifier instead (macOS 14 and later). `--simulate`'s, as 16 bytes.
+#[cfg(target_os = "macos")]
+pub const SIMULATOR_DATA_STORE: [u8; 16] = *b"freewheel-simula";
+
+/// Gives a `--simulate` webview window its own storage ([`webview_data_dir`]).
+pub fn own_storage<'a, R: tauri::Runtime, M: tauri::Manager<R>>(
+    app: &M,
+    builder: tauri::WebviewWindowBuilder<'a, R, M>,
+) -> tauri::WebviewWindowBuilder<'a, R, M> {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app;
+        builder.data_store_identifier(SIMULATOR_DATA_STORE)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        match app.path().app_local_data_dir() {
+            Ok(local) => builder.data_directory(webview_data_dir(&local)),
+            Err(e) => {
+                tracing::warn!(error = %e, "no local data folder: --simulate's webview storage is the default one");
+                builder
+            }
+        }
+    }
+}
+
 /// Opens the Simulator window to the right of the settings window.
 pub fn open_window<R: tauri::Runtime, M: tauri::Manager<R>>(app: &M) -> tauri::Result<()> {
     const WIDTH: f64 = 320.0;
@@ -464,6 +508,9 @@ pub fn open_window<R: tauri::Runtime, M: tauri::Manager<R>>(app: &M) -> tauri::R
         .title(simulator::title(freewheel_core::APP_NAME, true))
         .inner_size(WIDTH, 860.0)
         .min_inner_size(280.0, 480.0);
+    // The same storage as --simulate's settings window (one WebView2
+    // environment per folder and arguments).
+    builder = own_storage(app, builder);
     // Like the settings window (tauri.conf.json, tauri.macos.conf.json): the
     // app draws its own header; macOS keeps its traffic lights over it.
     #[cfg(target_os = "macos")]
@@ -1086,6 +1133,22 @@ mod tests {
         assert_eq!(browser_args_for(true, None), None);
         assert_eq!(browser_args_for(true, Some("0")), None);
         assert_eq!(browser_args_for(true, Some("nope")), None);
+    }
+
+    #[test]
+    fn simulate_keeps_its_webview_storage_in_a_folder_of_its_own() {
+        let local = std::path::Path::new("/home/me/.local/share/com.brinkercode.freewheel");
+        let dir = webview_data_dir(local);
+        assert_ne!(
+            dir, local,
+            "the real app's webview storage is the local data folder itself"
+        );
+        assert_eq!(dir.parent(), Some(local));
+        // The e2e looks for the same folder.
+        let js = include_str!("../../scripts/e2e.mjs");
+        assert!(js.contains(&format!(
+            "SIMULATOR_WEBVIEW_DIR = \"{SIMULATOR_WEBVIEW_DIR}\""
+        )));
     }
 
     #[test]

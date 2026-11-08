@@ -312,6 +312,13 @@ fn main() {
     let (commands, receiver) = mpsc::channel();
     let quit_commands = commands.clone();
     let simulate = simulator::requested(std::env::args());
+    if simulate {
+        // --simulate builds its settings window itself, with webview
+        // storage of its own (app_windows::settings_builder, #202).
+        for window in &mut context.config_mut().app.windows {
+            window.create = false;
+        }
+    }
     if let Some(args) = simulate::browser_args(simulate || cfg!(feature = "e2e")) {
         // The Windows e2e (scripts/e2e.mjs, and with the e2e-only
         // `e2e` feature scripts/e2e-update-windows.mjs) attaches to this port.
@@ -412,6 +419,11 @@ fn main() {
             // The tray's update item works in a release build (it has the
             // updater pubkey), or in --simulate with the simulated source; else it says this
             // build can't update itself, as the General tab does.
+            if simulate {
+                for config in app.config().app.windows.clone() {
+                    app_windows::settings_builder(app, &config, true)?.build()?;
+                }
+            }
             let tray = tray::build(app.handle(), updater || simulate)?;
             if simulate {
                 simulate::attach(
