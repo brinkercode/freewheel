@@ -211,7 +211,15 @@ jobs:
           echo "TO_VERSION=$to" >> "$GITHUB_ENV"
           echo "update e2e: $from -> $to"
 
+      # The bundler's tools from the CI cache (pinned, checked sha256), so a
+      # GitHub release outage cannot fail the AppImage build.
+      - uses: ./.github/actions/appimage-tools
+
+      # The bundler sends its GitHub release downloads to a port nothing
+      # listens on: it must find every tool in place and download nothing.
       - name: Build and pack version B, then A
+        env:
+          TAURI_BUNDLER_TOOLS_GITHUB_MIRROR: http://127.0.0.1:9
         run: |
           export FREEWHEEL_UPDATER_PUBKEY="$(cat "$E2E_UPDATER_KEY.pub")"
           for v in "$TO_VERSION" "$FROM_VERSION"; do

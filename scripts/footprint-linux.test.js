@@ -64,5 +64,5 @@ test("the Linux e2e job builds the embedded UI with the dialog stubs and drives 
   expect(wf).toContain("cargo install tauri-driver --locked --version 2.1.0");
   expect(wf).toContain("node scripts/e2e-linux.mjs --app target/release/freewheel --out e2e-shots");
   expect(wf).toMatch(/name: e2e-linux-screenshots\n\s+path: e2e-shots/);
-  for (const uses of wf.match(/uses: \S+/g)) expect(uses).toMatch(/@[0-9a-f]{40}$/);
+  for (const uses of wf.match(/uses: \S+/g)) if (uses !== "uses: ./.github/actions/appimage-tools") expect(uses).toMatch(/@[0-9a-f]{40}$/);
 });

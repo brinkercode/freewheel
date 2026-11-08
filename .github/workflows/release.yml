@@ -160,6 +160,11 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run tauri -- build --target universal-apple-darwin --bundles app -- --locked
 
+      # The bundler's tools from the CI cache (pinned, checked sha256), so a
+      # GitHub release outage cannot fail the AppImage build.
+      - uses: ./.github/actions/appimage-tools
+        if: runner.os == 'Linux'
+
       # The AppImage: the binary plus the WebKitGTK it needs, one runnable file.
       - name: Build freewheel.AppImage (Linux)
         if: runner.os == 'Linux'

@@ -248,6 +248,17 @@ export function communityProblems(dir = root) {
       if (!/@[0-9a-f]{40}$/.test(ref)) problems.push(`${wf}/${f}: ${ref} is not pinned to a commit sha`);
     }
   }
+  // The local composite actions the workflows use: pinned the same way.
+  const acts = ".github/actions";
+  for (const a of has(acts) ? readdirSync(path.join(dir, acts)) : []) {
+    const f = [`${acts}/${a}/action.yml`, `${acts}/${a}/action.yaml`].find(has);
+    if (!f) continue;
+    for (const m of read(f).matchAll(/^\s*(?:-\s*)?uses:\s*([^\s#]+)/gm)) {
+      const ref = m[1];
+      if (ref.startsWith("./")) continue;
+      if (!/@[0-9a-f]{40}$/.test(ref)) problems.push(`${f}: ${ref} is not pinned to a commit sha`);
+    }
+  }
   return problems;
 }
 
