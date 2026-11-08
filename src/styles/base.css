@@ -464,6 +464,9 @@ input[type="range"] { accent-color: var(--accent); border: none; background: tra
 /* selected: *-sel face, 2px panel-coloured gap, 2px accent ring (handoff README) */
 .device .key.is-selected .key-face { fill: var(--key-dark-sel); }
 .device .key-ring { fill: var(--dev-panel); stroke: var(--accent-device); stroke-width: 2px; }
+/* A key reached with Tab: an --accent-device ring like the selected key's. */
+.device .key { outline: none; }
+.device .key:focus-visible .key-face { stroke: var(--accent-device); stroke-width: 2px; }
 .device .key[data-color="white"].is-selected .key-face { fill: var(--key-white-sel); }
 .device .key[data-color="red"].is-selected .key-face { fill: var(--key-red-sel); }
 /* pressed: face flashes the accent for 2 s */
@@ -484,6 +487,8 @@ tr:first-child td { border-top-color: transparent; }
 tr { cursor: pointer; }
 tr:hover { background: var(--hover); }
 tr[aria-selected="true"] { background: var(--accent-soft); }
+/* A row reached with Tab: the focus ring inside the card (the card clips). */
+tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 td:first-child { font-weight: var(--fw-semibold); font-size: var(--fs-caption); width: 146px; padding-right: 12px; }
 td.row-chevron { width: 32px; color: var(--ink3); text-align: right; }
 td.row-chevron .icon { vertical-align: middle; }

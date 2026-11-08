@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import ActionEditor, { KeyPanel } from "./ActionEditor.jsx";
 import Icon, { SymbolIcon } from "./Icon.jsx";
 import ProfileApps from "./ProfileApps.jsx";
@@ -227,7 +227,14 @@ export const LIST_GROUPS = [
   ["Right side, above the wheel", DRAWING[2].flat()],
 ];
 
-/** One row per Speed Editor key with what it does on the page, in three titled cards. */
+/** Enter or Space on a focused key picks it, as a click does. */
+const pickWithKeyboard = (e, pick) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  e.preventDefault();
+  pick();
+};
+
+/** One row per Speed Editor key with what it does on the page, in three titled cards; each row is a tab stop. */
 export function ButtonList({ config, page, selected, onSelect }) {
   const bindings = config.layers.find((l) => l.id === page)?.bindings ?? {};
   const does = (key) => {
@@ -244,7 +251,14 @@ export function ButtonList({ config, page, selected, onSelect }) {
           <table className="button-list">
             <tbody>
               {keys.map((key) => (
-                <tr key={key} aria-selected={key === selected} className={isSet(key) ? undefined : "is-unset"} onClick={() => onSelect(key)}>
+                <tr
+                  key={key}
+                  tabIndex={0}
+                  aria-selected={key === selected}
+                  className={isSet(key) ? undefined : "is-unset"}
+                  onClick={() => onSelect(key)}
+                  onKeyDown={(e) => pickWithKeyboard(e, () => onSelect(key))}
+                >
                   <td>{LABELS[key]}</td>
                   <td>{does(key)}</td>
                   <td className="row-chevron">
@@ -364,7 +378,10 @@ export function drawingMarkup({ labels = {}, selected = null, pressed = null, li
       );
     const cls = ["key", key === selected && "is-selected", key === pressed && "is-pressed", lit.includes(key) && "is-lit", !labels[key] && "is-unset"];
     const title = xml(label).replace(/"/g, "&quot;");
-    return `<g id="${id}" data-key="${printed}"${rest} data-binding="${key}" title="${title}" class="${cls.filter(Boolean).join(" ")}">${body}</g>`;
+    // A tab stop: Enter or Space picks the key (DeviceDrawing).
+    const name = xml(`${LABELS[key] ?? printed}: ${label}`).replace(/"/g, "&quot;");
+    const a11y = ` tabindex="0" role="button" aria-label="${name}" aria-pressed="${key === selected}"`;
+    return `<g id="${id}" data-key="${printed}"${rest} data-binding="${key}" title="${title}"${a11y} class="${cls.filter(Boolean).join(" ")}">${body}</g>`;
   });
 }
 
@@ -395,11 +412,32 @@ export function DeviceDrawing({ config, page, selected, pressed = null, dim = fa
     if (key) onSelect(key);
     else if (e.target.closest?.("#wheel")) onWheel?.();
   };
+  const keyDown = (e) => {
+    const key = e.target.closest?.("[data-binding]")?.dataset.binding;
+    if (key) pickWithKeyboard(e, () => onSelect(key));
+  };
+  // New markup replaces the keys: the key that had focus gets it back.
+  const html = drawingMarkup({ labels, selected, pressed, lit, wheel });
+  const box = useRef(null);
+  const focused = useRef(null);
+  useLayoutEffect(() => {
+    const was = focused.current;
+    if (!was || was.isConnected) return;
+    const active = globalThis.document?.activeElement;
+    if (active && active !== globalThis.document.body) return;
+    const again = box.current?.querySelector(`[data-binding="${was.dataset.binding}"]`);
+    focused.current = again ?? null;
+    again?.focus();
+  }, [html]);
   return (
     <div
+      ref={box}
       className={`device${dim ? " is-dim" : ""}`}
       onClick={click}
-      dangerouslySetInnerHTML={{ __html: drawingMarkup({ labels, selected, pressed, lit, wheel }) }}
+      onKeyDown={keyDown}
+      onFocus={(e) => (focused.current = e.target.dataset?.binding ? e.target : null)}
+      onBlur={(e) => e.target.isConnected && (focused.current = null)}
+      dangerouslySetInnerHTML={{ __html: html }}
     />
   );
 }
