@@ -1930,7 +1930,7 @@ export async function main(platform, argv = process.argv.slice(2)) {
       if (c.layers.filter((l) => !c.profiles.some((p) => p.pages.includes(l.id))).length !== 2) throw new Error("a Default page was added");
     });
     let defaultPage = null;
-    await step(`profiles: ${F.id} in front for real: Writing on its first page, the live dots follow`, async () => {
+    await step(`profiles: ${F.id} in front for real: Writing in use on its first page`, async () => {
       // Default on its second page first: it comes back there.
       await click("settings", ".profile-pill button[role=tab]", "Default");
       await pressKey("Cam5");
