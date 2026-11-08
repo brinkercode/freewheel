@@ -7,7 +7,7 @@ export type Settings = { enabled: boolean, start_at_login: boolean, resolve_proc
 
 export type Appearance = "System" | "Light" | "Dark";
 
-export type Layer = { id: string, name: string, bindings: { [key in string]?: Action }, };
+export type Layer = { id: string, name: string, bindings: { [key in string]: Action }, };
 
 export type Action = { "Hotkey": { combo: KeyCombo, } } | { "Held": { combo: KeyCombo, } } | { "Latched": { combo: KeyCombo, } } | { "Scroll": { amount: number, } } | { "LaunchApp": { path: string, args: Array<string>, enabled: boolean, 
 /**
@@ -52,7 +52,7 @@ enabled: boolean, connection: ConnectionStatus, battery: Battery | null, layer: 
  * Permission name (`Accessibility`, `InputMonitoring`) to its grant;
  * empty outside macOS.
  */
-permissions: { [key in string]?: Grant }, 
+permissions: { [key in string]: Grant }, 
 /**
  * How the connected device is attached; `None` while not connected or
  * when the OS does not say.

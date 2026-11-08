@@ -7,14 +7,17 @@ use freewheel_core::resolve::ProcessLister;
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
 
 pub struct SysinfoLister {
-    system: System,
+    /// None when sysinfo can't read the process list here; then nothing
+    /// counts as running.
+    system: Option<System>,
 }
 
 impl SysinfoLister {
     pub fn new() -> Self {
-        Self {
-            system: System::new(),
-        }
+        let system = System::new()
+            .inspect_err(|e| tracing::warn!(error = %e, "can't read the process list"))
+            .ok();
+        Self { system }
     }
 }
 
@@ -22,12 +25,15 @@ impl ProcessLister for SysinfoLister {
     /// Refreshes the process list once per call; the watcher asks for one
     /// name per poll, so this is one refresh per poll.
     fn is_running(&mut self, name: &str) -> bool {
-        self.system.refresh_processes_specifics(
+        let Some(system) = self.system.as_mut() else {
+            return false;
+        };
+        system.refresh_processes_specifics(
             ProcessesToUpdate::All,
             true,
             ProcessRefreshKind::nothing(),
         );
-        self.system
+        system
             .processes_by_exact_name(OsStr::new(name))
             .next()
             .is_some()
