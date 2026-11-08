@@ -133,7 +133,33 @@ pub fn manifest_url() -> String {
 /// Only https downloads (and, with `loopback`, the local test server:
 /// e2e builds and the tests only).
 pub fn url_allowed(url: &str, loopback: bool) -> bool {
-    url.starts_with("https://") || (loopback && url.starts_with("http://127.0.0.1:"))
+    url.starts_with("https://") || (http_allowed(loopback) && is_local_test_server(url))
+}
+
+/// Whether plain http may be used at all: only for the local test server, and
+/// only in builds that have one (the tests and the e2e feature). Shipped
+/// builds are compiled without that path: always false, whatever is asked.
+#[cfg(any(test, feature = "e2e"))]
+pub const fn http_allowed(loopback: bool) -> bool {
+    loopback
+}
+
+/// Shipped builds: https only, whatever is asked.
+#[cfg(not(any(test, feature = "e2e")))]
+pub const fn http_allowed(_loopback: bool) -> bool {
+    false
+}
+
+/// The local test server (e2e builds and the tests only).
+#[cfg(any(test, feature = "e2e"))]
+fn is_local_test_server(url: &str) -> bool {
+    url.starts_with("http://127.0.0.1:")
+}
+
+/// Shipped builds have no local test server.
+#[cfg(not(any(test, feature = "e2e")))]
+fn is_local_test_server(_url: &str) -> bool {
+    false
 }
 
 /// Shipped builds never allow the loopback server.
@@ -1016,7 +1042,9 @@ impl Updater {
             Phase::Idle => return Err(UpdateError::Nothing),
         };
         match &self.source {
-            Source::Release { pubkey, .. } => {
+            Source::Release {
+                pubkey, loopback, ..
+            } => {
                 let pubkey = pubkey.clone().ok_or(UpdateError::NotConfigured)?;
                 let target = self
                     .target
@@ -1031,7 +1059,8 @@ impl Updater {
                     std::fs::create_dir_all(&self.temp).map_err(|e| {
                         UpdateError::Install(format!("{}: {e}", self.temp.display()))
                     })?;
-                    let data = fetch_package(&offer.platform.url, &file, &mut on).await?;
+                    let data =
+                        fetch_package(&offer.platform.url, *loopback, &file, &mut on).await?;
                     verify(
                         &pubkey,
                         &data,
@@ -1090,8 +1119,11 @@ impl Updater {
     }
 }
 
-fn client() -> Result<reqwest::Client, UpdateError> {
+/// The HTTP client: https only (redirects included) unless this is the
+/// local test server of a test or e2e build.
+fn client(loopback: bool) -> Result<reqwest::Client, UpdateError> {
     reqwest::Client::builder()
+        .https_only(!http_allowed(loopback))
         .user_agent(concat!("freewheel/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(Duration::from_secs(15))
         .read_timeout(Duration::from_secs(30))
@@ -1104,7 +1136,7 @@ async fn fetch_manifest(url: &str, loopback: bool) -> Result<Option<Manifest>, U
     if !url_allowed(url, loopback) {
         return Err(UpdateError::Network(format!("not an https URL: {url}")));
     }
-    let res = client()?
+    let res = client(loopback)?
         .get(url)
         .send()
         .await
@@ -1128,11 +1160,12 @@ async fn fetch_manifest(url: &str, loopback: bool) -> Result<Option<Manifest>, U
 /// Streams `url` into `dest` with progress; returns the bytes.
 async fn fetch_package(
     url: &str,
+    loopback: bool,
     dest: &Path,
     on: &mut (impl FnMut(DownloadEvent) + Send),
 ) -> Result<Vec<u8>, UpdateError> {
     let net = |e: reqwest::Error| UpdateError::Network(e.to_string());
-    let mut res = client()?.get(url).send().await.map_err(net)?;
+    let mut res = client(loopback)?.get(url).send().await.map_err(net)?;
     if !res.status().is_success() {
         return Err(UpdateError::Network(format!(
             "{url}: HTTP {}",

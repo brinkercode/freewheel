@@ -120,7 +120,7 @@ pub async fn fetch_body(
     // Belt and braces: reqwest itself refuses anything but https unless this
     // is the local test server (and redirects are off, so it can't be led away).
     let client = reqwest::Client::builder()
-        .https_only(!loopback)
+        .https_only(!selfupdate::http_allowed(loopback))
         .user_agent(concat!("freewheel/", env!("CARGO_PKG_VERSION")))
         .timeout(timeout)
         .connect_timeout(timeout)
@@ -429,12 +429,15 @@ mod tests {
             matches!(&r, Err(NotesError::Network(e)) if e.contains("not an https URL")),
             "{r:?}"
         );
-        let r = block(fetch_body(
+        // Even the tests' loopback allowance is the local test server only.
+        assert!(!selfupdate::url_allowed(
             "http://example.com/tags/v1.0.0",
-            Duration::from_secs(1),
-            true,
+            true
         ));
-        assert!(matches!(r, Err(NotesError::Network(_))), "{r:?}");
+        assert!(selfupdate::url_allowed(
+            &format!("{RELEASES_API}/tags/v1.0.0"),
+            false
+        ));
     }
 
     #[test]

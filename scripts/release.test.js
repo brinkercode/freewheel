@@ -84,6 +84,25 @@ test("what ships is checked: no e2e-only code, the pubkey baked in, the Windows 
   expect(notes.match(/"FREEWHEEL_E2E_RELEASES_API"/g)).toHaveLength(2);
 });
 
+test("release builds can only reach GitHub over https: no plain-http path is compiled in", () => {
+  // release.yml builds without the e2e feature (only the e2e workflows enable it)...
+  const builds = release.split("\n").filter((l) => /tauri -- build|cargo build/.test(l));
+  expect(builds.length).toBeGreaterThanOrEqual(3);
+  for (const l of builds) expect(l).not.toMatch(/--features|\be2e\b/);
+  expect(release).not.toMatch(/--features/);
+  // ...and without it (and outside the tests) the local test server is not compiled in:
+  // http is refused, and every client is https_only.
+  const rust = read("../src-tauri/src/selfupdate.rs");
+  expect(rust).toMatch(/#\[cfg\(not\(any\(test, feature = "e2e"\)\)\)\]\npub const fn http_allowed\(_loopback: bool\) -> bool \{\n {4}false\n\}/);
+  expect(rust).toMatch(/#\[cfg\(not\(any\(test, feature = "e2e"\)\)\)\]\nfn is_local_test_server\(_url: &str\) -> bool \{\n {4}false\n\}/);
+  expect(rust.match(/"http:\/\/127\.0\.0\.1:"/g)).toHaveLength(1); // only in the test/e2e is_local_test_server
+  expect(rust).toMatch(/fn is_local_test_server\(url: &str\) -> bool \{\n {4}url\.starts_with\("http:\/\/127\.0\.0\.1:"\)/);
+  expect(rust).toContain(".https_only(!http_allowed(loopback))");
+  const notes = read("../src-tauri/src/release_notes.rs");
+  expect(notes).toContain(".https_only(!selfupdate::http_allowed(loopback))");
+  expect(notes).not.toMatch(/https_only\(!loopback\)/);
+});
+
 test("no installer: the bundle is the macOS .app only, macOS 15.0", () => {
   expect(conf.bundle.targets).toEqual(["app"]);
   expect(conf.bundle.createUpdaterArtifacts).toBeUndefined();
