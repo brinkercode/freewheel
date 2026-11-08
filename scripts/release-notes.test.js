@@ -318,3 +318,22 @@ test("release.yml makes the hand-written notes the release body and What's new",
   expect(release).toContain('node scripts/release-notes.mjs filter --version "${GITHUB_REF_NAME#v}" --in');
   expect(release).not.toContain("release-notes.mjs curated");
 });
+
+test("one cleanup: the app's What's new runs this script's appNotes (src/releaseNotes.js), and the shared GitHub-release fixture cleans as expected", async () => {
+  const app = await import("../src/releaseNotes.js");
+  const script = await import("./release-notes.mjs");
+  for (const name of ["appNotes", "userNotes", "appBullet", "userBullet", "parseHeader"]) expect(script[name], name).toBe(app[name]);
+  const fixture = (f) => readFileSync(new URL(`./fixtures/release-notes/${f}`, import.meta.url), "utf8");
+  expect(app.appNotes(fixture("github-release.md"))).toBe(fixture("github-release.app.md"));
+  // The release body a curated version publishes (release-notes/v1.0.0.md) keeps its content.
+  const curated = readFileSync(new URL("../release-notes/v1.0.0.md", import.meta.url), "utf8");
+  expect(app.appNotes(curated)).toContain("### What you can do");
+});
+
+test("app bullets start with a capital, but names keep their case (freewheel, macOS)", async () => {
+  const { appBullet } = await import("../src/releaseNotes.js");
+  expect(appBullet("**keys:** a key opens a folder ([#3](https://github.com/brinkercode/freewheel/issues/3))")).toBe("A key opens a folder");
+  expect(appBullet("freewheel starts faster")).toBe("freewheel starts faster");
+  expect(appBullet("macOS 15 (Apple Silicon and Intel): x.dmg")).toBe("macOS 15 (Apple Silicon and Intel): x.dmg");
+  expect(appBullet("iPhone-style toggles")).toBe("iPhone-style toggles");
+});

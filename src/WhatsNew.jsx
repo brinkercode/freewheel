@@ -1,6 +1,9 @@
 // What's new after an update (src/whatsNew.js decides when): a notice under
 // the toolbar with a 'What's new in vX.Y.Z' button, and the notes page it
-// opens, which links to the version's GitHub release. The notes are the
+// opens, which links to the version's GitHub release. Without notes stored
+// from the update, the page shows the release's notes from GitHub
+// (src/whatsNew.js loadNotes; App.jsx asks while it shows 'Getting the
+// notes from GitHub…'). The notes are the
 // safe markdown subset of src/notesMarkdown.js, drawn as React elements
 // (never as HTML); their links open in the browser through the opener.
 import { parseNotes } from "./notesMarkdown.js";
@@ -97,7 +100,13 @@ export function WhatsNewPage({ news, onDone, openRelease, openLink = openNotesLi
       <div className="tab-column">
         <h2 className="tab-title">What’s new in v{news.version}</h2>
         <section className="card card-stack whats-new-notes" aria-label="Release notes">
-          <NotesBody markdown={news.notes} openLink={globalThis.window?.__TAURI__ ? openLink : null} />
+          {news.loading ? (
+            <div className="card-text" role="status">
+              Getting the notes from GitHub…
+            </div>
+          ) : (
+            <NotesBody markdown={news.notes} openLink={globalThis.window?.__TAURI__ ? openLink : null} />
+          )}
         </section>
         <div className="row">
           <a className="grow" href={news.url} target="_blank" rel="noreferrer" onClick={open}>

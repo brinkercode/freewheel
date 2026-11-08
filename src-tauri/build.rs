@@ -17,6 +17,7 @@ const COMMANDS: &[&str] = &[
     "export_logs",
     "set_detailed_logs",
     "open_release_page",
+    "release_notes",
     "simulate",
     "sim_jump",
     "sim_tray",

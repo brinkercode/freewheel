@@ -37,6 +37,7 @@ mod mac_app_volume;
 mod macos_volume;
 mod notify;
 mod permissions;
+mod release_notes;
 mod resolve_watch;
 mod selfupdate;
 mod settings;
@@ -278,6 +279,7 @@ fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::
             settings::set_detailed_logs,
             settings::desktop_hints,
             updates::open_release_page,
+            release_notes::release_notes,
             selfupdate::update_check,
             selfupdate::update_download,
             selfupdate::update_install
@@ -333,6 +335,7 @@ fn main() {
     // `--simulate` never updates for real: the same update state machine
     // runs with the simulated source (src/selfupdate.rs).
     let updater = !simulate && selfupdate::configured();
+    builder = builder.manage(release_notes::NotesCache::default());
     builder = builder.manage(if simulate {
         selfupdate::Updater::simulated(&version)
     } else {
@@ -366,6 +369,7 @@ fn main() {
             tray::tray_update_state,
             app_windows::settings_ready,
             updates::open_release_page,
+            release_notes::release_notes,
             selfupdate::update_check,
             selfupdate::update_download,
             selfupdate::update_install

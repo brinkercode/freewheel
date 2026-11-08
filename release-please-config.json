@@ -62,7 +62,6 @@
   "packages": {
     ".": {
       "package-name": "freewheel",
-      "release-as": "1.0.0",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
         {
