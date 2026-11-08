@@ -243,3 +243,30 @@ test("a tray reply read before a newer tray event does not undo it (Checking for
   expect(item().textContent).toContain("Checking for updates…");
   await act(async () => state?.(checking));
 });
+
+test("a key pressed twice quickly reaches the device as two presses, in order (one control in flight at a time)", async () => {
+  await mount();
+  const invoke = fake.invoke;
+  const waiting = [];
+  const applied = [];
+  // The app answers concurrent `simulate` calls in any order (an async
+  // command on worker threads): here the newest call in flight goes first.
+  window.__TAURI__.core.invoke = (cmd, args) =>
+    cmd !== "simulate" || args.control.type !== "Key"
+      ? invoke(cmd, args)
+      : new Promise((ok) => waiting.push(() => (applied.push(`${args.control.key} ${args.control.down ? "down" : "up"}`), ok(invoke(cmd, args)))));
+  const trans = screen.getAllByRole("button").find((b) => b.textContent === LABELS.Trans);
+  await act(async () => {
+    for (let i = 0; i < 2; i++) {
+      fireEvent.pointerDown(trans);
+      fireEvent.pointerUp(trans);
+    }
+  });
+  let inFlight = 0;
+  while (waiting.length) {
+    inFlight = Math.max(inFlight, waiting.length);
+    await act(async () => waiting.pop()());
+  }
+  expect(applied).toEqual(["Trans down", "Trans up", "Trans down", "Trans up"]);
+  expect(inFlight).toBe(1);
+});

@@ -144,16 +144,20 @@ export default function Simulator({ initial = null }) {
     if (lines.length) setLog((l) => [...lines.map((t) => ({ t, kind, n: ++lineNo.current })).reverse(), ...l].slice(0, 40));
   };
 
-  // Controls run in order; each answer's toasts go to the log.
-  const send = (...controls) =>
-    controls
+  // The controls sent so far, one after another: `simulate` is an async
+  // command, so two calls in flight at once can reach the device in either
+  // order (a key's release after the next press of it loses that press).
+  const queue = useRef(Promise.resolve());
+  // Controls run in order, after every control sent before; each answer's toasts go to the log.
+  const send = (...controls) => {
+    const done = controls
       .reduce(
         (p, c) =>
           p.then(() => simulate(c)).then((s) => {
             note(s.toasts);
             return s;
           }),
-        Promise.resolve(),
+        queue.current,
       )
       .then(
         (s) => {
@@ -163,6 +167,9 @@ export default function Simulator({ initial = null }) {
         },
         (e) => note([String(e)], "error"),
       );
+    queue.current = done;
+    return done;
+  };
 
   const go = (to, said) =>
     jump(to).then(
