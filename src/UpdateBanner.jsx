@@ -24,6 +24,7 @@ const ERROR_TITLE = {
 export function errorTitle(update) {
   if (update.notWritable) return "freewheel can’t update itself in this folder";
   if (update.badSignature) return "The new version couldn’t be verified";
+  if (update.cantInstall) return "freewheel can’t update itself here";
   return ERROR_TITLE[update.during];
 }
 
@@ -31,6 +32,7 @@ export function errorTitle(update) {
 export function errorSub(update) {
   if (update.notWritable) return "Move the freewheel folder somewhere you can change, like Documents, or download the new version from GitHub.";
   if (update.badSignature) return "Nothing was changed. Try again.";
+  if (update.cantInstall) return `${update.reason || "This copy of freewheel can’t replace itself"}: download the new version from GitHub.`;
   return "Check your internet connection and try again.";
 }
 

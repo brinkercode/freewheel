@@ -68,6 +68,7 @@ export function updateText(update) {
       if (update.notWritable)
         return `freewheel can’t update itself in ${update.folder || "this folder"}. Move the freewheel folder somewhere you can change, like Documents, or download freewheel ${v} from GitHub.`;
       if (update.badSignature) return `The download of freewheel ${v} couldn’t be verified, so nothing was changed. Try again.`;
+      if (update.cantInstall) return cantInstallText(update);
       if (update.during === "download") return `freewheel ${v} didn’t download. Check your internet connection and try again.`;
       if (update.during === "install") return `freewheel ${v} didn’t install. Try again.`;
       return "Couldn’t check for updates. Check your internet connection and try again.";
@@ -76,9 +77,17 @@ export function updateText(update) {
   }
 }
 
+/** Why this copy of freewheel can't update itself (the updater's reason), and where the new version is. */
+export function cantInstallText(update) {
+  const why = update.reason || "freewheel can’t update itself here";
+  return update.version ? `freewheel ${update.version} is available. ${why}: download it from GitHub.` : `${why}: download the new version from GitHub.`;
+}
+
 /** The version card's button for each update state: what it says, does and whether it spins. */
-export function updateButton(update, { onCheck, onDownload, onRestart } = {}) {
+export function updateButton(update, { onCheck, onDownload, onRestart, onReleasePage } = {}) {
   const status = update?.status;
+  if (status === "error" && update.cantInstall && update.version)
+    return { label: "Open the download page", primary: true, onClick: onReleasePage && (() => onReleasePage(update.version)), disabled: !onReleasePage };
   if (status === "checking") return { label: "Check for updates", spin: true, disabled: true };
   if (status === "downloading") return { label: "Downloading…", spin: true, disabled: true };
   if (status === "restarting") return { label: "Restarting…", spin: true, disabled: true };
@@ -89,9 +98,9 @@ export function updateButton(update, { onCheck, onDownload, onRestart } = {}) {
   return { label: status === "error" ? "Try again" : "Check for updates", onClick: onCheck, disabled: !onCheck };
 }
 
-export default function General({ settings, onSetting, startAtLogin, onStartAtLogin, version, update, onCheck, onDownload, onRestart, onWhatsNew, trayHint = null }) {
+export default function General({ settings, onSetting, startAtLogin, onStartAtLogin, version, update, onCheck, onDownload, onRestart, onReleasePage, onWhatsNew, trayHint = null }) {
   const appearance = settings?.appearance ?? "System";
-  const button = updateButton(update, { onCheck, onDownload, onRestart });
+  const button = updateButton(update, { onCheck, onDownload, onRestart, onReleasePage });
   return (
     <div className="tab-page" data-screen-label="General">
       <div className="tab-column">

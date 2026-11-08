@@ -179,6 +179,12 @@ pub enum UpdateError {
     BadSignature(String),
     /// The app's folder cannot be written (e.g. Program Files).
     NotWritable(PathBuf),
+    /// The running app is not one freewheel can swap for a new version (on
+    /// Linux it doesn't run from its AppImage): no update is offered.
+    CantInstall(String),
+    /// A newer `version` is out, but this app can't swap itself for it
+    /// ([`Self::CantInstall`]'s `reason`): it is not offered.
+    NotInstallable { version: String, reason: String },
     /// Staging or swapping failed (the old version was put back).
     Install(String),
     /// Download or install called with nothing to download or install.
@@ -195,6 +201,10 @@ impl std::fmt::Display for UpdateError {
             UpdateError::NoPackage(e) => write!(f, "no-package: {e}"),
             UpdateError::BadSignature(e) => write!(f, "bad-signature: {e}"),
             UpdateError::NotWritable(dir) => write!(f, "not-writable: {}", dir.display()),
+            UpdateError::CantInstall(e) => write!(f, "cant-install: {e}"),
+            UpdateError::NotInstallable { version, reason } => {
+                write!(f, "not-installable: {version}: {reason}")
+            }
             UpdateError::Install(e) => write!(f, "install: {e}"),
             UpdateError::Nothing => write!(f, "nothing: no update to download or install"),
         }
@@ -330,7 +340,7 @@ pub fn install_target(exe: &Path, bundle: bool) -> Result<PathBuf, UpdateError> 
         .find(|p| p.extension().is_some_and(|e| e == "app"))
         .map(Path::to_path_buf)
         .ok_or_else(|| {
-            UpdateError::Install(format!("{} is not inside freewheel.app", exe.display()))
+            UpdateError::CantInstall(format!("{} is not inside freewheel.app", exe.display()))
         })
 }
 
@@ -339,9 +349,9 @@ pub fn appimage_target(appimage: Option<&std::ffi::OsStr>) -> Result<PathBuf, Up
     let path = appimage
         .map(PathBuf::from)
         .filter(|p| p.is_absolute())
-        .ok_or_else(|| UpdateError::Install(NOT_APPIMAGE.into()))?;
+        .ok_or_else(|| UpdateError::CantInstall(NOT_APPIMAGE.into()))?;
     if !path.is_file() {
-        return Err(UpdateError::Install(format!(
+        return Err(UpdateError::CantInstall(format!(
             "{NOT_APPIMAGE} ({} is not there)",
             path.display()
         )));
@@ -354,8 +364,8 @@ pub fn current_target() -> Result<PathBuf, UpdateError> {
     if cfg!(target_os = "linux") {
         return appimage_target(std::env::var_os(APPIMAGE_ENV).as_deref());
     }
-    let exe =
-        std::env::current_exe().map_err(|e| UpdateError::Install(format!("where am I: {e}")))?;
+    let exe = std::env::current_exe()
+        .map_err(|e| UpdateError::CantInstall(format!("where am I: {e}")))?;
     let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
     install_target(&dunce(exe), cfg!(target_os = "macos"))
 }
@@ -836,7 +846,8 @@ pub struct Updater {
     current: Mutex<String>,
     phase: Mutex<Phase>,
     temp: PathBuf,
-    target: Option<PathBuf>,
+    /// What an update swaps, or why this app can't be updated in place.
+    target: Result<PathBuf, UpdateError>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -854,7 +865,7 @@ impl Updater {
                 loopback: LOOPBACK,
             },
             temp_dir(),
-            current_target().ok(),
+            current_target(),
         )
     }
 
@@ -874,7 +885,7 @@ impl Updater {
                 )),
             },
             temp_dir(),
-            None,
+            Err(UpdateError::CantInstall("simulated".into())),
         )
     }
 
@@ -895,11 +906,31 @@ impl Updater {
                 loopback: true,
             },
             temp,
-            Some(target),
+            Ok(target),
         )
     }
 
-    fn with_source(current: &str, source: Source, temp: PathBuf, target: Option<PathBuf>) -> Self {
+    /// [`Self::for_test`] for an app that can't be updated in place.
+    #[cfg(test)]
+    fn for_test_without_target(current: &str, url: &str, pubkey: &str, why: UpdateError) -> Self {
+        Self::with_source(
+            current,
+            Source::Release {
+                url: url.into(),
+                pubkey: Some(pubkey.into()),
+                loopback: true,
+            },
+            std::env::temp_dir().join("freewheel-test-unused"),
+            Err(why),
+        )
+    }
+
+    fn with_source(
+        current: &str,
+        source: Source,
+        temp: PathBuf,
+        target: Result<PathBuf, UpdateError>,
+    ) -> Self {
         Self {
             source,
             current: Mutex::new(current.to_string()),
@@ -991,6 +1022,24 @@ impl Updater {
                                 platform.url
                             )));
                         }
+                        // A newer version this app can't swap itself for
+                        // (#198): say why instead of offering it.
+                        if let Err(e) = &self.target {
+                            tracing::info!(
+                                current = %current,
+                                newer = %manifest.version,
+                                error = %e,
+                                "update: newer version not offered"
+                            );
+                            *lock(&self.phase) = Phase::Idle;
+                            return Err(UpdateError::NotInstallable {
+                                version: manifest.version.clone(),
+                                reason: match e {
+                                    UpdateError::CantInstall(reason) => reason.clone(),
+                                    other => other.to_string(),
+                                },
+                            });
+                        }
                         Some(Offer {
                             version: manifest.version.clone(),
                             notes: manifest.notes.clone(),
@@ -1046,10 +1095,7 @@ impl Updater {
                 pubkey, loopback, ..
             } => {
                 let pubkey = pubkey.clone().ok_or(UpdateError::NotConfigured)?;
-                let target = self
-                    .target
-                    .clone()
-                    .ok_or_else(|| UpdateError::Install("no install target".into()))?;
+                let target = self.target.clone()?;
                 // Before any download: an update that can't be put in place is no use.
                 check_writable(target.parent().unwrap_or(&target))?;
                 let file = self
@@ -1108,10 +1154,7 @@ impl Updater {
             *lock(&self.phase) = Phase::Idle;
             return Ok(Installed::Simulated(offer.version));
         }
-        let target = self
-            .target
-            .clone()
-            .ok_or_else(|| UpdateError::Install("no install target".into()))?;
+        let target = self.target.clone()?;
         install_package(&file, &target, PackageKind::current())?;
         let _ = remove_path(&self.temp);
         *lock(&self.phase) = Phase::Idle;
@@ -1794,6 +1837,47 @@ mod tests {
     }
 
     #[test]
+    fn a_newer_version_is_not_offered_when_this_app_cant_install_it() {
+        let base = serve(vec![("/pkg", 200, b"x".to_vec())]);
+        let manifest = served_manifest(&base, "/pkg");
+        let up_to_date = serve(vec![("/none.json", 204, Vec::new())]);
+        let base = serve(vec![("/latest.json", 200, manifest)]);
+        let why = UpdateError::CantInstall(NOT_APPIMAGE.into());
+        let u = Updater::for_test_without_target(
+            "0.1.0",
+            &format!("{base}/latest.json"),
+            TEST_PUBKEY,
+            why.clone(),
+        );
+        // Not "0.2.0 is available" then a download that fails: the check
+        // itself says why there is nothing to install.
+        let e = tauri::async_runtime::block_on(u.check()).unwrap_err();
+        assert_eq!(
+            e,
+            UpdateError::NotInstallable {
+                version: "0.2.0".into(),
+                reason: NOT_APPIMAGE.into()
+            }
+        );
+        assert_eq!(
+            e.to_string(),
+            "not-installable: 0.2.0: freewheel updates itself only when it runs from its AppImage"
+        );
+        assert_eq!(
+            tauri::async_runtime::block_on(u.download(|_| {})),
+            Err(UpdateError::Nothing)
+        );
+        // Up to date is still up to date.
+        let u = Updater::for_test_without_target(
+            "0.1.0",
+            &format!("{up_to_date}/none.json"),
+            TEST_PUBKEY,
+            why,
+        );
+        assert_eq!(tauri::async_runtime::block_on(u.check()), Ok(None));
+    }
+
+    #[test]
     fn check_download_and_verify_over_http_then_a_bad_package_is_not_installed() {
         let package = include_bytes!("../fixtures/update/package.bin").to_vec();
         let mut tampered = package.clone();
@@ -1906,7 +1990,11 @@ mod tests {
     #[test]
     fn the_appimage_is_the_target_only_when_running_from_one() {
         let e = appimage_target(None).unwrap_err();
-        assert_eq!(e, UpdateError::Install(NOT_APPIMAGE.into()));
+        assert_eq!(e, UpdateError::CantInstall(NOT_APPIMAGE.into()));
+        assert_eq!(
+            e.to_string(),
+            "cant-install: freewheel updates itself only when it runs from its AppImage"
+        );
         assert!(appimage_target(Some("relative.AppImage".as_ref())).is_err());
         assert!(
             appimage_target(Some("/nonexistent/f.AppImage".as_ref()))
