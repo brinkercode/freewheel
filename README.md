@@ -6,7 +6,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/dark-keys.png">
-  <img alt="freewheel's Keys tab: a drawing of the Speed Editor with STOP/PLAY selected and its panel open, set to the Play/Pause media key" src="docs/images/light-keys.png" width="1000">
+  <img alt="freewheel's Keys tab: the profile picker with Default and a Photoshop profile, Default's pages under it, and a drawing of the Speed Editor with STOP/PLAY selected and its panel open, set to the Play/Pause media key" src="docs/images/light-keys.png" width="1000">
 </picture>
 
 ## What it does

@@ -812,6 +812,15 @@ export async function main(platform, argv = process.argv.slice(2)) {
       await click("simulator", `[role=group][aria-label="Keys"] button`, "Several set");
       await logged("sample mappings loaded");
       await waitFor("settings", "the drawing's Play/Pause", `return document.querySelector('.device [data-binding="StopPlay"]')?.getAttribute("title") === "Play/Pause"`, [], 20000);
+      // An example app profile next to Default in the profile picker; Default stays in use.
+      const sample = await readConfig();
+      await saveConfig({
+        ...sample,
+        layers: [...sample.layers, { id: "readme-photoshop", name: "Retouch", bindings: {} }],
+        profiles: [{ id: "readme-photoshop-profile", name: "Photoshop", color: "rose", icon: "brush", apps: [{ name: "Photoshop", windows: "Photoshop.exe", macos: "com.adobe.Photoshop" }], pages: ["readme-photoshop"] }],
+      });
+      await waitFor("settings", "the Photoshop profile", `return [...document.querySelectorAll(".profile-pill")].some((p) => p.textContent.includes("Photoshop") && p.querySelector('[data-icon="brush"]'))`, [], 20000);
+      await waitFor("settings", "Default shown", `return document.querySelector(".profile-pill.is-active")?.textContent.includes("Default")`);
       await waitFor("settings", "Connected", `return document.querySelector("button.status")?.textContent.includes("Connected")`);
       await press("SCRL");
       await waitFor("settings", "SCRL lit", `return document.querySelector('.device [data-binding="Scrl"]')?.classList.contains("is-lit")`);
