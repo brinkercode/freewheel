@@ -10,7 +10,7 @@ use ts_rs::TS;
 use crate::battery::Battery;
 use crate::config::{
     Action, Appearance, Config, JogBinding, JogMode, JogSettings, KeyCombo, Layer, Modifier,
-    OverrideMode, OverrideSettings, SaveError, Settings,
+    OverrideMode, OverrideSettings, PerOsTargets, SaveError, Settings,
 };
 use crate::connection::ConnectionStatus;
 use crate::diagnostics::{
@@ -31,6 +31,7 @@ fn generated() -> String {
         Appearance::decl(),
         Layer::decl(),
         Action::decl(),
+        PerOsTargets::decl(),
         KeyCombo::decl(),
         Modifier::decl(),
         JogMode::decl(),

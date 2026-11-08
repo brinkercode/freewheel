@@ -40,6 +40,7 @@ fn la(path: &str, args: &[&str], enabled: bool) -> Action {
         args: args.iter().map(|a| a.to_string()).collect(),
         enabled,
         cwd: None,
+        per_os: None,
     }
 }
 
@@ -183,6 +184,7 @@ fn everything() -> Config {
             args: vec!["x".into()],
             enabled: true,
             cwd: Some(r"C:\Tools".into()),
+            per_os: None,
         },
         Action::LayerPush {
             target: "studio".into(),
@@ -579,16 +581,23 @@ fn opening_apps_by_path_env_var_name_object_and_per_os() {
             path: r"C:\Tools\run.cmd".into(),
             args: vec!["--flag".into(), "file.txt".into()],
             enabled: true,
-            cwd: Some(r"C:\Users\me\AppData\Local".into())
+            cwd: Some(r"C:\Users\me\AppData\Local".into()),
+            per_os: None,
         }
     );
     assert_eq!(
         b["Cam4"],
-        la(
-            "explorer.exe",
-            &[r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Spotify.lnk"],
-            true
-        )
+        Action::LaunchApp {
+            path: "explorer.exe".into(),
+            args: vec![r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Spotify.lnk".into()],
+            enabled: true,
+            cwd: None,
+            per_os: Some(crate::config::PerOsTargets {
+                windows: Some("Spotify".into()),
+                macos: Some("com.spotify.client".into()),
+                linux: Some("spotify.desktop".into()),
+            }),
+        }
     );
     assert_eq!(b["Cam5"], la("Photoshop", &[], false));
     assert!(matches!(
@@ -606,6 +615,80 @@ fn opening_apps_by_path_env_var_name_object_and_per_os() {
     // An off key keeps what the file said, so a backup writes it back.
     let out = String::from_utf8(export(&got.config, &win())).unwrap();
     assert!(out.contains("\"CAM5\": \"open Photoshop\""), "{out}");
+}
+
+const THREE_OS: &str = r#"{
+  "version": 2,
+  "pages": {
+    "Main": {
+      "CAM1": { "open": { "windows": "C:\\Tools\\run.cmd", "macos": "com.spotify.client", "linux": "spotify.desktop" }, "args": ["--fast"], "cwd": "C:\\Work" },
+      "CAM2": { "open": { "windows": "Spotify", "macos": "/Applications/Spotify.app", "linux": "/usr/bin/spotify" } },
+      "CAM3": { "open": { "macos": "com.apple.Safari", "linux": "firefox" } }
+    }
+  }
+}"#;
+
+/// The `open` of every key on the first page of an exported file.
+fn opens(file: &[u8]) -> Vec<(String, serde_json::Value)> {
+    let v: serde_json::Value = serde_json::from_slice(file).unwrap();
+    let page = v["pages"].as_object().unwrap().values().next().unwrap();
+    page.as_object()
+        .unwrap()
+        .iter()
+        .map(|(k, a)| (k.clone(), a.clone()))
+        .collect()
+}
+
+#[test]
+fn a_three_os_file_restored_on_windows_backs_up_with_every_os() {
+    let got = read_ok(THREE_OS);
+    let b = &got.config.layers[0].bindings;
+    // This computer runs its own entry ...
+    assert!(
+        matches!(&b["Cam1"], Action::LaunchApp { path, args, enabled: true, .. }
+        if path == r"C:\Tools\run.cmd" && args == &["--fast"])
+    );
+    assert!(
+        matches!(&b["Cam2"], Action::LaunchApp { path, enabled: true, .. } if path == "explorer.exe")
+    );
+    assert!(matches!(
+        &b["Cam3"],
+        Action::LaunchApp { enabled: false, .. }
+    ));
+    // ... and config.json keeps the others, so a restart loses nothing.
+    let saved = serde_json::to_string(&got.config).unwrap();
+    let reloaded: Config = serde_json::from_str(&saved).unwrap();
+    assert_eq!(reloaded, got.config);
+    let out = export(&got.config, &win());
+    let want: serde_json::Value = serde_json::from_str(THREE_OS).unwrap();
+    let want: Vec<(String, serde_json::Value)> = want["pages"]["Main"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .map(|(k, a)| (k.clone(), a.clone()))
+        .collect();
+    assert_eq!(opens(&out), want, "{}", String::from_utf8_lossy(&out));
+    // The exported file restores to the same keys, and exports the same again.
+    let again = import(&Config::default(), &out, true, &win()).unwrap();
+    assert_eq!(
+        again.config.layers[0].bindings,
+        got.config.layers[0].bindings
+    );
+    assert_eq!(export(&again.config, &win()), out);
+}
+
+#[test]
+fn picking_another_app_here_changes_only_this_os_entry() {
+    let mut got = read_ok(THREE_OS).config;
+    if let Some(Action::LaunchApp { path, args, .. }) = got.layers[0].bindings.get_mut("Cam2") {
+        *path = r"C:\Tools\Round Trip.exe".into();
+        args.clear();
+    }
+    let out = opens(&export(&got, &win()));
+    assert_eq!(
+        out[1].1["open"],
+        serde_json::json!({ "windows": "C:\\Tools\\Round Trip.exe", "macos": "/Applications/Spotify.app", "linux": "/usr/bin/spotify" })
+    );
 }
 
 #[test]

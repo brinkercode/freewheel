@@ -179,7 +179,7 @@ in any case; a bare shortcut needs no word.
 | `wheel brightness` | `wheel brightness` | Turns the wheel into a brightness knob. |
 | `wheel mode <mode>` | `wheel mode jog` | Switches the wheel to a mode, as pressing SHTL, JOG or SCRL does: jog, scroll, shuttle, volume or brightness. |
 | `nothing` | `nothing` | The key does nothing (the same as leaving it out). SHTL, JOG and SCRL left unset switch the wheel to their mode. |
-| `{ "open": ..., "args": [...], "cwd": ... }` | `{ "open": "C:\\Tools\\run.cmd", "args": ["--fast", "file.txt"], "cwd": "%USERPROFILE%" }` | open with arguments and a start folder. open may also be { "windows": ..., "macos": ..., "linux": ... } for one file shared by several computers. |
+| `{ "open": ..., "args": [...], "cwd": ... }` | `{ "open": "C:\\Tools\\run.cmd", "args": ["--fast", "file.txt"], "cwd": "%USERPROFILE%" }` | open with arguments and a start folder. open may also be { "windows": ..., "macos": ..., "linux": ... } for one file shared by several computers; a backup writes every OS back. |
 <!-- end generated: actions -->
 
 Notes:
@@ -205,7 +205,9 @@ Notes:
   program starts in. `open` may be one target, or one per OS (`"windows"`,
   `"macos"`, `"linux"`, any of them) so a single shared file works on every
   computer: each computer uses its own line, and a computer whose line is
-  missing gets the key turned off, with a note.
+  missing gets the key turned off, with a note. freewheel keeps every line:
+  a Back up writes all of them again, with this computer's line updated if
+  you picked another app for the key here.
 
 ## Shortcuts
 

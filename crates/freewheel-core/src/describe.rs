@@ -382,6 +382,7 @@ mod tests {
             args: args.iter().map(|s| s.to_string()).collect(),
             enabled: true,
             cwd: None,
+            per_os: None,
         }
     }
 
@@ -425,6 +426,7 @@ mod tests {
             args: vec!["--fw".into()],
             enabled: false,
             cwd: None,
+            per_os: None,
         };
         assert_eq!(
             action(&exe, &layers, Detail::Path),

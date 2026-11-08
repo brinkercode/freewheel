@@ -79,6 +79,22 @@ pub enum OverrideMode {
     Brightness,
 }
 
+/// One `open` target per OS, as a mappings file wrote them (an app name,
+/// path, bundle id, .desktop id or web address).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct PerOsTargets {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub windows: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub macos: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub linux: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub enum Action {
@@ -103,6 +119,12 @@ pub enum Action {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(test, ts(optional))]
         cwd: Option<String>,
+        /// What a mappings file's per-OS `open` said for each OS, kept so a
+        /// backup writes every OS back; `path`/`args` are this computer's
+        /// one. Left out of config.json when the file had a single target.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
+        per_os: Option<PerOsTargets>,
     },
     LayerPush {
         target: LayerId,
@@ -694,12 +716,14 @@ mod tests {
                 args: vec!["-x".into()],
                 enabled: false,
                 cwd: None,
+                per_os: None,
             },
             Action::LaunchApp {
                 path: "app.exe".into(),
                 args: vec![],
                 enabled: true,
                 cwd: None,
+                per_os: None,
             },
             Action::LayerPush {
                 target: "edit".into(),
@@ -1075,6 +1099,7 @@ mod tests {
             args: vec!["-x".into()],
             enabled: true,
             cwd: None,
+            per_os: None,
         };
         let mut config = parse_for_save(&valid_json()).unwrap();
         config.layers[1]
@@ -1278,6 +1303,7 @@ mod tests {
             args: vec!["--x".into()],
             enabled: true,
             cwd: None,
+            per_os: None,
         };
         if let Some(jog) = theirs.jog.per_mode.values_mut().next() {
             jog.left = Some(launch.clone());

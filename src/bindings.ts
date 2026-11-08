@@ -14,7 +14,15 @@ export type Action = { "Hotkey": { combo: KeyCombo, } } | { "Held": { combo: Key
  * The folder the app starts in (a mappings file's `cwd`); `None`:
  * freewheel's own. Left out of config.json when unset.
  */
-cwd?: string, } } | { "LayerPush": { target: string, } } | { "SetJogMode": { mode: JogMode, } } | { "OverrideToggle": { mode: OverrideMode, } };
+cwd?: string, 
+/**
+ * What a mappings file's per-OS `open` said for each OS, kept so a
+ * backup writes every OS back; `path`/`args` are this computer's
+ * one. Left out of config.json when the file had a single target.
+ */
+per_os?: PerOsTargets, } } | { "LayerPush": { target: string, } } | { "SetJogMode": { mode: JogMode, } } | { "OverrideToggle": { mode: OverrideMode, } };
+
+export type PerOsTargets = { windows?: string, macos?: string, linux?: string, };
 
 export type KeyCombo = { modifiers: Array<Modifier>, key: string, };
 

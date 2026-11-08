@@ -194,6 +194,7 @@ mod tests {
                 args: vec!["--diary".into()],
                 enabled: true,
                 cwd: None,
+                per_os: None,
             },
         );
         config.jog.default_mode = JogMode::Volume;
@@ -210,6 +211,7 @@ mod tests {
                 args: vec!["https://example.com/private?token=1".into()],
                 enabled: false,
                 cwd: None,
+                per_os: None,
             },
         );
         let summary = config_summary(&config);
