@@ -9,7 +9,7 @@ body:
     id: os
     attributes:
       label: Your computer's system and version
-      description: For example, Windows 11 24H2 or macOS 15.1.
+      description: For example, Windows 11 24H2, macOS 15.1 or Ubuntu 24.04.
       placeholder: Windows 11 24H2
     validations:
       required: true
@@ -17,10 +17,8 @@ body:
     id: version
     attributes:
       label: freewheel version
-      description: >-
-        On Windows, open Settings > Apps > Installed apps and look under freewheel.
-        On a Mac, select freewheel in Applications and press Command + I.
-      placeholder: "0.1.0"
+      description: It's on freewheel's General tab, next to the name.
+      placeholder: "1.1.0"
     validations:
       required: true
   - type: dropdown
