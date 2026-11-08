@@ -39,6 +39,21 @@ Editor, so every screen can be tried without the hardware.
   [MIT License](LICENSE). Third-party code or assets need a compatible licence
   and an entry in [NOTICE](NOTICE).
 
+## AI-assisted contributions
+
+AI-assisted contributions are welcome and held to the same bar as any other.
+You, the human submitter, are accountable for the change:
+
+- Disclose substantial AI help in the pull request description: what the tool
+  did and what you did.
+- You must understand every line you submit and be able to explain it in
+  review.
+- Your sign-off covers AI-assisted code the same way it covers your own.
+- Generated code, text and images must be ones you have the right to submit
+  under the project's licence; don't paste in code you can't trace.
+- Run the tests yourself before opening the pull request; "the AI said it
+  works" is not a test result.
+
 ## Keeping the repository public-ready
 
 The `oss-readiness` check (`node scripts/oss-readiness.mjs`) fails on private
