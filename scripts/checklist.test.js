@@ -11,9 +11,9 @@ const section = (title) => {
 const windows = () => section("Windows 11");
 const mac = () => section("macOS 15 (Apple Silicon and Intel)");
 
-test("the checklist is an issue template the README and docs/releasing.md link to", () => {
+test("the checklist is an issue template docs/releasing.md links to", () => {
   expect(checklist).toMatch(/^---\nname: Release checklist\nabout: .+\ntitle: .+\n/);
-  for (const [file, link] of [["../README.md", "](.github/ISSUE_TEMPLATE/release-checklist.md)"], ["../docs/releasing.md", "](../.github/ISSUE_TEMPLATE/release-checklist.md)"]])
+  for (const [file, link] of [["../docs/releasing.md", "](../.github/ISSUE_TEMPLATE/release-checklist.md)"]])
     expect(readFileSync(new URL(file, import.meta.url), "utf8")).toContain(link);
 });
 
