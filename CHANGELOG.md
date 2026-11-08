@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.3](https://github.com/brinkercode/freewheel/compare/v1.1.2...v1.1.3) (2026-11-08)
+
+
+### Fixed
+
+* Check for updates says it couldn't check when the update file is missing, instead of up to date ([#226](https://github.com/brinkercode/freewheel/issues/226)) ([ce023c8](https://github.com/brinkercode/freewheel/commit/ce023c8b0813a170ab20247a87990f079b7dbf70))
+
 ## [1.1.2](https://github.com/brinkercode/freewheel/compare/v1.1.1...v1.1.2) (2026-11-08)
 
 
