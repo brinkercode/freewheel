@@ -219,7 +219,7 @@ async function main() {
     say(`B's notes (${expectedNotes.length} lines): ${expectedNotes.slice(0, 4).join(" | ")}${expectedNotes.length > 4 ? " | …" : ""}`);
     const releaseBody = readFileSync(RELEASE_BODY_FILE, "utf8");
     const githubNotes = notesText(appNotes(releaseBody));
-    server = await startUpdateServer({ manifest, package: resolve(opts.package), port: Number(opts["server-port"]), mode: "fail", releases: { [opts.to]: releaseBody } });
+    server = await startUpdateServer({ manifest, package: resolve(opts.package), port: Number(opts["server-port"]), mode: "fail", releases: { [opts.to]: releaseBody }, current: opts.from });
     const apiHits = () => server.hits.filter((h) => h.includes("/releases/tags/"));
     say(`update server on ${server.url} offering ${opts.to} (${opts.package}), mode fail`);
     const before = { exe: sha(app), files: folderFiles(), version: fileVersion(app) };
@@ -267,6 +267,16 @@ async function main() {
     await waitState("error");
     say(`  ${JSON.stringify(await card())}`);
     await shot("check failed, try again");
+
+    say("step: Try again, the latest release has no latest.json (404): still a failed check, not up to date");
+    server.setMode("missing");
+    await click(".version-card .update-button", "Try again");
+    await waitState("checking", 3000);
+    await waitState("error");
+    const missing = await card();
+    say(`  ${JSON.stringify(missing)}`);
+    if (!missing.text.includes("Couldn’t check for updates. Try again later.")) throw new Error(`a missing latest.json does not say it couldn't check: ${missing.text}`);
+    await shot("no latest.json, try again later");
 
     say("step: Try again, nothing newer");
     server.setMode("none");

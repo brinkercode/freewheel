@@ -6,7 +6,10 @@
 //
 // GET /latest.json answers by mode:
 //   "fail"      500, the check fails (the error state, Try again)
-//   "none"      204, no update (up to date)
+//   "missing"   404, the latest release has no latest.json: the check
+//               fails too (Try again later), it is not up to date
+//   "none"      200, the manifest for `current` (default 0.0.0): nothing
+//               newer (up to date)
 //   "offer"     200, the manifest, its package url pointing here
 //   "tampered"  200, the same manifest, but the package served has one
 //               byte flipped (its signature no longer matches)
@@ -20,7 +23,7 @@ import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { basename } from "node:path";
 
-export const MODES = ["fail", "none", "offer", "tampered"];
+export const MODES = ["fail", "missing", "none", "offer", "tampered"];
 
 /** The releases API path of a tag (GitHub's, as release_notes.rs asks it). */
 export const RELEASE_PATH = /^\/repos\/brinkercode\/freewheel\/releases\/tags\/v(\d+\.\d+\.\d+[^/?]*)$/;
@@ -51,9 +54,10 @@ export function chunks(size, chunk) {
  * Starts the server; resolves to { url, port, setMode, mode, close, hits }.
  * `manifest` is the parsed latest.json, `package` the path of the package it
  * names; `downloadMs` is about how long the package takes to stream;
- * `releases` maps a version to its GitHub release body.
+ * `releases` maps a version to its GitHub release body; `current` is the
+ * version mode "none" serves (the app's own: up to date).
  */
-export function startUpdateServer({ manifest, package: pkg, port = 0, mode = "fail", downloadMs = 6000, releases = {} }) {
+export function startUpdateServer({ manifest, package: pkg, port = 0, mode = "fail", downloadMs = 6000, releases = {}, current: currentVersion = "0.0.0" }) {
   let current = mode;
   const hits = [];
   const name = basename(pkg);
@@ -66,8 +70,9 @@ export function startUpdateServer({ manifest, package: pkg, port = 0, mode = "fa
     if (req.method !== "GET") return res.writeHead(405).end();
     if (req.url.split("?")[0] === "/latest.json") {
       if (current === "fail") return res.writeHead(500).end("simulated server error");
-      if (current === "none") return res.writeHead(204).end();
-      const json = localManifest(manifest, `http://127.0.0.1:${server.address().port}`);
+      if (current === "missing") return res.writeHead(404).end("Not Found");
+      const local = localManifest(manifest, `http://127.0.0.1:${server.address().port}`);
+      const json = current === "none" ? { ...local, version: currentVersion } : local;
       return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(json));
     }
     const tag = req.url.split("?")[0].match(RELEASE_PATH);

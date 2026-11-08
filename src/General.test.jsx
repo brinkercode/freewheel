@@ -97,6 +97,15 @@ test("checking finds no update: checking then up to date; a failure is an error 
   expect(html).toContain(">Try again</button>");
 });
 
+test("Check for updates with no latest.json on the latest release says it couldn't check, not up to date", () => {
+  const update = errorState("check", "no-manifest: https://github.com/brinkercode/freewheel/releases/latest/download/latest.json: HTTP 404 Not Found");
+  const html = general({ update, onCheck: () => {} });
+  expect(html).toContain("Couldn’t check for updates. Try again later.");
+  expect(html).not.toContain("up to date");
+  expect(html).not.toContain("internet connection");
+  expect(html).toContain(">Try again</button>");
+});
+
 test("an update this copy can't install says why and opens the download page, not 'check your internet connection' (#198)", () => {
   const reason = "freewheel updates itself only when it runs from its AppImage";
   const update = errorState("check", `not-installable: 1.1.0: ${reason}`);

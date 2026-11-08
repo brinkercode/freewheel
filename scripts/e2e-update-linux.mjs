@@ -181,6 +181,9 @@ async function run() {
 
     await update(EXIT.failed, "the server fails");
     untouched("after a failed check");
+    server.setMode("missing");
+    await update(EXIT.failed, "no latest.json (404)");
+    untouched("when the latest release has no latest.json");
     server.setMode("none");
     await update(EXIT.current, "nothing newer");
     untouched("when up to date");

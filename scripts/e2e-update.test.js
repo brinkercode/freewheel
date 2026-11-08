@@ -71,8 +71,12 @@ test("the local release server fails, has nothing, offers the package streamed i
   };
   try {
     expect((await fetch(`${server.url}/latest.json`)).status).toBe(500);
+    server.setMode("missing");
+    expect((await fetch(`${server.url}/latest.json`)).status).toBe(404);
     server.setMode("none");
-    expect((await fetch(`${server.url}/latest.json`)).status).toBe(204);
+    const none = await fetch(`${server.url}/latest.json`);
+    expect(none.status).toBe(200);
+    expect((await none.json()).version).toBe("0.0.0");
     server.setMode("offer");
     const latest = await (await fetch(`${server.url}/latest.json`)).json();
     expect(latest.version).toBe("0.2.0");

@@ -110,6 +110,20 @@ test("the Rust updater's error codes read as their states", () => {
   expect(errorState("download", "network: reset").badSignature).toBeUndefined();
 });
 
+test("a release with no latest.json (204/404) is a failed check, not up to date", async () => {
+  const message = "no-manifest: https://github.com/brinkercode/freewheel/releases/latest/download/latest.json: HTTP 404 Not Found";
+  expect(errorState("check", message)).toEqual({ status: "error", during: "check", message, noManifest: true });
+  expect(errorState("check", "network: error sending request").noManifest).toBeUndefined();
+  const states = [];
+  await checkNow({ minMs: 0, check: async () => Promise.reject(message), onState: (s) => states.push(s), log: () => {} });
+  expect(states).toEqual([{ status: "checking" }, { status: "error", during: "check", message, noManifest: true }]);
+  expect(states).not.toContainEqual({ status: "current" });
+  // At startup a failed check shows nothing (the state it had stays).
+  const startup = [];
+  expect(await startupCheck({ check: async () => Promise.reject(message), onState: (s) => startup.push(s), log: () => {} })).toBeNull();
+  expect(startup).toEqual([]);
+});
+
 // #198: on Linux without $APPIMAGE the updater says why it can't install.
 test("an update this copy can't install reads as cantInstall with the updater's reason, not a network error", () => {
   const reason = "freewheel updates itself only when it runs from its AppImage";
