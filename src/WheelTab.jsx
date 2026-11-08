@@ -55,6 +55,16 @@ export function liveButton(config) {
   return WHEEL_BUTTONS.find(([k]) => buttonMode(config, k) === (config.jog?.default_mode ?? "Scroll"))?.[0] ?? null;
 }
 
+/**
+ * The wheel button lit on the Speed Editor: while it is connected, the one
+ * the device lights (status.lit, as the Keys tab drawing shows it);
+ * otherwise the one the config starts in.
+ */
+export function litButton(config, status) {
+  const lit = status?.connection === "Connected" ? (status.lit ?? []) : [];
+  return WHEEL_BUTTONS.find(([k]) => lit.includes(k))?.[0] ?? liveButton(config);
+}
+
 /** The config with the `mode` binding patched. */
 export const withJog = (config, mode, patch) => ({
   ...config,
@@ -146,9 +156,9 @@ export default function WheelTab({ initial = null, save = saveConfig, status = n
     getConfig().then(setConfig, (e) => console.error("freewheel: loading the config failed:", String(e)));
   }, [initial]);
   if (!config) return null;
-  const selected = button ?? liveButton(config) ?? "Jog";
+  const live = litButton(config, status);
+  const selected = button ?? live ?? "Jog";
   const printed = WHEEL_BUTTONS.find(([k]) => k === selected)[1];
-  const live = liveButton(config);
   const mode = buttonMode(config, selected);
   const stored = wheelKind(config, mode);
   const kind = stored === "none" && keysFor === selected ? "keys" : stored;
