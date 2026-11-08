@@ -175,14 +175,14 @@ test("the preview reads the commits after the last tag (all of them before the f
   expect(p.tag).toBeNull();
   expect(p.release).toContain("* **keys:** before the tag ([#1](");
   expect(p.notes).toContain("* Before the tag\n");
-  git("tag", "v0.1.0");
+  git("tag", "v1.0.0");
   commit("fix(ci): only CI (#2)");
   commit("fix(wheel): smoother (#3)");
   p = preview({ dir: repo, date: "2026-11-20" });
-  expect(p).toMatchObject({ tag: "v0.1.0", version: "0.1.1", commits: 2 });
+  expect(p).toMatchObject({ tag: "v1.0.0", version: "1.0.1", commits: 2 });
   expect(p.release).toBe(
     [
-      "## [0.1.1](https://github.com/brinkercode/freewheel/compare/v0.1.0...v0.1.1) (2026-11-20)",
+      "## [1.0.1](https://github.com/brinkercode/freewheel/compare/v1.0.0...v1.0.1) (2026-11-20)",
       "",
       "### Fixed",
       "",
@@ -190,7 +190,7 @@ test("the preview reads the commits after the last tag (all of them before the f
       "",
     ].join("\n"),
   );
-  expect(p.notes).toBe(["## 0.1.1 (2026-11-20)", "", "### Fixed", "", "* Smoother", ""].join("\n"));
+  expect(p.notes).toBe(["## 1.0.1 (2026-11-20)", "", "### Fixed", "", "* Smoother", ""].join("\n"));
   // One filter for the release and the preview: the preview is the release's notes filtered.
   expect(p.release).toBe(userNotes(p.raw));
   expect(p.notes).toBe(appNotes(p.raw));
@@ -237,11 +237,11 @@ test("hand-written notes in release-notes/v<version>.md win over the generated o
   expect(curatedNotes(undefined, dir)).toBeNull();
 });
 
-test("release-notes/v0.1.0.md is the first release's plain, user-facing notes", () => {
-  const notes = curatedNotes("0.1.0");
+test("release-notes/v1.0.0.md is the first release's plain, user-facing notes", () => {
+  const notes = curatedNotes("1.0.0");
   expect(notes).toMatch(/^## First release\n/);
   for (const part of ["### What you can do", "### Download", "### Updates", "portable", "SCHEMA.md", "Device test"]) expect(notes).toContain(part);
-  for (const file of ["windows-x64.exe", "macos-universal.dmg", "linux-x86_64.AppImage"]) expect(notes).toContain(`freewheel-0.1.0-${file}`);
+  for (const file of ["windows-x64.exe", "macos-universal.dmg", "linux-x86_64.AppImage"]) expect(notes).toContain(`freewheel-1.0.0-${file}`);
   expect(notes).not.toMatch(/freewheel-[a-z]*\d(?!\.\d)|\bscope\b|\bcard\b|commit|\bCI\b|e2e|handoff|prototype|owner/i);
   expect(userNotes(notes)).toBe(notes);
 });
@@ -307,8 +307,8 @@ test("the CLI: `release` and `filter` give the two cuts, hand-written notes win 
   const run = (...args) => execFileSync(process.execPath, [script, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
   expect(run("release", "--in", fixture)).toBe(userNotes(RP_011));
   expect(run("filter", "--in", fixture)).toBe(appNotes(RP_011));
-  expect(run("release", "--version", "0.1.0", "--in", fixture)).toBe(curatedNotes("0.1.0"));
-  expect(run("filter", "--version", "0.1.0", "--in", fixture)).toBe(curatedNotes("0.1.0"));
+  expect(run("release", "--version", "1.0.0", "--in", fixture)).toBe(curatedNotes("1.0.0"));
+  expect(run("filter", "--version", "1.0.0", "--in", fixture)).toBe(curatedNotes("1.0.0"));
 });
 
 test("release.yml makes the hand-written notes the release body and What's new", () => {
