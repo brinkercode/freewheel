@@ -8,6 +8,9 @@
 #                                         notarized once the APPLE_* secrets
 #                                         exist, ad-hoc signed until then) and
 #                                         an Applications link to drag it onto
+#   freewheel-<ver>-linux-x86_64.AppImage the AppImage (built on Ubuntu 22.04
+#                                         for an older glibc; updates itself
+#                                         in place, $APPIMAGE)
 #   <file>.sig                           minisign signature by the updater key,
 #                                         bound to the version
 #   latest.json                          the manifest the in-app updater reads
@@ -94,6 +97,8 @@ jobs:
             package: windows
           - os: macos-15
             package: macos
+          - os: ubuntu-22.04
+            package: linux
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
@@ -113,6 +118,14 @@ jobs:
         run: |
           rustup toolchain install
           rustc --version
+
+      # WebKitGTK and the tray's AppIndicator (the AppImage bundles them),
+      # OpenSSL for the updater's TLS.
+      - name: Install Tauri Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libfuse2 file
 
       - run: npm ci
 
@@ -144,6 +157,13 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run tauri -- build --target universal-apple-darwin --bundles app -- --locked
 
+      # The AppImage: the binary plus the WebKitGTK it needs, one runnable file.
+      - name: Build freewheel.AppImage (Linux)
+        if: runner.os == 'Linux'
+        env:
+          TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
+        run: npm run tauri -- build --bundles appimage -- --locked
+
       # What ships: no e2e-only code and the updater pubkey baked in; on
       # Windows only system DLLs and `--simulate --smoke` starts.
       - name: Check the shipped binary
@@ -154,6 +174,11 @@ jobs:
           if [ "$RUNNER_OS" = Windows ]; then
             bin=target/release/freewheel.exe
             node scripts/check-windows-exe.mjs "$bin"
+          elif [ "$RUNNER_OS" = Linux ]; then
+            bin=target/release/freewheel
+            appimage=$(ls target/release/bundle/appimage/*.AppImage | head -n 1)
+            test -x "$appimage"
+            echo "APPIMAGE_FILE=$appimage" >> "$GITHUB_ENV"
           else
             app=target/universal-apple-darwin/release/bundle/macos/freewheel.app
             bin=$app/Contents/MacOS/freewheel
@@ -167,7 +192,7 @@ jobs:
         shell: bash
         run: |
           node scripts/portable-release.mjs package --os ${{ matrix.package }} --version "$VERSION" --out packages \
-            --exe target/release/freewheel.exe --app target/universal-apple-darwin/release/bundle/macos/freewheel.app
+            --exe target/release/freewheel.exe --app target/universal-apple-darwin/release/bundle/macos/freewheel.app --appimage "${APPIMAGE_FILE:-none.AppImage}"
           if [ "$RUNNER_OS" = macOS ]; then hdiutil verify packages/*.dmg; fi
           ls -la packages
 
@@ -213,7 +238,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          for f in packages/*.exe packages/*.dmg; do
+          for f in packages/*.exe packages/*.dmg packages/*.AppImage; do
             node node_modules/@tauri-apps/cli/tauri.js signer sign --app-version "$VERSION" "$f" > /dev/null
             test -s "$f.sig"
           done

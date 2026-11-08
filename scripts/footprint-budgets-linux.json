@@ -1,7 +1,7 @@
 {
-  "_comment": "Linux (PR feat/linux-e2e, measured under Xvfb + openbox on ubuntu, release build, 20-60 s idle): binary 24 MB; normal open 555 MB RSS / 171 MB private (freewheel + WebKitWebProcess + WebKitNetworkProcess); tray 243 MB RSS / 49 MB private, the WebKitNetworkProcess stays (8.6 MB private), the web process goes; simulate open 865 / 305; idle CPU 0.8-1.7 % of one core; disk < 0.1 MB. RSS counts the shared GTK/WebKit libraries, so it is not comparable to Windows' working set. Budgets are those plus a margin; MB = MiB.",
+  "_comment": "Linux (ubuntu-24.04 runner under Xvfb + openbox, release build, 60 s idle): binary 24 MB; normal open 569 MB RSS / 194 MB private (freewheel + WebKitWebProcess + WebKitNetworkProcess); closed to the tray only freewheel is left (linux_idle.rs ends the network process and trims the heap): 165 MB RSS / 24 MB private (was 240 / 48 with the network process); simulate open 857 / 317; idle CPU in the tray 0.08-0.12 % of one core (was 0.2-1.7 %); disk < 0.1 MB. RSS counts the shared GTK/WebKit libraries, so it is not comparable to Windows' working set. Budgets are those plus a margin; MB = MiB.",
   "exeMB": 32,
-  "idleCpuPercentOfOneCore": 3,
+  "idleCpuPercentOfOneCore": 1,
   "modes": {
     "normal": {
       "diskMB": 10,
@@ -10,18 +10,18 @@
         "privateMB": 240
       },
       "tray": {
-        "workingSetMB": 320,
-        "privateMB": 72,
-        "webviewProcesses": 1
+        "workingSetMB": 210,
+        "privateMB": 40,
+        "webviewProcesses": 0
       },
       "reopened": {
         "workingSetMB": 720,
         "privateMB": 240
       },
       "tray again": {
-        "workingSetMB": 320,
-        "privateMB": 72,
-        "webviewProcesses": 1
+        "workingSetMB": 210,
+        "privateMB": 40,
+        "webviewProcesses": 0
       }
     },
     "simulate": {
@@ -31,9 +31,9 @@
         "privateMB": 400
       },
       "tray": {
-        "workingSetMB": 320,
-        "privateMB": 72,
-        "webviewProcesses": 1
+        "workingSetMB": 210,
+        "privateMB": 40,
+        "webviewProcesses": 0
       }
     }
   }

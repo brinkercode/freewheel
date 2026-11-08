@@ -29,7 +29,7 @@ Download the file for your system from [Releases](https://github.com/brinkercode
 
 - **Windows:** `freewheel-<version>-windows-x64.exe`. Keep it somewhere you can write to (not Program Files) so it can update itself. SmartScreen may ask the first time: **More info → Run anyway**.
 - **macOS:** `freewheel-<version>-macos-universal.dmg`. Drag freewheel to Applications and open it. The first time, allow it in **System Settings → Privacy & Security → Open Anyway**, then under **Accessibility** and **Input Monitoring**.
-- **Linux:** `freewheel-<version>-linux-x86_64.AppImage`. Make it executable and run it; the first start asks once for permission to use the Speed Editor.
+- **Linux:** `freewheel-<version>-linux-x86_64.AppImage`. Keep it somewhere you can write to (e.g. `~/Applications`) so it can update itself, make it executable and run it (needs FUSE 2: `libfuse2`, on Ubuntu 24.04 `libfuse2t64`); the first start asks once for permission to use the Speed Editor.
 
 Settings live in your user folder, so replacing or moving the app keeps them. How updates work: [docs/updates.md](docs/updates.md).
 
