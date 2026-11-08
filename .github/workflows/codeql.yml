@@ -1,8 +1,10 @@
-# CodeQL code scanning for Rust and JavaScript/TypeScript. Runs on push to main
-# and weekly; never on pull requests, and it is not a required check.
+# CodeQL code scanning for Rust and JavaScript/TypeScript. Runs on every pull
+# request (a required check: the main ruleset also blocks a PR that adds an
+# alert), on push to main and weekly.
 name: codeql
 
 on:
+  pull_request:
   push:
     branches: [main]
   schedule:

@@ -117,7 +117,10 @@ pub async fn fetch_body(
     if !selfupdate::url_allowed(url, loopback) {
         return Err(NotesError::Network(format!("not an https URL: {url}")));
     }
+    // Belt and braces: reqwest itself refuses anything but https unless this
+    // is the local test server (and redirects are off, so it can't be led away).
     let client = reqwest::Client::builder()
+        .https_only(!loopback)
         .user_agent(concat!("freewheel/", env!("CARGO_PKG_VERSION")))
         .timeout(timeout)
         .connect_timeout(timeout)
