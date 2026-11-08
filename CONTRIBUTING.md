@@ -23,6 +23,21 @@ npm run tauri dev                         # run the app
 `freewheel --simulate` opens a Simulator window in place of a real Speed
 Editor, so every screen can be tried without the hardware.
 
+## Issues
+
+One issue is one problem or one idea, small enough for one pull request.
+
+- **Labels:** `bug` or `enhancement`, plus one priority:
+  - `p1`: fix now; it goes in the next patch release.
+  - `p2`: the release after that.
+  - `p3`: when there's time.
+- **A bug needs proof:** exact steps, or a failing test, or the file and line
+  with an input that triggers it. "It might…" is not a bug yet.
+- **Work goes highest priority first, oldest first.** Comment on an issue
+  before you start, so two people don't fix the same thing.
+- **The pull request says `Fixes #N`** and adds a test that fails without the
+  fix. Merging it closes the issue.
+
 ## Pull requests
 
 - One change per pull request, with tests for it. CI must be green: lint,

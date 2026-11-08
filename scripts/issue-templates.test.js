@@ -52,7 +52,7 @@ test("the feature request requires the two questions; the rest is optional", () 
   expect(required(f["What would you like freewheel to do?"])).toBe(true);
   expect(required(f["Anything else?"])).toBe(false);
   const os = f["Which computer do you use?"];
-  expect(os).toMatch(/^dropdown[\s\S]*- Windows\n\s+- macOS\n/);
+  expect(os).toMatch(/^dropdown[\s\S]*- Windows\n\s+- macOS\n\s+- Linux\n/);
   expect(required(os)).toBe(false);
 });
 
