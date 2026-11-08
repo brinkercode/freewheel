@@ -115,7 +115,7 @@ export function installMockTauri(win = window) {
   let config = sampleConfig();
   const status = sampleStatus();
   const listeners = {};
-  const updates = { current: params.get("updated") ?? "0.1.0", published: null, offer: null };
+  const updates = { current: params.get("updated") ?? params.get("version") ?? "0.1.0", published: null, offer: null };
   const commands = {
     get_config: () => structuredClone(config),
     save_config: ({ config: next }) => {
@@ -156,7 +156,7 @@ export function installMockTauri(win = window) {
     },
     get_start_at_login: () => config.settings.start_at_login,
     set_start_at_login: ({ on }) => on,
-    app_version: () => params.get("updated") ?? "0.1.0",
+    app_version: () => params.get("updated") ?? params.get("version") ?? "0.1.0",
     open_release_page: () => null,
     get_permissions: () => status.permissions,
     open_permission_pane: ({ permission }) =>
@@ -211,11 +211,12 @@ export function installMockTauri(win = window) {
       return null;
     },
     // As release_notes.rs: the GitHub release's body (the release cut, scope
-    // labels and PR links still in), or ?github=none for a build that can't ask.
+    // labels and PR links still in; ?github_body= gives one), or ?github=none
+    // for a build that can't ask.
     release_notes: async ({ version }) => {
       await sleep(400);
       if (params.get("github") === "none") throw "not-configured: this build makes no requests";
-      return githubReleaseBody(version);
+      return params.get("github_body") ?? githubReleaseBody(version);
     },
     desktop_hints: () => ({ tray: null }),
     // The window says it is ready to hear the tray (app_windows.rs settings_ready).
