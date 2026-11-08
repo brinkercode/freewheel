@@ -403,15 +403,21 @@ export async function main(platform, argv = process.argv.slice(2)) {
       await use(name);
       const t = Date.now();
       let r;
-      try {
-        r = await d.execAsync(
-          `const [command, args, done] = arguments;
-           if (document.readyState !== "complete") return done("not loaded: " + document.readyState);
-           window.__TAURI__.core.invoke(command, args).then(() => done("ok"), (e) => done("error: " + e));`,
-          [command, args],
-        );
-      } catch (e) {
-        r = e.message;
+      // A page still loading (a step that reloads it) is not a freeze: ask
+      // again until it has loaded, within the same RESPONSIVE_MS.
+      for (;;) {
+        try {
+          r = await d.execAsync(
+            `const [command, args, done] = arguments;
+             if (document.readyState !== "complete") return done("not loaded: " + document.readyState);
+             window.__TAURI__.core.invoke(command, args).then(() => done("ok"), (e) => done("error: " + e));`,
+            [command, args],
+          );
+        } catch (e) {
+          r = e.message;
+        }
+        if (!String(r).startsWith("not loaded") || Date.now() - t > RESPONSIVE_MS) break;
+        await new Promise((ok) => setTimeout(ok, 100));
       }
       const ms = Date.now() - t;
       if (r !== "ok" || ms > RESPONSIVE_MS)
