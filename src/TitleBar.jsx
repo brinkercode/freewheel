@@ -13,6 +13,12 @@ const currentWindow = () => globalThis.window?.__TAURI__?.window?.getCurrentWind
 /** True on macOS, where the OS draws the window controls. */
 export const isMac = (nav = globalThis.navigator) => /Mac/i.test(nav?.platform || nav?.userAgent || "");
 
+/** True on Linux (not Android), where the desktop's font is often wider. */
+export const isLinux = (nav = globalThis.navigator) => {
+  const p = nav?.platform || nav?.userAgent || "";
+  return /Linux/i.test(p) && !/Android/i.test(nav?.userAgent || "");
+};
+
 /** The window's maximised state, kept current as it resizes. */
 function useMaximized(win) {
   const [max, setMax] = useState(false);

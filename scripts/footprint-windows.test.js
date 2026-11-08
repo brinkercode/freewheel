@@ -115,6 +115,6 @@ test("the footprint job measures the release build and enforces the budgets", ()
     expect(budgets.modes[mode].tray.workingSetMB).toBeLessThan(64);
   }
   expect(overBudget({ exe: 0, modes: { normal: { memory: { tray: memory([proc(1, 0, "freewheel.exe"), proc(2, 1, "msedgewebview2.exe")]) }, cpu: { oneCore: 0 }, disk: { total: 0 } } } }, budgets)).toEqual([
-    "normal tray WebView2 processes: 1.00 > budget 0",
+    "normal tray webview processes: 1.00 > budget 0",
   ]);
 });

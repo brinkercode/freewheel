@@ -60,10 +60,10 @@ export function tree(procs, root) {
   return out;
 }
 
-/** RAM of a process tree: totals and the WebView2 share. */
-export function memory(procs) {
+/** RAM of a process tree: totals and the webview's share (WebView2 on Windows; `webview` matches its process names). */
+export function memory(procs, webview_ = /^msedgewebview2\.exe$/i) {
   const sum = (list, k) => list.reduce((n, p) => n + p[k], 0);
-  const webview = procs.filter((p) => /^msedgewebview2\.exe$/i.test(p.name));
+  const webview = procs.filter((p) => webview_.test(p.name));
   return {
     processes: procs.length,
     webviewProcesses: webview.length,
@@ -140,14 +140,15 @@ export function overBudget(result, budgets) {
   const check = (what, value, limit) => {
     if (limit != null && value > limit) problems.push(`${what}: ${value.toFixed(2)} > budget ${limit}`);
   };
-  check("exe (download) MB", result.exe / MB, budgets.exeMB);
+  check(`${result.exeLabel ?? "exe (download)"} MB`, result.exe / MB, budgets.exeMB);
+  if (result.package != null) check("package MB", result.package / MB, budgets.packageMB);
   for (const [mode, run] of Object.entries(result.modes)) {
     const b = budgets.modes?.[mode] ?? {};
     check(`${mode} disk MB`, run.disk.total / MB, b.diskMB);
     for (const [phase, mem] of Object.entries(run.memory)) {
       check(`${mode} ${phase} working set MB`, mem.workingSet / MB, b[phase]?.workingSetMB);
       check(`${mode} ${phase} private MB`, mem.privateBytes / MB, b[phase]?.privateMB);
-      check(`${mode} ${phase} WebView2 processes`, mem.webviewProcesses, b[phase]?.webviewProcesses);
+      check(`${mode} ${phase} webview processes`, mem.webviewProcesses, b[phase]?.webviewProcesses);
     }
     check(`${mode} idle CPU % of one core`, run.cpu.oneCore, budgets.idleCpuPercentOfOneCore);
   }
@@ -156,14 +157,16 @@ export function overBudget(result, budgets) {
 
 const mb = (n) => `${(n / MB).toFixed(1)} MB`;
 
-/** The job summary: one table per mode plus the sizes. */
-export function summary(result) {
-  const lines = ["## freewheel footprint (Windows, release build)", ""];
-  lines.push(`| | |`, `|---|---|`, `| ${result.exeName ?? "freewheel.exe"} (the download) | ${mb(result.exe)} |`);
+/** The job summary: one table per mode plus the sizes (`os` names the platform, its binary and its package). */
+export function summary(result, os = { name: "Windows", exe: null, package: "package", webview: "WebView2" }) {
+  const lines = [`## freewheel footprint (${os.name}, release build)`, ""];
+  lines.push(`| | |`, `|---|---|`, `| ${os.exe ?? `${result.exeName ?? "freewheel.exe"} (the download)`} | ${mb(result.exe)} |`);
+  if (result.package != null) lines.push(`| ${os.package} | ${mb(result.package)} |`);
   lines.push("");
   for (const [mode, run] of Object.entries(result.modes)) {
     lines.push(`### ${mode}`, "");
-    lines.push("| phase | processes (WebView2) | working set | private bytes | WebView2 working set | WebView2 private |");
+    const w = os.webview;
+    lines.push(`| phase | processes (${w}) | ${os.name === "Linux" ? "RSS" : "working set"} | private bytes | ${w} ${os.name === "Linux" ? "RSS" : "working set"} | ${w} private |`);
     lines.push("|---|---|---|---|---|---|");
     for (const [phase, m] of Object.entries(run.memory)) {
       lines.push(
@@ -173,10 +176,10 @@ export function summary(result) {
     lines.push("");
     lines.push(`Idle in tray for ${run.cpu.seconds} s: CPU ${run.cpu.oneCore.toFixed(3)} % of one core (${run.cpu.machine.toFixed(3)} % of ${run.cpu.cores} cores).`);
     const d = run.disk;
-    lines.push("", `Disk after the session: config ${mb(d.config)}, logs ${mb(d.logs)}, icon cache ${mb(d.iconCache)}, WebView2 data ${mb(d.webviewData)}, total ${mb(d.total)}.`, "");
+    lines.push("", `Disk after the session: config ${mb(d.config)}, logs ${mb(d.logs)}, icon cache ${mb(d.iconCache)}, ${os.webview} data ${mb(d.webviewData)}, total ${mb(d.total)}.`, "");
   }
   if (result.problems?.length) lines.push("**Over budget:**", "", ...result.problems.map((p) => `- ${p}`), "");
-  else lines.push("Every number is within its budget (scripts/footprint-budgets.json).", "");
+  else lines.push(`Every number is within its budget (${os.budgets ?? "scripts/footprint-budgets.json"}).`, "");
   return lines.join("\n");
 }
 

@@ -1,0 +1,158 @@
+# End to end on a hosted Linux runner: builds the real freewheel (the UI
+# embedded, as `tauri build` serves it), starts it with --simulate under
+# Xvfb with a window manager (openbox) and a D-Bus session, drives it over
+# WebDriver (tauri-driver in front of WebKitGTK's WebKitWebDriver) through
+# the same click-through as Windows (scripts/e2e.mjs, platform linux), and
+# requires both windows to answer within 5 s after every action.
+# Screenshots of every step go to the 'e2e-linux-screenshots' artifact.
+#
+# The footprint job measures what freewheel costs a Linux desktop: binary
+# size, RAM (RSS / anonymous) of freewheel plus its WebKitGTK processes with
+# the window open and closed to the tray, idle CPU and disk written, normal
+# and --simulate (scripts/footprint-linux.mjs), against
+# scripts/footprint-budgets-linux.json.
+name: e2e-linux
+
+on:
+  pull_request:
+    paths-ignore: ["docs/**", "**.md"]
+  push:
+    branches: [main]
+    paths-ignore: ["docs/**", "**.md"]
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-linux-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: e2e (ubuntu-24.04)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      # Installs exactly the toolchain pinned in rust-toolchain.toml.
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install
+          rustc --version
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: ". -> target"
+          cache-bin: "true"
+
+      # WebKitGTK and its WebDriver, the tray's AppIndicator, Xvfb, a window
+      # manager (maximise / minimise need one) and wmctrl.
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev \
+            webkit2gtk-driver xvfb openbox wmctrl dbus-x11 xdg-utils
+
+      - name: Install tauri-driver
+        run: cargo install tauri-driver --locked --version 2.1.0
+
+      - run: npm ci
+      - run: npm run build
+
+      # As `tauri build` makes it (custom-protocol: the UI embedded). `e2e`
+      # adds the stand-ins for the OS file dialogs (src-tauri/src/e2e.rs);
+      # shipped builds never have it.
+      - name: Build freewheel
+        run: cargo build --release --locked -p freewheel --features tauri/custom-protocol,e2e
+
+      - name: Click through freewheel --simulate
+        run: |
+          mkdir -p e2e-shots
+          xvfb-run -a -s "-screen 0 1600x1000x24" dbus-run-session -- sh -c '
+            openbox > e2e-shots/openbox.log 2>&1 &
+            sleep 1
+            node scripts/e2e-linux.mjs --app target/release/freewheel --out e2e-shots \
+              --tauri-driver "$HOME/.cargo/bin/tauri-driver" --native-driver /usr/bin/WebKitWebDriver'
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-linux-screenshots
+          path: e2e-shots
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Keep the app's logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-linux-logs
+          path: ~/.local/share/freewheel/logs
+          retention-days: 14
+          if-no-files-found: ignore
+
+  footprint:
+    name: footprint (ubuntu-24.04)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      TAURI_CLI: node_modules/@tauri-apps/cli/tauri.js
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install
+          rustc --version
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: ". -> target"
+          cache-bin: "true"
+
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev \
+            xvfb openbox wmctrl dbus-x11
+
+      - run: npm ci
+
+      # The release build without the updater key, as the release builds it.
+      - name: Build freewheel
+        run: node "$TAURI_CLI" build --ci --no-bundle
+
+      - name: Measure the footprint
+        run: |
+          xvfb-run -a -s "-screen 0 1600x1000x24" dbus-run-session -- sh -c '
+            openbox > /dev/null 2>&1 &
+            sleep 1
+            node scripts/footprint-linux.mjs --app target/release/freewheel --budgets scripts/footprint-budgets-linux.json --out footprint'
+
+      - name: Upload the measurements
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: footprint-linux
+          path: footprint
+          retention-days: 14
+          if-no-files-found: warn

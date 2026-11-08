@@ -40,7 +40,8 @@ jobs:
       # The required checks run on the release PR's head commit: its own
       # pull_request runs wait for a maintainer's approval (a bot's PR), so
       # every workflow with a required check (ci.yml: lint and test, and
-      # e2e-windows.yml: e2e) is dispatched on the branch instead; their check
+      # e2e-windows.yml and e2e-linux.yml: e2e, footprint) is dispatched on the
+      # branch instead; their check
       # runs land on that same commit, no approval needed.
       - name: Run CI on the release PR
         if: steps.release.outputs.prs_created == 'true'
@@ -49,7 +50,7 @@ jobs:
           PR: ${{ steps.release.outputs.pr }}
         run: |
           branch=$(jq -r .headBranchName <<<"$PR")
-          for wf in ci.yml e2e-windows.yml; do
+          for wf in ci.yml e2e-windows.yml e2e-linux.yml; do
             gh workflow run "$wf" --repo "$GITHUB_REPOSITORY" --ref "$branch"
           done
 
