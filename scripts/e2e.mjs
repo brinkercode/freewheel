@@ -465,7 +465,17 @@ export async function main(platform, argv = process.argv.slice(2)) {
     throw new Error(`${name}: waited ${ms} ms for ${what} (last: ${JSON.stringify(last)})`);
   };
   /** Clicks the element matching css (+ text) in window `name`, with a real WebDriver click. */
-  const click = async (name, css, text = "") => {
+  const click = async (name, css, text = "", tries = 3) => {
+    try {
+      return await clickOnce(name, css, text);
+    } catch (e) {
+      // A save that lands meanwhile redraws the drawing: find the key again.
+      if (tries <= 1 || !/stale element/.test(e.message)) throw e;
+      say(`  ${css} "${text}" was redrawn while clicking: finding it again`);
+      return click(name, css, text, tries - 1);
+    }
+  };
+  const clickOnce = async (name, css, text) => {
     const el = await waitFor(name, `${css} "${text}"`, FIND_JS, [css, text]);
     // Below the fold of a scrolling panel (the Simulator's Jump to) WebDriver may not scroll it in itself.
     await d.exec("arguments[0].scrollIntoView({ block: 'center' })", [el]);
