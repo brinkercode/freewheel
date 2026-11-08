@@ -9,7 +9,7 @@ const NOTICE_ICON = { permission: "lock", off: "power_settings_new", looking: "u
 
 /**
  * The window's header (the OS title bar is gone, TitleBar.jsx): tabs, the
- * status dot and text (opens the permission fix when one is missing), the
+ * status text (opens the permission fix when one is missing), the
  * On/Off switch and the window controls. Dragging anywhere but a control
  * moves the window; a double-click maximises.
  */
@@ -27,7 +27,7 @@ export function Toolbar({ tab, onTab, state, onToggle, onFix }) {
       </div>
       <div className="toolbar-right">
         {/* The status says it short, so it fits the default 1000px window
-            whole; narrower, only the dot shows (the stylesheet's
+            whole; narrower, it ends in an ellipsis (the stylesheet's
             .status-slot). The tooltip and the notice bar say it in full. */}
         <div className="status-slot">
           <button
@@ -36,9 +36,8 @@ export function Toolbar({ tab, onTab, state, onToggle, onFix }) {
             tabIndex={fix ? 0 : -1}
             title={status.text}
             aria-label={status.text}
-            data-dot={status.dot}
+            data-tone={status.tone}
           >
-            <span className={`status-dot dot-${status.dot}`} />
             <span className="status-text">{status.short}</span>
           </button>
         </div>

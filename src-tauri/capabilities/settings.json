@@ -51,6 +51,9 @@
       "allow": [
         {
           "url": "https://github.com/*"
+        },
+        {
+          "url": "https://fonts.google.com/icons*"
         }
       ]
     }

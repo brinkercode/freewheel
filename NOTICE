@@ -12,9 +12,16 @@ This product credits the following third-party work:
   Sylvain Munaut) is ported in crates/freewheel-core/src/auth.rs.
 
 - Material Symbols (https://github.com/google/material-design-icons)
+  Copyright 2026 Google LLC.
   Licensed under the Apache License, Version 2.0. The UI icons in
   src/assets/icons (all but wheel.svg) are Material Symbols Rounded glyphs,
-  bundled as SVG files.
+  bundled as SVG files. The profile icons are the full Material Symbols
+  Rounded set (version 2.981, weight 400, unfilled, grade 0, optical size
+  24): src/assets/symbols/symbols.woff2 is Google's static font of that
+  style, modified by scripts/icons/build-icon-font.py, which keeps every
+  icon glyph and drops the ligature tables and Latin letters (icons are
+  drawn by codepoint). Its icon names and codepoints are listed in
+  crates/freewheel-core/src/icon_names.txt.
 
 The Apache License 2.0 text is in LICENSES/Apache-2.0.txt.
 

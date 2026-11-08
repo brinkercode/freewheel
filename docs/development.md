@@ -52,6 +52,26 @@ cargo test --workspace
 CI ([ci.yml](../.github/workflows/ci.yml)) runs these on Linux, Windows and
 macOS (Apple Silicon and Intel).
 
+## Profile icons
+
+A profile's icon is any Material Symbols Rounded icon, by its name
+(`edit`, written `:edit:` in the mappings file; see
+[SCHEMA.md](../SCHEMA.md#profile-icons) and the
+[catalogue](https://fonts.google.com/icons?icon.style=Rounded)). The whole
+set is bundled, so nothing is fetched:
+
+- `src/assets/symbols/symbols.woff2`: the font (about 300 KB), one static
+  style (weight 400, unfilled, optical size 24, like the SVG icons in
+  `src/assets/icons`). The UI draws an icon by its codepoint
+  (`src/symbols.js`, `SymbolIcon` in `src/Icon.jsx`).
+- `crates/freewheel-core/src/icon_names.txt`: every name and its codepoint.
+  The Rust side checks names with it (`crates/freewheel-core/src/icons.rs`)
+  and the profile editor's search reads the same file.
+
+To update both, download Google's static Rounded woff2 for that style and
+run `scripts/icons/build-icon-font.py` (fonttools; the usage is at its top),
+then bump the font version in NOTICE.
+
 ## End-to-end tests (Windows)
 
 [e2e-windows.yml](../.github/workflows/e2e-windows.yml) builds the real

@@ -51,11 +51,11 @@ export function connectedShort(s) {
  * 1000px width.
  */
 export function deriveStatus(s) {
-  if (!s.enabled) return { text: "Off: Resolve can use it", short: "Off", dot: "gray" };
-  if (s.permissionMissing) return { text: "Needs permission (click to fix)", short: "Needs permission", dot: "orange" };
-  if (!s.connected) return { text: "Looking for your Speed Editor…", short: "Looking for device", dot: "gray" };
-  if (s.paused) return { text: "Paused: DaVinci Resolve is open", short: "Paused for Resolve", dot: "gray" };
-  return { text: connectedText(s), short: connectedShort(s), dot: lowBattery(s) ? "orange" : "green" };
+  if (!s.enabled) return { text: "Off: Resolve can use it", short: "Off", tone: "gray" };
+  if (s.permissionMissing) return { text: "Needs permission (click to fix)", short: "Needs permission", tone: "orange" };
+  if (!s.connected) return { text: "Looking for your Speed Editor…", short: "Looking for device", tone: "gray" };
+  if (s.paused) return { text: "Paused: DaVinci Resolve is open", short: "Paused for Resolve", tone: "gray" };
+  return { text: connectedText(s), short: connectedShort(s), tone: lowBattery(s) ? "orange" : "green" };
 }
 
 /** The one notice to show, or null; `action` names the button, if any. */

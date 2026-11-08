@@ -995,7 +995,7 @@ fn profiles_read_with_their_own_pages_and_apps_and_round_trip() {
     assert!(file.contains(r#""profiles": ["#), "{file}");
     assert!(file.contains("\"notepad.exe\",\n"), "{file}");
     assert!(
-        file.contains("\"color\": \"teal\",\n      \"icon\": \"edit\""),
+        file.contains("\"color\": \"teal\",\n      \"icon\": \":edit:\""),
         "{file}"
     );
     let again = read_ok(&file).config;
@@ -1048,8 +1048,16 @@ fn profile_mistakes_say_what_to_fix() {
             "must be one of rose",
         ),
         (
-            r#"[{"name": "W", "icon": "star", "pages": {"A": {}}}]"#,
-            "must be one of brush",
+            r#"[{"name": "W", "icon": "star_wars", "pages": {"A": {}}}]"#,
+            "there is no icon called \"star_wars\"",
+        ),
+        (
+            r#"[{"name": "W", "icon": ":brsh:", "pages": {"A": {}}}]"#,
+            "(did you mean \":brush:\"?)",
+        ),
+        (
+            r#"[{"name": "W", "icon": 3, "pages": {"A": {}}}]"#,
+            "must be text",
         ),
         // A page key goes to a page of its own profile only.
         (
@@ -1060,4 +1068,70 @@ fn profile_mistakes_say_what_to_fix() {
         let e = err(&with(profiles));
         assert!(e.contains(want), "{profiles}: {e}");
     }
+}
+
+#[test]
+fn profile_icons_read_as_name_or_colon_name_store_bare_and_write_colon_name() {
+    let file = |icon: &str| {
+        format!(
+            r#"{{ "version": 2, "pages": {{ "Main": {{}} }},
+  "profiles": [{{ "name": "Games", "icon": {icon}, "pages": {{ "Play": {{}} }} }}] }}"#
+        )
+    };
+    for (written, stored) in [
+        (r#"":sports_esports:""#, "sports_esports"),
+        (r#""sports_esports""#, "sports_esports"),
+        (r#"" :Brush: ""#, "brush"),
+        // The 8 names 1.0 profiles could have still read.
+        (r#""photo_camera""#, "photo_camera"),
+        (r#""zoom_out_map""#, "zoom_out_map"),
+    ] {
+        let c = read_ok(&file(written)).config;
+        assert_eq!(c.profiles[0].icon.as_deref(), Some(stored), "{written}");
+        let out = String::from_utf8(export(&c, &win())).unwrap();
+        assert!(out.contains(&format!("\"icon\": \":{stored}:\"")), "{out}");
+        assert_eq!(read_ok(&out).config, c, "{out}");
+    }
+    // An unknown name: an error at its line and column, naming the catalogue.
+    let err = import(
+        &Config::default(),
+        file(r#"":not_an_icon:""#).as_bytes(),
+        false,
+        &win(),
+    )
+    .unwrap_err();
+    match err {
+        SaveError::InvalidFile {
+            line,
+            column,
+            message,
+            ..
+        } => {
+            assert_eq!((line, column), (2, 43), "{message}");
+            assert!(
+                message.contains("no icon called \":not_an_icon:\""),
+                "{message}"
+            );
+            assert!(
+                message.contains("https://fonts.google.com/icons?icon.style=Rounded"),
+                "{message}"
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+    // The example SCHEMA.md gives.
+    let err = import(
+        &Config::default(),
+        file(r#"":sports_esport:""#).as_bytes(),
+        false,
+        &win(),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        err.starts_with(
+            "line 2, column 43, the profile Games icon: there is no icon called \":sports_esport:\" (did you mean \":sports_esports:\"?)"
+        ),
+        "{err}"
+    );
 }

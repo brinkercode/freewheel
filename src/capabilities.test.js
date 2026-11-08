@@ -68,10 +68,10 @@ test("build.rs declares exactly the commands the UI invokes", () => {
   expect(declared.sort()).toEqual(sorted(invoked(uiSources)));
 });
 
-test("What's new's notes links open in the browser, to GitHub only", () => {
+test("links open in the browser: What's new's notes to GitHub, the profile editor's 'Browse all icons' to the icon catalogue", () => {
   const settings = JSON.parse(read("../src-tauri/capabilities/settings.json")).permissions;
   const scoped = settings.filter((p) => typeof p !== "string");
-  expect(scoped).toEqual([{ identifier: "opener:allow-open-url", allow: [{ url: "https://github.com/*" }] }]);
+  expect(scoped).toEqual([{ identifier: "opener:allow-open-url", allow: [{ url: "https://github.com/*" }, { url: "https://fonts.google.com/icons*" }] }]);
   expect(settings.filter((p) => typeof p === "string" && p.startsWith("opener:"))).toEqual([]);
   expect(JSON.parse(read("../src-tauri/capabilities/simulator.json")).permissions.some((p) => String(p.identifier ?? p).startsWith("opener:"))).toBe(false);
   expect(read("./notesMarkdown.js")).toContain('export const LINK_PREFIX = "https://github.com/";');

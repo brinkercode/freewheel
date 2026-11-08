@@ -11,6 +11,7 @@ pub mod diagnostics;
 pub mod engine;
 pub mod first_run;
 pub mod hid;
+pub mod icons;
 pub mod inject;
 pub mod launch;
 pub mod logging;

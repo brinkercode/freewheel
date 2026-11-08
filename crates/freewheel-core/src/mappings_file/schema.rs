@@ -254,7 +254,7 @@ pub fn schema() -> Value {
                 "properties": {
                     "name": { "type": "string", "pattern": "\\S", "not": { "pattern": format!("^\\s*{}\\s*$", any_case("default", "")) }, "description": about("profiles[].name") },
                     "color": choice("profiles[].color", crate::config::PROFILE_COLORS),
-                    "icon": choice("profiles[].icon", crate::config::PROFILE_ICONS),
+                    "icon": { "type": "string", "pattern": "^\\s*:?[A-Za-z0-9_]+:?\\s*$", "examples": crate::config::SUGGESTED_ICONS.iter().map(|n| crate::icons::written(n)).collect::<Vec<_>>(), "description": about("profiles[].icon") },
                     "apps": { "type": "array", "description": about("profiles[].apps"), "items": { "$ref": "#/$defs/profileApp" } },
                     "pages": {
                         "type": "object",

@@ -381,7 +381,7 @@ export const HEADER_JS = `const box = (e) => e.getBoundingClientRect();
   const text = status.querySelector(".status-text");
   const t = box(text);
   if (t.width > 0 && (t.left < s.left - 0.5 || t.right > s.right + 0.5)) bad.push("text outside the status");
-  if (s.width < 8) bad.push("no room for the status dot");
+  if (s.width < 8) bad.push("no room for the status");
   const tabs = q(".toolbar .tabs");
   if (tabs.scrollWidth > tabs.clientWidth + 1) bad.push("tabs clipped (" + tabs.scrollWidth + " > " + tabs.clientWidth + ")");
   const row = q("nav.toolbar");
@@ -1120,7 +1120,7 @@ export async function main(platform, argv = process.argv.slice(2)) {
       await click("settings", "#device-test button", "Open device test");
       await waitFor("settings", "the Device test view", `return document.querySelector('[data-screen-label="Device test"]')`);
       await shows("settings", "Simulated Speed Editor: these reports come from the Simulator window.");
-      await waitFor("settings", "Connected", `return document.querySelector(".diag-status .status-dot.dot-green")`);
+      await waitFor("settings", "Connected", `return document.querySelector('.diag-status[data-tone="green"]') && !document.querySelector(".diag-status [class*=dot]")`);
       await waitFor("settings", "no switches or inputs", `return !document.querySelector('[data-screen-label="Device test"] input, [data-screen-label="Device test"] [role=switch]')`);
     }, ["settings"]);
     await step("Device test: a key press arrives live as its raw report", async () => {
@@ -1908,7 +1908,21 @@ export async function main(platform, argv = process.argv.slice(2)) {
       await typeInto("settings", ".profile-pill.is-active input.profile-rename", `${SELECT_ALL}Writing\uE007`);
       await configShows("the profile renamed Writing", (c) => writing(c)?.pages.length === 1);
       await click("settings", '.side-panel [role=radiogroup][aria-label="Colour"] button[aria-label="teal"]');
-      await click("settings", '.side-panel [role=radiogroup][aria-label="Icon"] button[aria-label="edit"]');
+      await configShows("Writing in teal", (c) => writing(c)?.color === "teal");
+    });
+    await step("profiles: the icon search lists :edit: among every bundled icon", async () => {
+      await typeInto("settings", '.side-panel input[aria-label="Search icons"]', ":edit:");
+      await waitFor("settings", "the search results, :edit: first", `const o = [...document.querySelectorAll('.side-panel [role=listbox][aria-label="Icons found"] [role=option]')];
+        if (o[0]?.dataset.name === "edit" && o.length > 1) return true;
+        throw new Error("results: " + o.map((e) => e.dataset.name).join(" "));`);
+      // Drawn from the bundled font: the glyph is a private-use character, and the font loaded.
+      await waitFor("settings", "the icon font loaded", `const g = document.querySelector('.side-panel [role=option][data-name="edit"] .symbol-glyph');
+        const ch = g?.dataset.glyph ?? "";
+        if (ch.codePointAt(0) >= 0xe000 && [...document.fonts].some((f) => f.family.includes("freewheel symbols") && f.status === "loaded")) return true;
+        throw new Error("glyph " + ch.codePointAt(0) + ", fonts " + [...document.fonts].map((f) => f.family + ":" + f.status).join(" "));`);
+    });
+    await step("profiles: picking :edit: from the search sets Writing's icon", async () => {
+      await click("settings", '.side-panel [role=listbox] [role=option][data-name="edit"]');
       await configShows("Writing in teal with the edit icon", (c) => writing(c)?.color === "teal" && writing(c)?.icon === "edit");
       await waitFor("settings", "the pill in teal with its icon", `const p = document.querySelector('.profile-pill.is-active'); return p?.dataset.color === "teal" && p.querySelector('[data-icon="edit"]');`);
       await click("settings", '.profile-pill.is-active button[aria-label="Apps for this profile"]');
@@ -1975,7 +1989,7 @@ export async function main(platform, argv = process.argv.slice(2)) {
       const text = readFileSync(join(dialogs, "freewheel-mappings.json"), "utf8");
       const file = JSON.parse(text);
       const w = file.profiles?.find((p) => p.name === "Writing");
-      if (!file.pages?.["Edit Bay"] || !w || w.color !== "teal" || w.icon !== "edit" || Object.keys(w.pages ?? {}).length !== 2 || !JSON.stringify(w.apps).includes(F.id) || !Object.values(w.pages)[0].CUT?.startsWith("page "))
+      if (!file.pages?.["Edit Bay"] || !w || w.color !== "teal" || w.icon !== ":edit:" || !text.includes('"icon": ":edit:"') || Object.keys(w.pages ?? {}).length !== 2 || !JSON.stringify(w.apps).includes(F.id) || !Object.values(w.pages)[0].CUT?.startsWith("page "))
         throw new Error(`the backup lacks the profile: ${text.slice(0, 900)}`);
       if (earlier) writeFileSync(file0, earlier);
       // Back to the Keys tab without the profile for the steps after.

@@ -27,8 +27,8 @@ use std::collections::BTreeMap;
 
 use crate::config::{
     Action, Appearance, CONFIG_VERSION, Config, DEFAULT_PROFILE_NAME, JogBinding, JogMode,
-    JogSettings, KeyCombo, Layer, OverrideMode, OverrideSettings, PROFILE_COLORS, PROFILE_ICONS,
-    Profile, ProfileApp, SaveError,
+    JogSettings, KeyCombo, Layer, OverrideMode, OverrideSettings, PROFILE_COLORS, Profile,
+    ProfileApp, SaveError,
 };
 use json::{Member, Node, Pos, Value};
 use names::{closest, device_key, format_combo, key_id, parse_combo, printed_name};
@@ -107,9 +107,9 @@ pub const FIELDS: &[Field] = &[
     Field {
         path: "profiles[].icon",
         kind: "text",
-        default: "(none)",
-        range: "brush, code, music_note, sports_esports, movie, edit, photo_camera, terminal",
-        about: "The profile's icon in the Keys tab.",
+        default: "(none: a plain profile icon)",
+        range: "a Material Symbols Rounded icon name, like :edit: or :sports_esports: (see Profile icons)",
+        about: "The profile's icon in the Keys tab, by its name in Google's icon catalogue (https://fonts.google.com/icons?icon.style=Rounded). Written :name: or name.",
     },
     Field {
         path: "profiles[].apps",
@@ -851,7 +851,7 @@ impl<'a> Reader<'a> {
                     .map(|n| pick(n, &format!("{at} color"), PROFILE_COLORS))
                     .transpose()?,
                 icon: get("icon")
-                    .map(|n| pick(n, &format!("{at} icon"), PROFILE_ICONS))
+                    .map(|n| icon(n, &format!("{at} icon")))
                     .transpose()?,
             });
             layers.extend(pages);
@@ -1087,6 +1087,26 @@ fn page_id(
 fn pick(node: &Node, at: &str, names: &[&'static str]) -> Result<String, SaveError> {
     let table: Vec<(&'static str, &'static str)> = names.iter().map(|n| (*n, *n)).collect();
     one_of(node, at, &table).map(str::to_string)
+}
+
+/// A profile's `icon`: a bundled Material Symbols name, `:edit:` or `edit`.
+fn icon(node: &Node, at: &str) -> Result<String, SaveError> {
+    let word = text(node, at)?;
+    if let Some(name) = crate::icons::icon_name(word) {
+        return Ok(name.to_string());
+    }
+    let bare = crate::icons::bare(word).to_ascii_lowercase();
+    let hint = closest(&bare, crate::icons::names())
+        .map(|k| format!(" (did you mean \"{}\"?)", crate::icons::written(k)))
+        .unwrap_or_default();
+    Err(invalid(
+        node.pos,
+        at,
+        format!(
+            "there is no icon called \"{word}\"{hint}. Use a Material Symbols Rounded name, like \":edit:\" (every name: {})",
+            crate::icons::ICON_CATALOGUE
+        ),
+    ))
 }
 
 /// A profile's `apps`: names (matched on every OS) or per-OS objects.
@@ -1486,7 +1506,7 @@ pub fn export(config: &Config, host: &dyn Host) -> Vec<u8> {
                 members.push(("color".into(), Out::Str(c.clone())));
             }
             if let Some(i) = &p.icon {
-                members.push(("icon".into(), Out::Str(i.clone())));
+                members.push(("icon".into(), Out::Str(crate::icons::written(i))));
             }
             let apps: Vec<Out> = p.apps.iter().map(app_out).collect();
             if !apps.is_empty() {

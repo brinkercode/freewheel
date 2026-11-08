@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import ActionEditor, { KeyPanel } from "./ActionEditor.jsx";
-import Icon from "./Icon.jsx";
+import Icon, { SymbolIcon } from "./Icon.jsx";
 import ProfileApps from "./ProfileApps.jsx";
 import drawing from "./assets/speed-editor.svg?raw";
 import {
@@ -108,7 +108,7 @@ export function ProfilePicker({ config, profile, liveProfile = undefined, onProf
                 onClick={() => !active && onProfile(p.id)}
                 onDoubleClick={() => active && p.id && (setName(p.name), setRenaming(true))}
               >
-                <Icon name={profileLook(config, p.id).icon} />
+                <SymbolIcon name={profileLook(config, p.id).icon} />
                 {p.name}
               </button>
               {active && p.id && (

@@ -33,7 +33,14 @@
         }
       },
       "color": "teal",
-      "icon": "edit"
+      "icon": ":edit:"
+    },
+    {
+      "name": "Games",
+      "icon": "sports_esports",
+      "pages": {
+        "Play": {}
+      }
     }
   ]
 }

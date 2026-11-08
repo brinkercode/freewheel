@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { AppPicker, appHue } from "./ActionEditor.jsx";
-import Icon from "./Icon.jsx";
+import Icon, { SymbolIcon } from "./Icon.jsx";
+import { ICON_CATALOGUE, bareIcon, iconLabel, iconName, searchIcons, writtenIcon } from "./symbols.js";
 import {
   APP_NAME_HINT,
   PROFILE_COLORS,
-  PROFILE_ICONS,
+  SUGGESTED_ICONS,
   THIS_OS,
   appOnOs,
   profileApps,
@@ -71,7 +72,7 @@ export default function ProfileApps({ config, profileId, save = saveConfig, onSa
     <section className="key-panel profile-panel" aria-label={`${profile.name} apps`}>
       <header className="panel-head">
         <span className="keycap profile-keycap" data-color={look.color} aria-hidden="true">
-          <Icon name={look.icon} />
+          <SymbolIcon name={look.icon} />
         </span>
         <div className="grow">
           <h2 className="panel-title">{`When is ${profile.name} used?`}</h2>
@@ -98,21 +99,7 @@ export default function ProfileApps({ config, profileId, save = saveConfig, onSa
           ))}
         </div>
         <div className="field-label">Icon</div>
-        <div className="profile-icons" role="radiogroup" aria-label="Icon" data-color={look.color}>
-          {PROFILE_ICONS.map((i) => (
-            <button
-              key={i}
-              role="radio"
-              aria-checked={look.icon === i}
-              aria-label={i.replace("_", " ")}
-              title={i.replace("_", " ")}
-              className="profile-icon-choice"
-              onClick={() => look.icon !== i && commitLook({ icon: i })}
-            >
-              <Icon name={i} />
-            </button>
-          ))}
-        </div>
+        <IconPicker icon={look.icon} color={look.color} onPick={(i) => look.icon !== i && commitLook({ icon: i })} />
         {!supported && (
           <div className="panel-note small" role="note">
             {NO_FRONT_APP}
@@ -168,5 +155,118 @@ export default function ProfileApps({ config, profileId, save = saveConfig, onSa
         </div>
       </div>
     </section>
+  );
+}
+
+/** What the icon search says about `query` (null: nothing to say). */
+export function iconSearchNote(query, results) {
+  const bare = bareIcon(query);
+  if (!bare) return null;
+  const named = /^\s*:.*:\s*$/.test(query);
+  if (named && !iconName(query)) return `There is no icon called ${writtenIcon(bare)}. Pick one below, or browse all icons for its name.`;
+  if (!results.length) return `No icon matches "${query.trim()}". Try another word, or browse all icons.`;
+  return null;
+}
+
+/** Opens Google's icon catalogue in the default browser (the user clicked the link; capabilities/settings.json allows only it and GitHub). */
+export const openIconCatalogue = () =>
+  globalThis.window.__TAURI__.core.invoke("plugin:opener|open_url", { url: ICON_CATALOGUE }).catch((e) => console.error("freewheel: opening the icon catalogue failed:", String(e)));
+
+/**
+ * A profile's icon: a search over every bundled icon (type a word or a
+ * :name:; arrows move through the results, Enter picks), a row of
+ * suggestions and a link to the catalogue of every icon.
+ */
+export function IconPicker({ icon, color, onPick, open = openIconCatalogue, columns = 8 }) {
+  const [query, setQuery] = useState("");
+  const [at, setAt] = useState(0);
+  const grid = useRef(null);
+  const results = searchIcons(query);
+  const note = iconSearchNote(query, results);
+  const pick = (name) => (onPick(name), setQuery(""), setAt(0));
+  const focus = (i) => {
+    const n = Math.max(0, Math.min(results.length - 1, i));
+    setAt(n);
+    grid.current?.querySelectorAll("[role=option]")[n]?.focus();
+  };
+  const onSearchKey = (e) => {
+    if (e.key === "Enter" && results.length) {
+      e.preventDefault();
+      pick(iconName(query) ?? results[Math.min(at, results.length - 1)]);
+    } else if (e.key === "ArrowDown" && results.length) {
+      e.preventDefault();
+      focus(0);
+    } else if (e.key === "Escape" && query) {
+      e.preventDefault();
+      setQuery("");
+    }
+  };
+  const onGridKey = (e, i) => {
+    const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: columns, ArrowUp: -columns, Home: -i, End: results.length - 1 - i }[e.key];
+    if (step !== undefined) {
+      e.preventDefault();
+      if (e.key === "ArrowUp" && i < columns) {
+        e.currentTarget.closest(".icon-picker")?.querySelector("input")?.focus();
+        return;
+      }
+      focus(i + step);
+    } else if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      pick(results[i]);
+    }
+  };
+  const choice = (name, i, role) => (
+    <button
+      key={name}
+      role={role}
+      aria-label={iconLabel(name)}
+      title={writtenIcon(name)}
+      className="profile-icon-choice"
+      data-name={name}
+      {...(role === "radio" ? { "aria-checked": icon === name } : { "aria-selected": icon === name, tabIndex: i === at ? 0 : -1 })}
+      onKeyDown={role === "option" ? (e) => onGridKey(e, i) : undefined}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => pick(name)}
+    >
+      <SymbolIcon name={name} />
+    </button>
+  );
+  return (
+    <div className="icon-picker" data-color={color}>
+      <div className="profile-icons" role="radiogroup" aria-label="Suggested icons">
+        {SUGGESTED_ICONS.map((name, i) => choice(name, i, "radio"))}
+      </div>
+      <div className="icon-search-row">
+        <span className="icon-search-current" title={`Now ${writtenIcon(icon)}`}>
+          <SymbolIcon name={icon} />
+        </span>
+        <input
+          type="search"
+          className="icon-search"
+          aria-label="Search icons"
+          placeholder="Search icons, or type :name:"
+          value={query}
+          spellCheck={false}
+          autoComplete="off"
+          aria-controls="icon-results"
+          onChange={(e) => (setQuery(e.target.value), setAt(0))}
+          onKeyDown={onSearchKey}
+        />
+      </div>
+      {note && (
+        <p className="icon-search-note" role="status">
+          {note}
+        </p>
+      )}
+      {results.length > 0 && (
+        <div className="profile-icons icon-results" id="icon-results" role="listbox" aria-label="Icons found" ref={grid}>
+          {results.map((name, i) => choice(name, i, "option"))}
+        </div>
+      )}
+      <button type="button" className="icon-browse" onClick={() => open()}>
+        <Icon name="search" />
+        Browse all icons
+      </button>
+    </div>
   );
 }

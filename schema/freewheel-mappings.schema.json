@@ -295,25 +295,19 @@
           "description": "The profile's colour in the Keys tab. Allowed: rose, orange, amber, green, teal, blue, indigo, violet. Default: (none: the app's accent)."
         },
         "icon": {
-          "anyOf": [
-            {
-              "enum": [
-                "brush",
-                "code",
-                "music_note",
-                "sports_esports",
-                "movie",
-                "edit",
-                "photo_camera",
-                "terminal"
-              ]
-            },
-            {
-              "pattern": "^\\s*(?:[Bb][Rr][Uu][Ss][Hh]|[Cc][Oo][Dd][Ee]|[Mm][Uu][Ss][Ii][Cc]_[Nn][Oo][Tt][Ee]|[Ss][Pp][Oo][Rr][Tt][Ss]_[Ee][Ss][Pp][Oo][Rr][Tt][Ss]|[Mm][Oo][Vv][Ii][Ee]|[Ee][Dd][Ii][Tt]|[Pp][Hh][Oo][Tt][Oo]_[Cc][Aa][Mm][Ee][Rr][Aa]|[Tt][Ee][Rr][Mm][Ii][Nn][Aa][Ll])\\s*$",
-              "type": "string"
-            }
+          "description": "The profile's icon in the Keys tab, by its name in Google's icon catalogue (https://fonts.google.com/icons?icon.style=Rounded). Written :name: or name. Allowed: a Material Symbols Rounded icon name, like :edit: or :sports_esports: (see Profile icons). Default: (none: a plain profile icon).",
+          "examples": [
+            ":brush:",
+            ":code:",
+            ":music_note:",
+            ":sports_esports:",
+            ":movie:",
+            ":edit:",
+            ":photo_camera:",
+            ":terminal:"
           ],
-          "description": "The profile's icon in the Keys tab. Allowed: brush, code, music_note, sports_esports, movie, edit, photo_camera, terminal. Default: (none)."
+          "pattern": "^\\s*:?[A-Za-z0-9_]+:?\\s*$",
+          "type": "string"
         },
         "name": {
           "description": "The profile's name. Allowed: unique, not Default. Default: (required).",

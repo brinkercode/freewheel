@@ -43,7 +43,8 @@ are for updates and their notes, to GitHub, over HTTPS:
 
 Builds without the release's update key (built from source, CI test builds)
 make no requests at all. Links you click (What's new, a key set to open a
-website) open in your browser.
+website, **Browse all icons** in a profile's editor) open in your browser.
+The profile icons are bundled: every icon draws offline.
 
 Releases are made with [release-please](https://github.com/googleapis/release-please):
 see [releasing.md](releasing.md).

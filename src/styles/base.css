@@ -96,6 +96,11 @@ input[type="range"] { accent-color: var(--accent); border: none; background: tra
 .hint { font-size: var(--fs-caption); color: var(--ink3); }
 .icon { width: var(--sp-9); height: var(--sp-9); flex: none; display: inline-flex; }
 .icon svg { width: 100%; height: 100%; }
+/* Profile icons: a glyph of the bundled icon font (src/symbols.js), as big as the box an .icon has. */
+@font-face { font-family: "freewheel symbols"; src: url("../assets/symbols/symbols.woff2") format("woff2"); font-style: normal; font-weight: 400; font-display: block; }
+.icon.symbol { container-type: size; align-items: center; justify-content: center; overflow: hidden; }
+.symbol-glyph { font-family: "freewheel symbols"; font-weight: normal; font-style: normal; font-size: 100cqh; line-height: 1; letter-spacing: normal; text-transform: none; white-space: nowrap; direction: ltr; -webkit-font-smoothing: antialiased; user-select: none; }
+.symbol-glyph::before { content: attr(data-glyph); }
 /* the logo mark: a disc with an off-centre dimple */
 .logo-disc { position: relative; width: 22px; height: 22px; flex: none; border-radius: var(--r-pill); background: var(--accent); }
 .logo-disc::after { content: ""; position: absolute; left: 4px; top: 4px; width: 7px; height: 7px; border-radius: var(--r-pill); background: var(--key-white-sel); }
@@ -198,18 +203,14 @@ input[type="range"] { accent-color: var(--accent); border: none; background: tra
 .toolbar-right { display: flex; align-items: center; gap: 12px; flex: 1 1 auto; margin-left: 8px; }
 .toolbar-right > :not(.status-slot) { flex: none; }
 /* The status' room: all the free width, measured as a container. Its
-   short label fits whole at the default 1000px; below 96px only the dot is
-   left. A text size too big for it still ends in an ellipsis and is
+   short label fits whole at the default 1000px; narrower it ends in an
+   ellipsis. A text size too big for it still ends in an ellipsis and is
    clipped, never drawn over a tab. */
 .status-slot { flex: 1 1 0; min-width: 0; display: flex; justify-content: flex-end; overflow: hidden; container-type: inline-size; }
 .status { height: auto; display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; padding: 6px 8px; border: none; border-radius: var(--r-sm); background: transparent; font-size: var(--fs-small); color: var(--ink2); cursor: default; }
 .status-text { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-@container (max-width: 96px) {
-  .status { padding: 6px 2px; }
-  .status-text { display: none; }
-}
 /* A narrow window (down to the 820px minimum): a little less air between
-   the tabs and around the switch, so the status dot keeps its room. */
+   the tabs and around the switch, so the status keeps its room. */
 @media (max-width: 899px) {
   .tabs { gap: 2px; }
   .tab { padding: 0 10px; }
@@ -227,10 +228,8 @@ input[type="range"] { accent-color: var(--accent); border: none; background: tra
 .status.is-link { cursor: pointer; }
 .status.is-link:hover:not(:disabled) { background: var(--hover); }
 .toolbar-sep { width: 1px; height: 20px; background: var(--line2); flex: none; }
-.status-dot { width: 8px; height: 8px; border-radius: var(--r-pill); background: var(--ink3); flex: none; }
-.dot-green { background: var(--good); }
-.dot-orange { background: var(--warn); }
-.dot-gray { background: var(--ink3); }
+/* The status is text only: a warning (low battery, a missing permission) is in the warning colour. */
+.status[data-tone="orange"] { color: var(--warn); }
 .notice {
   display: flex;
   align-items: center;
@@ -333,6 +332,7 @@ input[type="range"] { accent-color: var(--accent); border: none; background: tra
 .diag-label { width: 168px; flex: none; color: var(--ink2); }
 .diag-value { min-width: 0; overflow-wrap: anywhere; }
 .diag-status { gap: 8px; align-items: center; }
+.diag-status[data-tone="orange"] { color: var(--warn); }
 .diag-reports { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow: auto; }
 .diag-report { display: flex; gap: 10px; align-items: baseline; padding: 6px 10px; border-radius: var(--r-sm); background: var(--sunk); font-size: var(--fs-small); }
 .diag-dir { width: 26px; flex: none; color: var(--ink3); font-weight: var(--fw-semibold); }
@@ -406,7 +406,7 @@ input[type="range"] { accent-color: var(--accent); border: none; background: tra
 .pill.is-renaming > button { display: none; }
 .pill.is-renaming .pill-rename { display: block; }
 /* A profile's colour (config.rs PROFILE_COLORS); Default and pages without one use the accent. */
-:where(.pill, .profile-pill, .profile-keycap, .profile-swatch, .profile-icons) { --pc: var(--accent); }
+:where(.pill, .profile-pill, .profile-keycap, .profile-swatch, .profile-icons, .icon-picker) { --pc: var(--accent); }
 [data-color="rose"] { --pc: #d6457a; }
 [data-color="orange"] { --pc: #dd7230; }
 [data-color="amber"] { --pc: #c4930f; }
@@ -649,7 +649,19 @@ td.row-chevron .icon { vertical-align: middle; }
 .profile-swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--pc); }
 .profile-icon-choice { width: 31px; height: 31px; padding: 0; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink2); }
 .profile-icon-choice .icon { width: 18px; height: 18px; }
-.profile-icon-choice[aria-checked="true"] { border-color: var(--pc); background: color-mix(in srgb, var(--pc) 12%, var(--panel)); color: var(--pc); }
+.profile-icon-choice[aria-checked="true"], .profile-icon-choice[aria-selected="true"] { border-color: var(--pc); background: color-mix(in srgb, var(--pc) 12%, var(--panel)); color: var(--pc); }
+/* The icon search: every bundled icon by name; the results scroll inside the panel. */
+.icon-picker { display: flex; flex-direction: column; gap: 7px; }
+.icon-search-row { display: flex; align-items: center; gap: 7px; }
+.icon-search-current { width: 31px; height: 31px; flex: none; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: color-mix(in srgb, var(--pc) 12%, var(--panel)); color: var(--pc); }
+.icon-search-current .icon { width: 18px; height: 18px; }
+.icon-search { flex: 1; min-width: 0; height: 31px; }
+.icon-search-note { margin: 0; font-size: var(--fs-small); color: var(--ink2); }
+.icon-results { max-height: 146px; overflow-y: auto; padding: 2px; margin: -2px; }
+.profile-icon-choice:focus-visible { outline: 2px solid var(--pc); outline-offset: 1px; }
+.icon-browse { align-self: flex-start; height: auto; padding: 2px 0; gap: 4px; border: none; background: transparent; color: var(--accent); font-weight: var(--fw-medium); }
+.icon-browse .icon { width: 16px; height: 16px; }
+.icon-browse:hover:not(:disabled) { background: transparent; text-decoration: underline; }
 .profile-apps { flex: none; margin-bottom: 4px; }
 .profile-app { cursor: default; }
 .profile-app .grow { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
@@ -709,7 +721,7 @@ td.row-chevron .icon { vertical-align: middle; }
 /* the settings window's Permissions section: one card per permission */
 .permissions-section { display: flex; flex-direction: column; gap: 12px; }
 .section-title { font-size: var(--fs-section); }
-.permissions-status { display: flex; align-items: center; gap: 8px; margin: 0; font-size: var(--fs-small); color: var(--ink2); }
+.permissions-status { display: flex; align-items: center; gap: 8px; margin: 0; font-size: var(--fs-small); color: var(--warn); }
 .permission-card { gap: 14px; align-items: center; }
 .permission-card.granted { border-color: var(--good); }
 .permission-card .card-sub { font-size: var(--fs-small); margin-top: 2px; line-height: var(--lh-body); }

@@ -299,7 +299,10 @@ pub struct Profile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub color: Option<String>,
-    /// Its icon in the Keys tab: one of [`PROFILE_ICONS`].
+    /// Its icon in the Keys tab: a bundled icon's name (Google's Material
+    /// icon font, Rounded),
+    /// bare (`edit`; the mappings file writes `:edit:`). See [`crate::icons`].
+    /// A name the font lacks draws the plain profile icon.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub icon: Option<String>,
@@ -310,8 +313,9 @@ pub const PROFILE_COLORS: &[&str] = &[
     "rose", "orange", "amber", "green", "teal", "blue", "indigo", "violet",
 ];
 
-/// The icons a profile can have (bundled Material Symbols, src/assets/icons).
-pub const PROFILE_ICONS: &[&str] = &[
+/// The icons the profile editor suggests (any name of [`crate::icons`] works);
+/// new profiles take them in turn.
+pub const SUGGESTED_ICONS: &[&str] = &[
     "brush",
     "code",
     "music_note",
@@ -605,7 +609,19 @@ fn parse(bytes: &[u8]) -> Result<Config, ConfigError> {
     if probe.version > CONFIG_VERSION {
         return Err(ConfigError::UnsupportedVersion(probe.version));
     }
-    serde_json::from_slice(bytes).map_err(|e| ConfigError::Malformed(e.to_string()))
+    let mut config: Config =
+        serde_json::from_slice(bytes).map_err(|e| ConfigError::Malformed(e.to_string()))?;
+    // An icon the bundled font lacks (a hand edit) is dropped: the profile
+    // shows the plain icon and the next save stays valid.
+    for p in &mut config.profiles {
+        if p.icon
+            .as_deref()
+            .is_some_and(|i| crate::icons::icon_name(i) != Some(i))
+        {
+            p.icon = None;
+        }
+    }
+    Ok(config)
 }
 
 /// Why `save_config` rejected a config from the settings window (T8). It
@@ -836,12 +852,12 @@ fn validate_profiles(config: &Config) -> Result<(), SaveError> {
             ));
         }
         if let Some(i) = &p.icon
-            && !PROFILE_ICONS.contains(&i.as_str())
+            && crate::icons::icon_name(i) != Some(i.as_str())
         {
             return bad(format!(
-                "the profile {} has the icon {i}: pick one of {}",
+                "the profile {} has the icon {i}: use a Material Symbols Rounded name, like edit ({})",
                 p.name,
-                PROFILE_ICONS.join(", ")
+                crate::icons::ICON_CATALOGUE
             ));
         }
         for app in &p.apps {
@@ -1666,7 +1682,17 @@ mod tests {
         assert!(bad(&|c| c.profiles[0].name = "default".into()).contains("used twice"));
         assert!(bad(&|c| c.profiles[0].apps[0].windows = None).contains("names no program"));
         assert!(bad(&|c| c.profiles[0].color = Some("pink".into())).contains("colour pink"));
-        assert!(bad(&|c| c.profiles[0].icon = Some("star".into())).contains("icon star"));
+        assert!(bad(&|c| c.profiles[0].icon = Some("star_wars".into())).contains("icon star_wars"));
+        // Stored bare: the editor strips the colons before saving.
+        assert!(bad(&|c| c.profiles[0].icon = Some(":edit:".into())).contains("icon :edit:"));
+        let mut any = config.clone();
+        any.profiles[0].icon = Some("sports_esports".into());
+        validate(&any).unwrap();
+        // config.json with an icon the font lacks loads, with the plain icon.
+        any.profiles[0].icon = Some("star_wars".into());
+        let loaded = parse(&serde_json::to_vec(&any).unwrap()).unwrap();
+        assert_eq!(loaded.profiles[0].icon, None);
+        validate(&loaded).unwrap();
         assert!(bad(&|c| c.profiles[0].pages.push("gone".into())).contains("gone"));
         // No profiles: config.json is as 1.0.0 wrote it.
         let plain = serde_json::to_value(Config::default()).unwrap();

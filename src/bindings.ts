@@ -35,7 +35,10 @@ pages: Array<string>,
  */
 color?: string, 
 /**
- * Its icon in the Keys tab: one of [`PROFILE_ICONS`].
+ * Its icon in the Keys tab: a bundled icon's name (Google's Material
+ * icon font, Rounded),
+ * bare (`edit`; the mappings file writes `:edit:`). See [`crate::icons`].
+ * A name the font lacks draws the plain profile icon.
  */
 icon?: string, };
 

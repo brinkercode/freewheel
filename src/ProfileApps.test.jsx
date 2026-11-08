@@ -2,7 +2,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import KeysTab from "./KeysTab.jsx";
-import ProfileApps, { NO_FRONT_APP, otherOsOnly, profileRule } from "./ProfileApps.jsx";
+import ProfileApps, { IconPicker, NO_FRONT_APP, iconSearchNote, otherOsOnly, profileRule } from "./ProfileApps.jsx";
+import { ICON_CATALOGUE, ICON_NAMES, bareIcon, iconChar, iconName, searchIcons, writtenIcon } from "./symbols.js";
 import { addProfile, profileApps, profileLook, sameApp, setProfileApps, setProfileLook, typedApp } from "./keys.js";
 
 afterEach(cleanup);
@@ -187,9 +188,9 @@ test("the profile's editor picks its colour and icon, saved in the config", asyn
   await click(colours.getByRole("radio", { name: "indigo" }));
   await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
   expect(save.mock.calls[0][0].profiles[0].color).toBe("indigo");
-  const icons = within(screen.getByRole("radiogroup", { name: "Icon" }));
+  const icons = within(screen.getByRole("radiogroup", { name: "Suggested icons" }));
   expect(icons.getAllByRole("radio")).toHaveLength(8);
-  for (const r of icons.getAllByRole("radio")) expect(r.querySelector("svg"), r.getAttribute("aria-label")).toBeTruthy();
+  for (const r of icons.getAllByRole("radio")) expect(r.querySelector(".symbol-glyph").dataset.glyph, r.getAttribute("aria-label")).toMatch(/^[\u{e000}-\u{f8ff}\u{f0000}-\u{ffffd}]$/u);
   await click(icons.getByRole("radio", { name: "music note" }));
   await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
   expect(save.mock.calls[1][0].profiles[0].icon).toBe("music_note");
@@ -200,5 +201,95 @@ test("a new profile gets the next colour and icon; Default keeps the accent and 
   expect(a.config.profiles.at(-1)).toMatchObject({ color: "orange", icon: "code" });
   expect(profileLook(a.config, null)).toEqual({ color: "accent", icon: "keyboard" });
   expect(profileLook(config(), "notes")).toEqual({ color: "accent", icon: "tab" });
-  expect(profileLook(setProfileLook(config(), "notes", { color: "pink", icon: "star" }), "notes")).toEqual({ color: "accent", icon: "tab" });
+  expect(profileLook(setProfileLook(config(), "notes", { color: "pink", icon: "star_wars" }), "notes")).toEqual({ color: "accent", icon: "tab" });
+  // Any bundled name, not only the suggestions.
+  expect(profileLook(setProfileLook(config(), "notes", { icon: "rocket_launch" }), "notes").icon).toBe("rocket_launch");
+});
+
+test("the bundled icon list has every Material Symbols Rounded name, read bare or as :name:", () => {
+  expect(ICON_NAMES.length).toBeGreaterThan(4000);
+  expect([...ICON_NAMES].sort()).toEqual(ICON_NAMES);
+  for (const n of ["brush", "code", "music_note", "sports_esports", "movie", "edit", "photo_camera", "terminal", "keyboard", "tab"]) expect(iconName(n), n).toBe(n);
+  expect([iconName(":edit:"), iconName(" :Sports_Esports: "), iconName("star_wars"), iconName("")]).toEqual(["edit", "sports_esports", null, null]);
+  expect(bareIcon(":Edit:")).toBe("edit");
+  expect(writtenIcon("edit")).toBe(":edit:");
+  expect(iconChar("edit")).toBe(String.fromCodePoint(0xe150));
+  expect(iconChar("star_wars")).toBe("");
+  expect(ICON_CATALOGUE).toBe("https://fonts.google.com/icons?icon.style=Rounded");
+});
+
+test("the icon search finds names by a word, a prefix or a :name:, best first", () => {
+  expect(searchIcons("")).toEqual([]);
+  expect(searchIcons(":edit:")[0]).toBe("edit");
+  expect(searchIcons("edit").slice(0, 2)).toEqual(["edit", "edit_off"]);
+  expect(searchIcons("edit")).toContain("edit_note");
+  expect(searchIcons("esports")).toContain("sports_esports");
+  expect(searchIcons("sports esp")[0]).toBe("sports_esports");
+  expect(searchIcons("rocket")).toEqual(expect.arrayContaining(["rocket", "rocket_launch"]));
+  expect(searchIcons("a", 10)).toHaveLength(10);
+  expect(searchIcons("zzzzqq")).toEqual([]);
+});
+
+test("the icon search says when a :name: is not an icon, or nothing matches", () => {
+  expect(iconSearchNote("", [])).toBeNull();
+  expect(iconSearchNote(":edit:", ["edit"])).toBeNull();
+  expect(iconSearchNote(":star_wars:", searchIcons(":star_wars:"))).toBe("There is no icon called :star_wars:. Pick one below, or browse all icons for its name.");
+  expect(iconSearchNote("zzzzqq", [])).toBe('No icon matches "zzzzqq". Try another word, or browse all icons.');
+});
+
+test("typing :name: in the icon search and pressing Enter picks it; arrows move through the results", async () => {
+  const onPick = vi.fn();
+  const open = vi.fn();
+  render(<IconPicker icon="tab" color="teal" onPick={onPick} open={open} />);
+  const search = screen.getByRole("searchbox", { name: "Search icons" });
+  fireEvent.change(search, { target: { value: ":edit:" } });
+  const found = within(screen.getByRole("listbox", { name: "Icons found" }));
+  expect(found.getAllByRole("option")[0].getAttribute("title")).toBe(":edit:");
+  fireEvent.keyDown(search, { key: "Enter" });
+  expect(onPick).toHaveBeenLastCalledWith("edit");
+  expect(search.value).toBe("");
+  // A word: live results; ArrowDown enters the grid, ArrowRight moves, Enter picks.
+  fireEvent.change(search, { target: { value: "rocket" } });
+  fireEvent.keyDown(search, { key: "ArrowDown" });
+  const options = screen.getAllByRole("option");
+  expect(document.activeElement).toBe(options[0]);
+  fireEvent.keyDown(options[0], { key: "ArrowRight" });
+  expect(document.activeElement).toBe(screen.getAllByRole("option")[1]);
+  const second = document.activeElement.dataset.name;
+  fireEvent.keyDown(document.activeElement, { key: "Enter" });
+  expect(onPick).toHaveBeenLastCalledWith(second);
+  // An unknown :name: says so inline and picks nothing.
+  onPick.mockClear();
+  fireEvent.change(search, { target: { value: ":star_wars:" } });
+  expect(screen.getByRole("status").textContent).toContain("There is no icon called :star_wars:");
+  // The suggestions are one click; the catalogue opens in the browser.
+  await click(within(screen.getByRole("radiogroup", { name: "Suggested icons" })).getByRole("radio", { name: "brush" }));
+  expect(onPick).toHaveBeenLastCalledWith("brush");
+  await click(screen.getByRole("button", { name: "Browse all icons" }));
+  expect(open).toHaveBeenCalledOnce();
+});
+
+test("the profile editor saves a searched icon bare; an unknown icon in the config draws the plain one", async () => {
+  const c = config([notepad]);
+  c.profiles[0].icon = "star_wars";
+  const { save } = mount(c);
+  expect(document.querySelector(".profile-keycap [data-icon]").dataset.icon).toBe("tab");
+  const search = screen.getByRole("searchbox", { name: "Search icons" });
+  fireEvent.change(search, { target: { value: ":sports_esports:" } });
+  await act(async () => fireEvent.keyDown(search, { key: "Enter" }));
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+  expect(save.mock.calls[0][0].profiles[0].icon).toBe("sports_esports");
+});
+
+test("profile pills draw any bundled icon from the font, with the plain icon for an unknown name", () => {
+  const c = config([notepad]);
+  c.profiles[0].icon = "rocket_launch";
+  render(<KeysTab initial={c} />);
+  const glyph = document.querySelector('.profile-pill [data-icon="rocket_launch"] .symbol-glyph');
+  expect(glyph.dataset.glyph).toBe(iconChar("rocket_launch"));
+  expect(glyph.textContent).toBe("");
+  cleanup();
+  c.profiles[0].icon = "not_a_name";
+  render(<KeysTab initial={c} />);
+  expect([...document.querySelectorAll(".profile-pill [data-icon]")].map((e) => e.dataset.icon)).toEqual(["keyboard", "tab"]);
 });

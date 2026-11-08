@@ -58,7 +58,7 @@ values like `"Dark"` or `"JOG"` may be in any case.
 | `profiles` | list | [] (none) | profiles, each with a name, apps and pages | App profiles: each has its own pages and is used while one of its apps is in front. The pages above are the Default profile, used while no profile's app is. |
 | `profiles[].name` | text | (required) | unique, not Default | The profile's name. |
 | `profiles[].color` | text | (none: the app's accent) | rose, orange, amber, green, teal, blue, indigo, violet | The profile's colour in the Keys tab. |
-| `profiles[].icon` | text | (none) | brush, code, music_note, sports_esports, movie, edit, photo_camera, terminal | The profile's icon in the Keys tab. |
+| `profiles[].icon` | text | (none: a plain profile icon) | a Material Symbols Rounded icon name, like :edit: or :sports_esports: (see Profile icons) | The profile's icon in the Keys tab, by its name in Google's icon catalogue (https://fonts.google.com/icons?icon.style=Rounded). Written :name: or name. |
 | `profiles[].apps` | list | [] (switched to by no app) | app names, or { "name", "windows", "macos", "linux" } objects | The apps the profile is for (see App profiles). |
 | `profiles[].pages` | object | (required) | 1 or more pages | The profile's pages, written as pages is. The first page is where the profile starts. A page key goes to a page of the same profile. |
 | `wheel` | object | scroll mode, speed 10 | — | What turning the wheel does. |
@@ -118,7 +118,7 @@ and optionally a `color` and an `icon`:
   {
     "name": "Writing",
     "color": "teal",
-    "icon": "edit",
+    "icon": ":edit:",
     "apps": [
       "notepad.exe",
       { "name": "Word", "windows": "WINWORD.EXE", "macos": "com.microsoft.Word" },
@@ -150,8 +150,31 @@ and optionally a `color` and an `icon`:
 - The wheel and dial settings are shared by every profile.
 - `color` and `icon` are optional: how the profile looks in the Keys tab.
   Colours: `rose`, `orange`, `amber`, `green`, `teal`, `blue`, `indigo`,
-  `violet`. Icons: `brush`, `code`, `music_note`, `sports_esports`,
-  `movie`, `edit`, `photo_camera`, `terminal`.
+  `violet`. For the icon, see Profile icons.
+
+## Profile icons
+
+A profile's `icon` is any icon of [Material Symbols Rounded][catalogue],
+by its name there: `":edit:"`, `":sports_esports:"`, `":brush:"`. freewheel
+bundles the whole set (over 4,000 icons), so every name in the catalogue
+works offline.
+
+- Find an icon in Google's catalogue, [fonts.google.com/icons][catalogue],
+  and copy its name: the words under it in lower case, with `_` for spaces
+  (`Sports Esports` is `sports_esports`). The profile editor in the Keys tab
+  searches the same names as you type.
+- Write it between colons, `":edit:"`, or bare, `"edit"`. Both read the
+  same; Back up writes `":edit:"`. Names ignore case.
+- A name freewheel does not know is an error at its line and column, with
+  the closest name when one is near: `line 4, column 15, the profile Games
+  icon: there is no icon called ":sports_esport:" (did you mean
+  ":sports_esports:"?)`. Nothing is restored until it is fixed. A config
+  with an unknown icon (a hand edit) shows the profile's plain icon.
+- Files from freewheel 1.0 keep their icons: `brush`, `code`,
+  `music_note`, `sports_esports`, `movie`, `edit`, `photo_camera` and
+  `terminal` are Material Symbols names.
+
+[catalogue]: https://fonts.google.com/icons?icon.style=Rounded
 
 ## Key names
 

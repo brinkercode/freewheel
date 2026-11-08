@@ -3,6 +3,8 @@
 // the Default profile) and the key-combo capture. The UI calls layers
 // "pages" everywhere; "profile" is only for app profiles.
 
+import { iconName } from "./symbols.js";
+
 /** Binding name (config) to printed label, as core status.rs printed_label. */
 export const LABELS = {
   SmartInsrt: "SMART INSRT", Appnd: "APPND", RiplOwr: "RIPL O/WR", CloseUp: "CLOSE UP",
@@ -292,18 +294,20 @@ export function deletePage(config, id) {
 /** What the Keys tab calls the pages no profile has. */
 export const DEFAULT_PROFILE = "Default";
 
-/** A profile's colours and icons (config.rs PROFILE_COLORS / PROFILE_ICONS); Default uses the app's accent and DEFAULT_ICON. */
+/** A profile's colours (config.rs PROFILE_COLORS); Default uses the app's accent. */
 export const PROFILE_COLORS = ["rose", "orange", "amber", "green", "teal", "blue", "indigo", "violet"];
-export const PROFILE_ICONS = ["brush", "code", "music_note", "sports_esports", "movie", "edit", "photo_camera", "terminal"];
+/** The icons the profile editor suggests (config.rs SUGGESTED_ICONS); any bundled icon name works (src/symbols.js). */
+export const SUGGESTED_ICONS = ["brush", "code", "music_note", "sports_esports", "movie", "edit", "photo_camera", "terminal"];
+/** Default's icon. */
 export const DEFAULT_ICON = "keyboard";
-/** The icon a profile without one shows. */
+/** The icon a profile without one (or with a name the font lacks) shows. */
 export const PLAIN_ICON = "tab";
 
-/** How profile `id` looks (null: Default): { color: a PROFILE_COLORS name or "accent", icon }. */
+/** How profile `id` looks (null: Default): { color: a PROFILE_COLORS name or "accent", icon: a bundled icon name }. */
 export function profileLook(config, id) {
   const p = id && (config.profiles ?? []).find((x) => x.id === id);
   if (!p) return { color: "accent", icon: DEFAULT_ICON };
-  return { color: PROFILE_COLORS.includes(p.color) ? p.color : "accent", icon: PROFILE_ICONS.includes(p.icon) ? p.icon : PLAIN_ICON };
+  return { color: PROFILE_COLORS.includes(p.color) ? p.color : "accent", icon: iconName(p.icon) ?? PLAIN_ICON };
 }
 
 /** The config with profile `id`'s colour and/or icon set. */
@@ -322,7 +326,7 @@ export function addProfile(config) {
   const page = freshId((x) => config.layers.some((l) => l.id === x), `${id}-main`);
   const next = withLayers(config, [...config.layers, { id: page, name: "Main", bindings: {} }]);
   const k = profiles.length;
-  const profile = { id, name: `Profile ${n}`, pages: [page], color: PROFILE_COLORS[k % PROFILE_COLORS.length], icon: PROFILE_ICONS[k % PROFILE_ICONS.length] };
+  const profile = { id, name: `Profile ${n}`, pages: [page], color: PROFILE_COLORS[k % PROFILE_COLORS.length], icon: SUGGESTED_ICONS[k % SUGGESTED_ICONS.length] };
   return { config: withProfiles(next, [...profiles, profile]), id, page };
 }
 

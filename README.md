@@ -15,7 +15,7 @@ Use a Blackmagic Speed Editor with any app, without DaVinci Resolve.
 
 - **Remap every key** to a shortcut, a media key, an app, a file or a website.
 - **Pages:** switch the keys between sets of jobs with a key.
-- **Profiles:** a set of pages for an app, used by itself while that app is in front (everything else gets Default).
+- **Profiles:** a set of pages for an app, used by itself while that app is in front (everything else gets Default). Give each a colour and any of the 4,000+ [Material Symbols](https://fonts.google.com/icons?icon.style=Rounded) icons, by name (`:sports_esports:`), bundled for offline use ([SCHEMA.md](SCHEMA.md#profile-icons)).
 - **Wheel modes:** Jog, Shuttle, Scroll, or a knob for volume or screen brightness.
 - **Steps aside for DaVinci Resolve** while it's open.
 - **Key lights** show the wheel mode, toggled keys and the page.
