@@ -102,6 +102,7 @@ fn lock(l: &Lifecycle) -> std::sync::MutexGuard<'_, State> {
 fn deliver<R: Runtime>(app: &AppHandle<R>, p: Pending) {
     match p {
         Pending::Emit(event, payload) => {
+            tracing::info!(event, %payload, "settings window: delivered");
             if let Err(e) = app.emit_to(SETTINGS_WINDOW, &event, payload) {
                 tracing::warn!(error = %e, event, "the settings window did not hear an event");
             }
@@ -127,6 +128,7 @@ fn to_settings<R: Runtime>(app: &AppHandle<R>, p: Pending) {
         // Under the lock: never ahead of what was waiting.
         deliver(app, p);
     } else {
+        tracing::info!(what = ?p, waiting = s.pending.len() + 1, "settings window not listening yet: waits");
         s.wait(p);
     }
 }
@@ -155,7 +157,11 @@ pub fn eval_in_settings<R: Runtime>(app: &AppHandle<R>, script: String) {
 /// waits. Called when its page starts loading and when it closes.
 pub fn not_ready<R: Runtime>(app: &AppHandle<R>) {
     if let Some(l) = lifecycle(app) {
-        lock(&l).ready = false;
+        let mut s = lock(&l);
+        if s.ready {
+            tracing::info!("settings window not ready (loading or closed)");
+        }
+        s.ready = false;
     }
 }
 
@@ -417,7 +423,9 @@ mod tests {
         let me = include_str!("app_windows.rs");
         assert!(me.matches("not_ready(app);").count() >= 3);
         let js = include_str!("../../src/App.jsx");
-        let ready = js.find(".then(() => settingsReady())").unwrap();
+        let ready = js
+            .find(".then(() => (trace(\"page ready\"), settingsReady()))")
+            .unwrap();
         assert!(js[..ready].contains("Promise.allSettled([...unlisten, sim.ready])"));
     }
 

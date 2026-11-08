@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Checks a release's latest.json lists every platform freewheel ships, each
-// with an https url to its portable package and a signature (the universal
-// macOS zip serves both macOS keys; scripts/portable-release.mjs).
+// with an https url to its release file and a signature (the universal
+// macOS .dmg serves both macOS keys; scripts/portable-release.mjs).
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { PACKAGES, PLATFORMS as SERVED } from "./portable-release.mjs";

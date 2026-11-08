@@ -1,21 +1,26 @@
-//! Portable self-update: freewheel is one folder (Windows: `freewheel.exe`;
-//! macOS: `freewheel.app`) and updates itself in place.
+//! Portable self-update: freewheel is the file the user downloaded and ran
+//! (Windows: `freewheel-<ver>-windows-x64.exe`, under whatever name they
+//! keep it) or, on macOS, `freewheel.app` (from the release's .dmg), and it
+//! updates itself in place.
 //!
 //! 1. Check: download the release manifest (`latest.json`, a release asset:
 //!    `releases/latest/download/latest.json`, no API rate limit) and compare
 //!    its version with the running one (semver).
-//! 2. Download: the package for this OS and architecture
-//!    (`freewheel-<ver>-windows-x64.zip`, `freewheel-<ver>-macos-universal.zip`)
+//! 2. Download: the release file for this OS and architecture
+//!    (`freewheel-<ver>-windows-x64.exe`, `freewheel-<ver>-macos-universal.dmg`)
 //!    into a temp dir, with progress, then verify its minisign signature
 //!    against the pubkey baked in at release build (`FREEWHEEL_UPDATER_PUBKEY`)
 //!    and the version the signature is bound to. Nothing next to the app is
 //!    touched before the signature verifies.
-//! 3. Install: unpack the new `freewheel.exe` / `freewheel.app` next to the
-//!    running one (`<name>.new`), rename the running one to `<name>.old`
-//!    (Windows allows renaming a running exe), rename `.new` into its place,
-//!    start it with [`AFTER_UPDATE_FLAG`] and exit. Any failure puts the old
-//!    one back. Settings live in the user config dir and are never touched;
-//!    the start-at-login entry keeps pointing at the same path.
+//! 3. Install: put the new version next to the running one (`<name>.new`):
+//!    the verified exe itself is copied there ([`PackageKind::File`]); on
+//!    macOS the verified .dmg is attached read-only and its `freewheel.app`
+//!    copied out ([`PackageKind::Dmg`]), then detached. Rename the running
+//!    one to `<name>.old` (Windows allows renaming a running exe), rename
+//!    `.new` into its place, start it with [`AFTER_UPDATE_FLAG`] and exit.
+//!    Any failure puts the old one back. Settings live in the user config dir
+//!    and are never touched; the start-at-login entry keeps pointing at the
+//!    same path.
 //! 4. Next start: wait for the old process to exit, then delete `<name>.old`,
 //!    a stale `<name>.new` and the temp dir ([`cleanup`]).
 //!
@@ -51,11 +56,44 @@ pub const HEADLESS_FLAG: &str = "--update-check-and-install";
 /// The temp dir downloads go to (removed after the swap and at each start).
 pub const TEMP_DIR_NAME: &str = "freewheel-update";
 
-/// What a package holds at its root, and what is swapped.
-#[cfg(windows)]
-pub const PAYLOAD: &str = "freewheel.exe";
-#[cfg(not(windows))]
-pub const PAYLOAD: &str = "freewheel.app";
+/// The app bundle a macOS release .dmg holds, and what is swapped there.
+pub const APP_BUNDLE: &str = "freewheel.app";
+
+/// What a release file is, and how it becomes the app.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PackageKind {
+    /// The file is the app (Windows: the exe): copied next to the running
+    /// one as it is (runnable, mode 755 on Unix).
+    File,
+    /// A disk image holding [`APP_BUNDLE`] (macOS): attached read-only, the
+    /// bundle copied out, detached.
+    Dmg,
+}
+
+impl PackageKind {
+    /// The release file `os` (`std::env::consts::OS`) downloads.
+    pub fn for_os(os: &str) -> Self {
+        if os == "macos" {
+            PackageKind::Dmg
+        } else {
+            PackageKind::File
+        }
+    }
+
+    /// The running OS's.
+    pub fn current() -> Self {
+        Self::for_os(std::env::consts::OS)
+    }
+
+    /// The download's file name in the temp dir.
+    pub fn download_name(self, version: &str) -> String {
+        match self {
+            PackageKind::Dmg => format!("freewheel-{version}.dmg"),
+            PackageKind::File if cfg!(windows) => format!("freewheel-{version}.exe"),
+            PackageKind::File => format!("freewheel-{version}.AppImage"),
+        }
+    }
+}
 
 /// The updater pubkey baked in at release build (tauri signer format:
 /// base64 of minisign's .pub text); `None` in dev and CI builds.
@@ -105,7 +143,7 @@ pub enum UpdateError {
     BadSignature(String),
     /// The app's folder cannot be written (e.g. Program Files).
     NotWritable(PathBuf),
-    /// Unpacking or swapping failed (the old version was put back).
+    /// Staging or swapping failed (the old version was put back).
     Install(String),
     /// Download or install called with nothing to download or install.
     Nothing,
@@ -295,67 +333,105 @@ pub fn check_writable(dir: &Path) -> Result<(), UpdateError> {
     }
 }
 
-/// Unpacks the package's `root` entry (a file, or a dir and everything in
-/// it) to `dest`. Entries outside `root` (e.g. freewheel-simulate.cmd) and
-/// macOS `__MACOSX` metadata are skipped; unix modes and symlinks are kept.
-pub fn extract_payload(zip: &Path, root: &str, dest: &Path) -> Result<(), UpdateError> {
-    let bad = |e: String| UpdateError::Install(format!("unpacking the update: {e}"));
-    let file = std::fs::File::open(zip).map_err(|e| bad(e.to_string()))?;
-    let mut archive = zip::ZipArchive::new(file).map_err(|e| bad(e.to_string()))?;
-    let mut found = false;
-    for i in 0..archive.len() {
-        let mut entry = archive.by_index(i).map_err(|e| bad(e.to_string()))?;
-        let Some(name) = entry.enclosed_name() else {
-            return Err(bad(format!("unsafe path {:?}", entry.name_raw())));
-        };
-        let mut parts = name.components();
-        if parts.next().and_then(|c| c.as_os_str().to_str()) != Some(root) {
-            continue;
-        }
-        let rest = parts.as_path();
-        if rest.components().any(|c| c.as_os_str() == "__MACOSX") {
-            continue;
-        }
-        let out = if rest.as_os_str().is_empty() {
-            dest.to_path_buf()
-        } else {
-            dest.join(rest)
-        };
-        found = true;
-        let mode = entry.unix_mode();
-        if entry.is_dir() {
-            std::fs::create_dir_all(&out).map_err(|e| bad(format!("{}: {e}", out.display())))?;
-            continue;
-        }
-        if let Some(parent) = out.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| bad(format!("{}: {e}", parent.display())))?;
-        }
-        #[cfg(unix)]
-        if mode.is_some_and(|m| m & 0o170000 == 0o120000) {
-            let mut link = String::new();
-            std::io::Read::read_to_string(&mut entry, &mut link).map_err(|e| bad(e.to_string()))?;
-            std::os::unix::fs::symlink(&link, &out)
-                .map_err(|e| bad(format!("{}: {e}", out.display())))?;
-            continue;
-        }
-        let mut f =
-            std::fs::File::create(&out).map_err(|e| bad(format!("{}: {e}", out.display())))?;
-        std::io::copy(&mut entry, &mut f).map_err(|e| bad(format!("{}: {e}", out.display())))?;
-        drop(f);
-        #[cfg(unix)]
-        if let Some(m) = mode {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&out, std::fs::Permissions::from_mode(m & 0o7777))
-                .map_err(|e| bad(format!("{}: {e}", out.display())))?;
-        }
-        #[cfg(not(unix))]
-        let _ = mode;
+/// Copies the verified release file to `dest`, runnable (mode 755 on Unix).
+pub fn stage_file(file: &Path, dest: &Path) -> Result<(), UpdateError> {
+    let bad = |e: std::io::Error| UpdateError::Install(format!("{}: {e}", dest.display()));
+    std::fs::copy(file, dest).map_err(bad)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dest, std::fs::Permissions::from_mode(0o755)).map_err(bad)?;
     }
-    if found {
+    Ok(())
+}
+
+/// The `hdiutil attach` arguments for mounting `dmg` at `mount`: read-only,
+/// not shown in Finder, nothing opened.
+pub fn attach_args(dmg: &Path, mount: &Path) -> Vec<std::ffi::OsString> {
+    let mut args: Vec<std::ffi::OsString> = [
+        "attach",
+        "-nobrowse",
+        "-readonly",
+        "-noautoopen",
+        "-mountpoint",
+    ]
+    .map(Into::into)
+    .to_vec();
+    args.push(mount.into());
+    args.push(dmg.into());
+    args
+}
+
+fn run(program: &str, args: &[std::ffi::OsString]) -> Result<(), String> {
+    let out = std::process::Command::new(program)
+        .args(args)
+        .output()
+        .map_err(|e| format!("{program}: {e}"))?;
+    if out.status.success() {
         Ok(())
     } else {
-        Err(bad(format!("the package has no {root}")))
+        Err(format!(
+            "{program} {}: {}",
+            args.first().and_then(|a| a.to_str()).unwrap_or(""),
+            String::from_utf8_lossy(&out.stderr).trim()
+        ))
+    }
+}
+
+/// True when `bundle` looks like a whole freewheel.app.
+pub fn is_app_bundle(bundle: &Path) -> bool {
+    bundle.join("Contents/MacOS/freewheel").is_file()
+        && bundle.join("Contents/Info.plist").is_file()
+}
+
+/// Copies [`APP_BUNDLE`] out of the verified `dmg` to `dest`: attaches it
+/// read-only at a mount point next to it, copies the bundle with `ditto`
+/// (modes, symlinks, the code signature), always detaches.
+pub fn stage_from_dmg(dmg: &Path, dest: &Path) -> Result<(), UpdateError> {
+    let bad = |e: String| UpdateError::Install(format!("opening the update: {e}"));
+    let mount = dmg.with_extension("mount");
+    let _ = remove_path(&mount);
+    std::fs::create_dir_all(&mount).map_err(|e| bad(format!("{}: {e}", mount.display())))?;
+    let result = run("/usr/bin/hdiutil", &attach_args(dmg, &mount))
+        .map_err(bad)
+        .and_then(|()| {
+            let copied = (|| {
+                let app = mount.join(APP_BUNDLE);
+                if !is_app_bundle(&app) {
+                    return Err(bad(format!("the disk image has no {APP_BUNDLE}")));
+                }
+                run("/usr/bin/ditto", &[app.into(), dest.into()]).map_err(bad)?;
+                if !is_app_bundle(dest) {
+                    return Err(bad(format!(
+                        "{} is not a whole {APP_BUNDLE}",
+                        dest.display()
+                    )));
+                }
+                Ok(())
+            })();
+            let mut detached = run("/usr/bin/hdiutil", &["detach".into(), mount.clone().into()]);
+            if detached.is_err() {
+                std::thread::sleep(Duration::from_millis(500));
+                detached = run(
+                    "/usr/bin/hdiutil",
+                    &["detach".into(), "-force".into(), mount.clone().into()],
+                );
+            }
+            if let Err(e) = detached {
+                tracing::warn!(error = %e, "update: the disk image did not detach");
+            }
+            copied
+        });
+    let _ = std::fs::remove_dir(&mount);
+    result
+}
+
+/// Puts the verified release file `package` next to `target` as `kind`
+/// says ([`stage_file`], [`stage_from_dmg`]).
+pub fn stage(kind: PackageKind, package: &Path, dest: &Path) -> Result<(), UpdateError> {
+    match kind {
+        PackageKind::File => stage_file(package, dest),
+        PackageKind::Dmg => stage_from_dmg(package, dest),
     }
 }
 
@@ -404,17 +480,21 @@ pub fn unswap(target: &Path) -> Result<(), UpdateError> {
         .map_err(|e| UpdateError::Install(format!("putting the old version back: {e}")))
 }
 
-/// Unpacks the verified `zip` next to `target` and swaps it in. On any
-/// failure nothing changes (the staged copy is removed, the old version
-/// stays or is put back).
-pub fn install_package(zip: &Path, target: &Path, root: &str) -> Result<(), UpdateError> {
+/// Puts the verified release file `package` next to `target` ([`stage`])
+/// and swaps it in. On any failure nothing changes (the staged copy is
+/// removed, the old version stays or is put back).
+pub fn install_package(
+    package: &Path,
+    target: &Path,
+    kind: PackageKind,
+) -> Result<(), UpdateError> {
     let dir = target
         .parent()
         .ok_or_else(|| UpdateError::Install(format!("{} has no folder", target.display())))?;
     check_writable(dir)?;
     let staged = sibling(target, "new");
     remove_path(&staged).map_err(|e| UpdateError::Install(format!("{}: {e}", staged.display())))?;
-    let result = extract_payload(zip, root, &staged).and_then(|()| swap(target, &staged));
+    let result = stage(kind, package, &staged).and_then(|()| swap(target, &staged));
     if result.is_err() {
         let _ = remove_path(&staged);
     }
@@ -850,6 +930,12 @@ impl Updater {
                     })
             }
         };
+        tracing::info!(
+            current = %current,
+            offered = ?offer.as_ref().map(|o| &o.version),
+            simulated = self.is_simulated(),
+            "update: checked"
+        );
         let info = offer.as_ref().map(|o| UpdateInfo {
             version: o.version.clone(),
             current_version: current,
@@ -878,12 +964,14 @@ impl Updater {
                     .ok_or_else(|| UpdateError::Install("no install target".into()))?;
                 // Before any download: an update that can't be put in place is no use.
                 check_writable(target.parent().unwrap_or(&target))?;
-                let zip = self.temp.join(format!("freewheel-{}.zip", offer.version));
+                let file = self
+                    .temp
+                    .join(PackageKind::current().download_name(&offer.version));
                 let result = async {
                     std::fs::create_dir_all(&self.temp).map_err(|e| {
                         UpdateError::Install(format!("{}: {e}", self.temp.display()))
                     })?;
-                    let data = fetch_package(&offer.platform.url, &zip, &mut on).await?;
+                    let data = fetch_package(&offer.platform.url, &file, &mut on).await?;
                     verify(
                         &pubkey,
                         &data,
@@ -896,7 +984,8 @@ impl Updater {
                     let _ = remove_path(&self.temp);
                     return Err(e);
                 }
-                *lock(&self.phase) = Phase::Ready(offer, zip);
+                tracing::info!(version = %offer.version, "update: downloaded and verified, ready");
+                *lock(&self.phase) = Phase::Ready(offer, file);
             }
             Source::Simulated { .. } => {
                 on(DownloadEvent::Started {
@@ -910,6 +999,7 @@ impl Updater {
                 }
                 on(DownloadEvent::Finished);
                 verify(SIM_PUBKEY, SIM_PACKAGE, &offer.platform.signature, None)?;
+                tracing::info!(version = %offer.version, "update: simulated download verified, ready");
                 *lock(&self.phase) = Phase::Ready(offer, PathBuf::new());
             }
         }
@@ -919,9 +1009,11 @@ impl Updater {
     /// Installs the downloaded, verified package (see the module docs);
     /// the temp dir is removed. In `--simulate` only the version changes.
     pub fn install(&self) -> Result<Installed, UpdateError> {
-        let Phase::Ready(offer, zip) = lock(&self.phase).clone() else {
+        let Phase::Ready(offer, file) = lock(&self.phase).clone() else {
+            tracing::warn!("update: install asked with nothing downloaded");
             return Err(UpdateError::Nothing);
         };
+        tracing::info!(version = %offer.version, simulated = self.is_simulated(), "update: installing");
         if self.is_simulated() {
             *lock(&self.current) = offer.version.clone();
             *lock(&self.phase) = Phase::Idle;
@@ -931,7 +1023,7 @@ impl Updater {
             .target
             .clone()
             .ok_or_else(|| UpdateError::Install("no install target".into()))?;
-        install_package(&zip, &target, PAYLOAD)?;
+        install_package(&file, &target, PackageKind::current())?;
         let _ = remove_path(&self.temp);
         *lock(&self.phase) = Phase::Idle;
         Ok(Installed::Swapped(target))
@@ -1104,6 +1196,9 @@ mod tests {
     use std::io::Read;
 
     const TEST_PUBKEY: &str = include_str!("../fixtures/update/test.pub");
+    /// How scripts/portable-release.mjs makes the macOS .dmg.
+    #[cfg(target_os = "macos")]
+    const DMG_CREATE: &str = r#"["create", "-volname", "freewheel", "-fs", "HFS+", "-format", "UDZO", "-ov", "-srcfolder""#;
     const OTHER_PUBKEY: &str = include_str!("../fixtures/update/other.pub");
 
     fn manifest(platforms: &[&str]) -> Manifest {
@@ -1117,7 +1212,7 @@ mod tests {
                     (
                         k.to_string(),
                         Platform {
-                            url: format!("https://x/{k}.zip"),
+                            url: format!("https://x/{k}.bin"),
                             signature: "s".into(),
                         },
                     )
@@ -1144,20 +1239,20 @@ mod tests {
         let m = manifest(&["windows-x86_64", "darwin-aarch64", "darwin-x86_64"]);
         assert_eq!(
             select(&m, "windows", "x86_64").unwrap().url,
-            "https://x/windows-x86_64.zip"
+            "https://x/windows-x86_64.bin"
         );
         assert_eq!(
             select(&m, "macos", "aarch64").unwrap().url,
-            "https://x/darwin-aarch64.zip"
+            "https://x/darwin-aarch64.bin"
         );
         assert_eq!(
             select(&m, "macos", "x86_64").unwrap().url,
-            "https://x/darwin-x86_64.zip"
+            "https://x/darwin-x86_64.bin"
         );
         // Windows on Arm runs the x64 build.
         assert_eq!(
             select(&m, "windows", "aarch64").unwrap().url,
-            "https://x/windows-x86_64.zip"
+            "https://x/windows-x86_64.bin"
         );
         let e = select(&m, "linux", "x86_64").unwrap_err();
         assert!(e.to_string().starts_with("no-package:"), "{e}");
@@ -1210,23 +1305,6 @@ mod tests {
         }
     }
 
-    fn write_zip(path: &Path, entries: &[(&str, Option<&[u8]>, u32)]) {
-        let mut z = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
-        for (name, data, mode) in entries {
-            let opts = zip::write::SimpleFileOptions::default()
-                .compression_method(zip::CompressionMethod::Deflated)
-                .unix_permissions(*mode);
-            match data {
-                Some(d) => {
-                    z.start_file(*name, opts).unwrap();
-                    z.write_all(d).unwrap();
-                }
-                None => z.add_directory(*name, opts).unwrap(),
-            }
-        }
-        z.finish().unwrap();
-    }
-
     fn read(path: &Path) -> String {
         let mut s = String::new();
         std::fs::File::open(path)
@@ -1237,30 +1315,59 @@ mod tests {
     }
 
     #[test]
-    fn a_windows_package_swaps_the_exe_and_keeps_the_old_one_aside() {
-        let dir = tempfile::tempdir().unwrap();
-        let app = dir.path().join("portable");
-        std::fs::create_dir(&app).unwrap();
-        let exe = app.join("freewheel.exe");
-        std::fs::write(&exe, "A").unwrap();
-        let zip = dir.path().join("b.zip");
-        write_zip(
-            &zip,
-            &[
-                ("freewheel.exe", Some(b"B"), 0o755),
-                ("freewheel-simulate.cmd", Some(b"cmd"), 0o644),
-            ],
+    fn the_release_file_is_the_exe_except_on_macos() {
+        assert_eq!(PackageKind::for_os("windows"), PackageKind::File);
+        assert_eq!(PackageKind::for_os("linux"), PackageKind::File);
+        assert_eq!(PackageKind::for_os("macos"), PackageKind::Dmg);
+        assert_eq!(
+            PackageKind::Dmg.download_name("0.2.0"),
+            "freewheel-0.2.0.dmg"
         );
-        install_package(&zip, &exe, "freewheel.exe").unwrap();
+        if cfg!(windows) {
+            assert_eq!(
+                PackageKind::File.download_name("0.2.0"),
+                "freewheel-0.2.0.exe"
+            );
+        }
+        let args = attach_args(Path::new("/t/u.dmg"), Path::new("/t/u.mount"));
+        assert_eq!(
+            args,
+            [
+                "attach",
+                "-nobrowse",
+                "-readonly",
+                "-noautoopen",
+                "-mountpoint",
+                "/t/u.mount",
+                "/t/u.dmg"
+            ]
+            .map(std::ffi::OsString::from)
+        );
+    }
+
+    #[test]
+    fn a_downloaded_exe_is_swapped_in_and_the_old_one_kept_aside() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = dir.path().join("Downloads");
+        std::fs::create_dir(&app).unwrap();
+        // The name the user downloaded it under stays.
+        let exe = app.join("freewheel-0.1.0-windows-x64.exe");
+        std::fs::write(&exe, "A").unwrap();
+        let temp = dir.path().join(TEMP_DIR_NAME);
+        std::fs::create_dir(&temp).unwrap();
+        let download = temp.join(PackageKind::File.download_name("0.2.0"));
+        std::fs::write(&download, "B").unwrap();
+        install_package(&download, &exe, PackageKind::File).unwrap();
         assert_eq!(read(&exe), "B");
         assert_eq!(read(&sibling(&exe, "old")), "A");
         assert!(!sibling(&exe, "new").exists());
-        // Only the exe: nothing else in the folder changes.
-        assert!(!app.join("freewheel-simulate.cmd").exists());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&exe).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o755);
+        }
         // The next start removes the old version and the download.
-        let temp = dir.path().join(TEMP_DIR_NAME);
-        std::fs::create_dir(&temp).unwrap();
-        std::fs::write(temp.join("freewheel-0.2.0.zip"), "zip").unwrap();
         let removed = cleanup(&exe, &temp);
         assert_eq!(removed, vec![sibling(&exe, "old"), temp.clone()]);
         assert!(!sibling(&exe, "old").exists() && !temp.exists());
@@ -1268,46 +1375,6 @@ mod tests {
         assert_eq!(std::fs::read_dir(&app).unwrap().count(), 1);
         // Nothing left: cleanup is a no-op.
         assert!(cleanup(&exe, &temp).is_empty());
-    }
-
-    #[test]
-    fn a_macos_package_swaps_the_whole_bundle() {
-        let dir = tempfile::tempdir().unwrap();
-        let bundle = dir.path().join("freewheel.app");
-        std::fs::create_dir_all(bundle.join("Contents/MacOS")).unwrap();
-        std::fs::write(bundle.join("Contents/MacOS/freewheel"), "A").unwrap();
-        std::fs::write(bundle.join("Contents/OnlyInA"), "a").unwrap();
-        let zip = dir.path().join("b.zip");
-        write_zip(
-            &zip,
-            &[
-                ("freewheel.app/", None, 0o755),
-                ("freewheel.app/Contents/", None, 0o755),
-                ("freewheel.app/Contents/MacOS/", None, 0o755),
-                ("freewheel.app/Contents/MacOS/freewheel", Some(b"B"), 0o755),
-                ("freewheel.app/Contents/Info.plist", Some(b"plist"), 0o644),
-                ("__MACOSX/freewheel.app/._Info.plist", Some(b"junk"), 0o644),
-            ],
-        );
-        install_package(&zip, &bundle, "freewheel.app").unwrap();
-        assert_eq!(read(&bundle.join("Contents/MacOS/freewheel")), "B");
-        assert_eq!(read(&bundle.join("Contents/Info.plist")), "plist");
-        assert!(!bundle.join("Contents/OnlyInA").exists());
-        assert_eq!(
-            read(&sibling(&bundle, "old").join("Contents/MacOS/freewheel")),
-            "A"
-        );
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mode = std::fs::metadata(bundle.join("Contents/MacOS/freewheel"))
-                .unwrap()
-                .permissions()
-                .mode();
-            assert_eq!(mode & 0o777, 0o755);
-        }
-        cleanup(&bundle, &dir.path().join(TEMP_DIR_NAME));
-        assert!(!sibling(&bundle, "old").exists());
     }
 
     #[test]
@@ -1331,37 +1398,28 @@ mod tests {
     }
 
     #[test]
-    fn a_broken_package_changes_nothing() {
+    fn a_missing_download_or_a_bad_disk_image_changes_nothing() {
         let dir = tempfile::tempdir().unwrap();
         let exe = dir.path().join("freewheel.exe");
         std::fs::write(&exe, "A").unwrap();
-        let not_zip = dir.path().join("x.zip");
-        std::fs::write(&not_zip, "not a zip").unwrap();
-        let wrong = dir.path().join("wrong.zip");
-        write_zip(&wrong, &[("something-else.exe", Some(b"B"), 0o755)]);
-        for zip in [&not_zip, &wrong] {
-            let e = install_package(zip, &exe, "freewheel.exe").unwrap_err();
-            assert!(e.to_string().starts_with("install:"), "{e}");
-            assert_eq!(read(&exe), "A");
-            assert_eq!(
-                std::fs::read_dir(dir.path()).unwrap().count(),
-                3,
-                "only exe and the two zips"
-            );
-        }
-    }
-
-    #[test]
-    fn unsafe_paths_in_a_package_are_refused() {
-        let dir = tempfile::tempdir().unwrap();
-        let exe = dir.path().join("app").join("freewheel.exe");
-        std::fs::create_dir(exe.parent().unwrap()).unwrap();
-        std::fs::write(&exe, "A").unwrap();
-        let zip = dir.path().join("evil.zip");
-        write_zip(&zip, &[("../evil.exe", Some(b"x"), 0o755)]);
-        assert!(install_package(&zip, &exe, "freewheel.exe").is_err());
-        assert!(!dir.path().join("evil.exe").exists());
+        let e = install_package(&dir.path().join("gone.exe"), &exe, PackageKind::File).unwrap_err();
+        assert!(e.to_string().starts_with("install:"), "{e}");
         assert_eq!(read(&exe), "A");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        // Not a disk image (and off macOS, no hdiutil): refused, A intact.
+        let bundle = dir.path().join(APP_BUNDLE);
+        std::fs::create_dir_all(bundle.join("Contents/MacOS")).unwrap();
+        std::fs::write(bundle.join("Contents/MacOS/freewheel"), "A").unwrap();
+        let not_dmg = dir.path().join("x.dmg");
+        std::fs::write(&not_dmg, "not a disk image").unwrap();
+        let e = install_package(&not_dmg, &bundle, PackageKind::Dmg).unwrap_err();
+        assert!(e.to_string().starts_with("install:"), "{e}");
+        assert_eq!(read(&bundle.join("Contents/MacOS/freewheel")), "A");
+        assert_eq!(
+            std::fs::read_dir(dir.path()).unwrap().count(),
+            3,
+            "only the exe, the bundle and the bad image"
+        );
     }
 
     #[test]
@@ -1371,9 +1429,9 @@ mod tests {
         std::fs::write(&exe, "A").unwrap();
         std::fs::write(sibling(&exe, "new"), "stale").unwrap();
         std::fs::write(sibling(&exe, "old"), "older").unwrap();
-        let zip = dir.path().join("b.zip");
-        write_zip(&zip, &[("freewheel.exe", Some(b"B"), 0o755)]);
-        install_package(&zip, &exe, "freewheel.exe").unwrap();
+        let download = dir.path().join("b.exe");
+        std::fs::write(&download, "B").unwrap();
+        install_package(&download, &exe, PackageKind::File).unwrap();
         assert_eq!(read(&exe), "B");
         assert_eq!(read(&sibling(&exe, "old")), "A");
     }
@@ -1387,10 +1445,10 @@ mod tests {
         std::fs::create_dir(&app).unwrap();
         let exe = app.join("freewheel.exe");
         std::fs::write(&exe, "A").unwrap();
-        let zip = dir.path().join("b.zip");
-        write_zip(&zip, &[("freewheel.exe", Some(b"B"), 0o755)]);
+        let download = dir.path().join("b.exe");
+        std::fs::write(&download, "B").unwrap();
         std::fs::set_permissions(&app, std::fs::Permissions::from_mode(0o555)).unwrap();
-        let result = install_package(&zip, &exe, "freewheel.exe");
+        let result = install_package(&download, &exe, PackageKind::File);
         std::fs::set_permissions(&app, std::fs::Permissions::from_mode(0o755)).unwrap();
         if std::fs::OpenOptions::new()
             .write(true)
@@ -1492,7 +1550,7 @@ mod tests {
         assert!(!url_allowed("http://127.0.0.1:1/latest.json", false));
         assert!(url_allowed("http://127.0.0.1:1/latest.json", true));
         assert!(!url_allowed("http://github.com/x", true));
-        assert!(!url_allowed("file:///C:/evil.zip", true));
+        assert!(!url_allowed("file:///C:/evil.exe", true));
     }
 
     #[test]
@@ -1677,8 +1735,7 @@ mod tests {
         assert!(!temp.exists(), "the rejected download is gone");
         assert_eq!(u.install().unwrap_err(), UpdateError::Nothing);
         assert_eq!(read(&exe), "A");
-        // The signed package: downloads with progress and verifies; it is
-        // not a zip, so the install fails and A stays.
+        // The signed package: downloads with progress and verifies.
         let manifest = routes(package.clone());
         let u = run("/latest.json", vec![("/latest.json", 200, manifest)]);
         tauri::async_runtime::block_on(u.check()).unwrap().unwrap();
@@ -1691,82 +1748,104 @@ mod tests {
             })
         );
         assert_eq!(events.last(), Some(&DownloadEvent::Finished));
+        let kind = PackageKind::current();
         assert_eq!(
-            std::fs::read(temp.join("freewheel-0.2.0.zip")).unwrap(),
+            std::fs::read(temp.join(kind.download_name("0.2.0"))).unwrap(),
             package
         );
-        let e = u.install().unwrap_err();
-        assert!(e.to_string().starts_with("install:"), "{e}");
-        assert_eq!(read(&exe), "A");
-        assert!(!sibling(&exe, "old").exists() && !sibling(&exe, "new").exists());
+        match kind {
+            // The verified file is the new version, swapped in as it is.
+            PackageKind::File => {
+                assert_eq!(u.install().unwrap(), Installed::Swapped(exe.clone()));
+                assert_eq!(std::fs::read(&exe).unwrap(), package);
+                assert_eq!(read(&sibling(&exe, "old")), "A");
+                assert!(!temp.exists(), "the download is gone");
+            }
+            // macOS: not a disk image, so the install fails and A stays.
+            PackageKind::Dmg => {
+                let e = u.install().unwrap_err();
+                assert!(e.to_string().starts_with("install:"), "{e}");
+                assert_eq!(read(&exe), "A");
+                assert!(!sibling(&exe, "old").exists() && !sibling(&exe, "new").exists());
+            }
+        }
     }
 
-    /// The packagers the release uses (scripts/portable-release.mjs), and
-    /// this unpacker, agree: run on the OS that packs.
+    /// The macOS release .dmg (scripts/portable-release.mjs: the same
+    /// `hdiutil create` arguments, freewheel.app plus an Applications link)
+    /// is what the updater copies the app out of; macOS only (hdiutil).
+    #[cfg(target_os = "macos")]
     #[test]
-    fn the_release_packagers_make_what_the_updater_unpacks() {
+    fn the_release_dmg_is_what_the_updater_installs_from() {
+        use std::os::unix::fs::PermissionsExt;
         let script = include_str!("../../scripts/portable-release.mjs");
-        assert!(script.contains(r#"["-c", "-k", "--norsrc", "--keepParent""#));
-        assert!(script.contains(r#"["-a", "-c", "-f""#));
+        assert!(script.contains(DMG_CREATE));
         let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("src");
-        let app = dir.path().join("app");
-        std::fs::create_dir_all(&src).unwrap();
-        std::fs::create_dir_all(&app).unwrap();
-        let zip = dir.path().join("package.zip");
-        if cfg!(target_os = "macos") {
-            let bundle = src.join("freewheel.app");
-            std::fs::create_dir_all(bundle.join("Contents/MacOS")).unwrap();
-            std::fs::create_dir_all(bundle.join("Contents/Resources")).unwrap();
-            std::fs::write(bundle.join("Contents/MacOS/freewheel"), "B").unwrap();
-            std::fs::write(bundle.join("Contents/Info.plist"), "plist").unwrap();
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let exe = bundle.join("Contents/MacOS/freewheel");
-                std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
-                std::os::unix::fs::symlink("../Info.plist", bundle.join("Contents/Resources/link"))
-                    .unwrap();
-            }
-            let ok = std::process::Command::new("/usr/bin/ditto")
-                .args(["-c", "-k", "--norsrc", "--keepParent"])
-                .arg(&bundle)
-                .arg(&zip)
+        let stage = dir.path().join("stage");
+        let bundle = stage.join(APP_BUNDLE);
+        std::fs::create_dir_all(bundle.join("Contents/MacOS")).unwrap();
+        std::fs::create_dir_all(bundle.join("Contents/Resources")).unwrap();
+        std::fs::write(bundle.join("Contents/MacOS/freewheel"), "B").unwrap();
+        std::fs::write(bundle.join("Contents/Info.plist"), "plist").unwrap();
+        let exe = bundle.join("Contents/MacOS/freewheel");
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::os::unix::fs::symlink("../Info.plist", bundle.join("Contents/Resources/link"))
+            .unwrap();
+        std::os::unix::fs::symlink("/Applications", stage.join("Applications")).unwrap();
+        let dmg = dir.path().join("freewheel-0.2.0.dmg");
+        let mut ok = false;
+        for _ in 0..3 {
+            let status = std::process::Command::new("/usr/bin/hdiutil")
+                .args([
+                    "create",
+                    "-volname",
+                    "freewheel",
+                    "-fs",
+                    "HFS+",
+                    "-format",
+                    "UDZO",
+                    "-ov",
+                    "-srcfolder",
+                ])
+                .arg(&stage)
+                .arg(&dmg)
                 .status()
                 .unwrap();
-            assert!(ok.success());
-            let target = app.join("freewheel.app");
-            std::fs::create_dir_all(target.join("Contents/MacOS")).unwrap();
-            std::fs::write(target.join("Contents/MacOS/freewheel"), "A").unwrap();
-            install_package(&zip, &target, "freewheel.app").unwrap();
-            assert_eq!(read(&target.join("Contents/MacOS/freewheel")), "B");
-            assert_eq!(read(&target.join("Contents/Resources/link")), "plist");
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let meta = std::fs::metadata(target.join("Contents/MacOS/freewheel")).unwrap();
-                assert_eq!(meta.permissions().mode() & 0o777, 0o755);
-                let link = std::fs::read_link(target.join("Contents/Resources/link")).unwrap();
-                assert_eq!(link, Path::new("../Info.plist"));
+            if status.success() {
+                ok = true;
+                break;
             }
-        } else if cfg!(windows) {
-            std::fs::write(src.join("freewheel.exe"), "B").unwrap();
-            std::fs::write(src.join("freewheel-simulate.cmd"), "cmd").unwrap();
-            let tar = Path::new(&std::env::var("SystemRoot").unwrap()).join(r"System32\tar.exe");
-            let ok = std::process::Command::new(tar)
-                .args(["-a", "-c", "-f"])
-                .arg(&zip)
-                .arg("-C")
-                .arg(&src)
-                .args(["freewheel.exe", "freewheel-simulate.cmd"])
-                .status()
-                .unwrap();
-            assert!(ok.success());
-            let target = app.join("freewheel.exe");
-            std::fs::write(&target, "A").unwrap();
-            install_package(&zip, &target, "freewheel.exe").unwrap();
-            assert_eq!(read(&target), "B");
-            assert_eq!(read(&sibling(&target, "old")), "A");
+            std::thread::sleep(Duration::from_secs(2));
         }
+        assert!(ok, "hdiutil create failed");
+        let apps = dir.path().join("Applications");
+        let target = apps.join(APP_BUNDLE);
+        std::fs::create_dir_all(target.join("Contents/MacOS")).unwrap();
+        std::fs::write(target.join("Contents/MacOS/freewheel"), "A").unwrap();
+        std::fs::write(target.join("Contents/OnlyInA"), "a").unwrap();
+        install_package(&dmg, &target, PackageKind::Dmg).unwrap();
+        assert_eq!(read(&target.join("Contents/MacOS/freewheel")), "B");
+        assert_eq!(read(&target.join("Contents/Resources/link")), "plist");
+        assert!(!target.join("Contents/OnlyInA").exists());
+        let meta = std::fs::metadata(target.join("Contents/MacOS/freewheel")).unwrap();
+        assert_eq!(meta.permissions().mode() & 0o777, 0o755);
+        let link = std::fs::read_link(target.join("Contents/Resources/link")).unwrap();
+        assert_eq!(link, Path::new("../Info.plist"));
+        assert_eq!(
+            read(&sibling(&target, "old").join("Contents/MacOS/freewheel")),
+            "A"
+        );
+        // Detached and its mount point gone; only the app (and .old) in the folder.
+        assert!(!dmg.with_extension("mount").exists());
+        let mounts = String::from_utf8(
+            std::process::Command::new("/sbin/mount")
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap();
+        assert!(!mounts.contains("freewheel-0.2.0.mount"), "{mounts}");
+        cleanup(&target, &dir.path().join(TEMP_DIR_NAME));
+        assert_eq!(std::fs::read_dir(&apps).unwrap().count(), 1);
     }
 }

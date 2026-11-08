@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 // Verifies a release's latest.json the way the in-app updater does
-// (src-tauri/src/selfupdate.rs): each platform's package must carry a
+// (src-tauri/src/selfupdate.rs): each platform's release file must carry a
 // minisign signature by the updater key (the pubkey release builds embed),
 // bound to the manifest's version. Also checks the version and the notes.
 //
 //   TAURI_UPDATER_PUBKEY=<base64 pubkey> node scripts/verify-update-sig.mjs latest.json [--version 0.1.1] [--dir <packages>]
 //
-// Each platform's url is downloaded once (the universal macOS zip serves
+// Each platform's url is downloaded once (the universal macOS .dmg serves
 // both macOS keys) and checked against its signature; with --dir the
-// packages are read from that folder by file name instead (before upload).
+// files are read from that folder by file name instead (before upload).
 import { createHash, createPublicKey, verify } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";

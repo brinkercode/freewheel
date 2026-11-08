@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { checkWorkflow } from "./check-workflow.mjs";
 import { e2eConfig, nextVersion } from "./e2e-update-config.mjs";
-import { UPDATE_URL_ENV, configFile, parseArgs, populate, updateTemp } from "./e2e-update-windows.mjs";
+import { UPDATE_URL_ENV, configFile, parseArgs, populate, runningPathsCommand, updateTemp } from "./e2e-update-windows.mjs";
 import { chunks, localManifest, startUpdateServer, tamper } from "./update-server.mjs";
 import { sampleConfig } from "../src/dev/mockTauri.js";
 
@@ -21,8 +21,8 @@ test("the e2e builds: only the version is overridden; the next version is the ne
 });
 
 test("the local server moves the manifest's urls to itself; a tampered copy differs in one byte", () => {
-  const m = { version: "0.2.0", notes: "n", platforms: { "windows-x86_64": { url: "https://github.com/x/releases/download/v0.2.0/freewheel-0.2.0-windows-x64.zip", signature: "S" } } };
-  expect(localManifest(m, "http://127.0.0.1:9").platforms["windows-x86_64"]).toEqual({ url: "http://127.0.0.1:9/freewheel-0.2.0-windows-x64.zip", signature: "S" });
+  const m = { version: "0.2.0", notes: "n", platforms: { "windows-x86_64": { url: "https://github.com/x/releases/download/v0.2.0/freewheel-0.2.0-windows-x64.exe", signature: "S" } } };
+  expect(localManifest(m, "http://127.0.0.1:9").platforms["windows-x86_64"]).toEqual({ url: "http://127.0.0.1:9/freewheel-0.2.0-windows-x64.exe", signature: "S" });
   const data = Buffer.alloc(10, 1);
   const bad = tamper(data);
   expect([...bad].filter((b, i) => b !== data[i])).toHaveLength(1);
@@ -35,9 +35,9 @@ test("the local server moves the manifest's urls to itself; a tampered copy diff
 
 test("the local release server fails, has nothing, offers the package streamed in chunks, or a tampered one", async () => {
   const dir = mkdtempSync(join(tmpdir(), "fw-upd-"));
-  const pkg = join(dir, "freewheel-0.2.0-windows-x64.zip");
+  const pkg = join(dir, "freewheel-0.2.0-windows-x64.exe");
   writeFileSync(pkg, Buffer.alloc(300 * 1024, 7));
-  const manifest = { version: "0.2.0", notes: "n", platforms: { "windows-x86_64": { url: "https://x/freewheel-0.2.0-windows-x64.zip", signature: "SIG" } } };
+  const manifest = { version: "0.2.0", notes: "n", platforms: { "windows-x86_64": { url: "https://x/freewheel-0.2.0-windows-x64.exe", signature: "SIG" } } };
   const server = await startUpdateServer({ manifest, package: pkg, downloadMs: 200 });
   const body = async (url) => {
     const res = await fetch(url);
@@ -56,7 +56,7 @@ test("the local release server fails, has nothing, offers the package streamed i
     server.setMode("offer");
     const latest = await (await fetch(`${server.url}/latest.json`)).json();
     expect(latest.version).toBe("0.2.0");
-    expect(latest.platforms["windows-x86_64"]).toEqual({ url: `${server.url}/freewheel-0.2.0-windows-x64.zip`, signature: "SIG" });
+    expect(latest.platforms["windows-x86_64"]).toEqual({ url: `${server.url}/freewheel-0.2.0-windows-x64.exe`, signature: "SIG" });
     const good = await body(latest.platforms["windows-x86_64"].url);
     expect(good.res.headers.get("content-length")).toBe(String(300 * 1024));
     expect(good.reads).toBeGreaterThan(1);
@@ -73,7 +73,7 @@ test("the local release server fails, has nothing, offers the package streamed i
 
 test("the update e2e script needs the app, both versions and B's manifest and package; it keeps a populated config", () => {
   expect(() => parseArgs([])).toThrow(/--app/);
-  const o = parseArgs(["--app", "a\\freewheel.exe", "--manifest", "latest.json", "--package", "b.zip", "--from", "0.1.0", "--to", "0.2.0"]);
+  const o = parseArgs(["--app", "a\\freewheel.exe", "--manifest", "latest.json", "--package", "b\\freewheel-0.2.0-windows-x64.exe", "--from", "0.1.0", "--to", "0.2.0"]);
   expect(o["server-port"]).toBe("8719");
   expect(o.port).toBe("9223");
   const c = populate(sampleConfig());
@@ -82,37 +82,45 @@ test("the update e2e script needs the app, both versions and B's manifest and pa
   expect(populate(c)).toEqual(c);
   expect(configFile("C:\\Users\\u\\AppData\\Roaming")).toBe(join("C:\\Users\\u\\AppData\\Roaming", "freewheel", "config", "config.json"));
   expect(updateTemp("T")).toBe(join("T", "freewheel-update"));
+  // B runs from A's path: found by the downloaded file's name, not "freewheel".
+  expect(runningPathsCommand("C:\\d\\freewheel-0.1.0-windows-x64.exe")).toBe(
+    `Get-CimInstance Win32_Process -Filter "Name = 'freewheel-0.1.0-windows-x64.exe'" | ForEach-Object { $_.ExecutablePath }`,
+  );
   // The override the script sets is the one only e2e builds read.
   expect(read("../src-tauri/src/selfupdate.rs")).toContain(`pub const E2E_MANIFEST_URL_ENV: &str = "${UPDATE_URL_ENV}";`);
 });
 
-test("the script checks what the owner asked: tampered rejected with A intact, progress, same path runs B, What's new, config kept, no leftovers", () => {
+test("the script checks: tampered rejected with A intact, progress, same path runs B, What's new, config kept, no leftovers", () => {
   const script = read("./e2e-update-windows.mjs");
   for (const needle of [
     'server.setMode("tampered")',
-    "the tampered package changed freewheel.exe",
+    "the tampered package changed ${app}",
     "the rejected download was kept",
     "the download showed too little progress",
     "B does not run from",
     "freewheel is updated to",
     "the config changed",
     "config.json changed on disk",
-    "freewheel.exe.old is still there",
+    "${app}.old is still there",
   ])
     expect(script).toContain(needle);
 });
 
-test("the update job: no secrets, a throwaway key, two e2e builds packed as the release packs them, A unzipped, B asserted", () => {
+test("the update job: no secrets, a throwaway key, two e2e builds made into release files as the release does, A's exe run as downloaded, B asserted", () => {
   expect(checkWorkflow(wf)).toEqual([]);
   expect(job).toContain("name: update e2e (windows-2025, local release server)");
   expect(job).toContain('signer generate --ci -p "" -w "$key" -f');
   expect(job).toContain('export FREEWHEEL_UPDATER_PUBKEY="$(cat "$E2E_UPDATER_KEY.pub")"');
   expect(job).toContain('build --ci --no-bundle --features e2e --config "$(node scripts/e2e-update-config.mjs "$v")" -- --locked');
   expect(job).toContain("node scripts/portable-release.mjs package --os windows");
-  expect(job).toContain('signer sign -f "$E2E_UPDATER_KEY" -p "" --app-version "$TO_VERSION" "$zip"');
+  expect(job).toContain('exe="$RUNNER_TEMP/release-$TO_VERSION/freewheel-$TO_VERSION-windows-x64.exe"');
+  expect(job).toContain('signer sign -f "$E2E_UPDATER_KEY" -p "" --app-version "$TO_VERSION" "$exe"');
   expect(job).toContain("node scripts/portable-release.mjs manifest --version \"$TO_VERSION\"");
-  expect(job).toContain("Expand-Archive");
-  expect(job).toContain("node scripts/e2e-update-windows.mjs");
+  // No zip anywhere in the update: A is the downloaded exe, B's file is an exe.
+  expect(job).not.toMatch(/Expand-Archive "\$env:RUNNER_TEMP\\release|windows-x64\.zip|\$zip"/);
+  expect(job).toContain('"FREEWHEEL_EXE=$env:RUNNER_TEMP\\Downloads\\freewheel-$env:FROM_VERSION-windows-x64.exe"');
+  expect(job).toContain('node scripts/e2e-update-windows.mjs --app $env:FREEWHEEL_EXE --manifest "$b\\latest.json" --package "$b\\freewheel-$env:TO_VERSION-windows-x64.exe"');
+  expect(job).toContain('if ((Get-ChildItem "$env:RUNNER_TEMP\\Downloads").Count -ne 1)');
   expect(job).not.toMatch(/nsis|setup\.exe|\/S'/);
   expect(job).toMatch(/if \(\$now -ne \$env:TO_VERSION\)/);
   expect(job).toMatch(/name: e2e-update-screenshots\n\s+path: e2e-update-shots/);

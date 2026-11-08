@@ -1,9 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
 import { expect, test } from "vitest";
 import { checkLatestJson } from "./check-latest-json.mjs";
 import { checkReleaseWorkflow } from "./check-workflow.mjs";
-import { PACKAGES, PLATFORMS as SERVED, WINDOWS_FILES, manifest, parseArgs as packageArgs } from "./portable-release.mjs";
+import { DMG_CREATE, PACKAGES, PLATFORMS as SERVED, makePackage, manifest, parseArgs as packageArgs } from "./portable-release.mjs";
 import { binaryProblems } from "./check-release-binary.mjs";
 import { appleEnv, releaseArgs } from "./tauri-release.mjs";
 import { pickReleases, versionOf } from "./update-e2e.mjs";
@@ -46,7 +48,7 @@ test("release.yml runs on v* tags (pushed, or dispatched on the tag by release-p
 });
 
 test("release.yml uploads the portable packages, their signatures and latest.json with release-please's notes to the published release", () => {
-  expect(release).not.toMatch(/tauri-action|releaseDraft|uploadUpdaterJson|nsis|NSIS|dmg|msi|setup\.exe/);
+  expect(release).not.toMatch(/tauri-action|releaseDraft|uploadUpdaterJson|nsis|NSIS|--bundles dmg|msi|setup\.exe/);
   expect(release).toContain("gh release view \"$GITHUB_REF_NAME\" --repo \"$GITHUB_REPOSITORY\" --json body --jq .body");
   expect(release).toContain("NOTES: ${{ needs.notes.outputs.body }}");
   expect(release).toContain("run: npm run tauri -- build --no-bundle -- --locked");
@@ -114,25 +116,25 @@ const at = (file) => ({ url: `https://github.com/brinkercode/freewheel/releases/
 const latest = {
   version: "0.1.0",
   platforms: {
-    "windows-x86_64": at("freewheel-0.1.0-windows-x64.zip"),
-    "darwin-aarch64": at("freewheel-0.1.0-macos-universal.zip"),
-    "darwin-x86_64": at("freewheel-0.1.0-macos-universal.zip"),
+    "windows-x86_64": at("freewheel-0.1.0-windows-x64.exe"),
+    "darwin-aarch64": at("freewheel-0.1.0-macos-universal.dmg"),
+    "darwin-x86_64": at("freewheel-0.1.0-macos-universal.dmg"),
   },
 };
 
-test("latest.json must point each platform at its portable package", () => {
-  const platforms = { ...latest.platforms, "darwin-aarch64": at("freewheel-0.1.0-windows-x64.zip") };
+test("latest.json must point each platform at its release file", () => {
+  const platforms = { ...latest.platforms, "darwin-aarch64": at("freewheel-0.1.0-windows-x64.exe") };
   expect(checkLatestJson({ ...latest, platforms })).toEqual([
-    "'darwin-aarch64' is not freewheel-0.1.0-macos-universal.zip: https://github.com/brinkercode/freewheel/releases/download/v0.1.0/freewheel-0.1.0-windows-x64.zip",
+    "'darwin-aarch64' is not freewheel-0.1.0-macos-universal.dmg: https://github.com/brinkercode/freewheel/releases/download/v0.1.0/freewheel-0.1.0-windows-x64.exe",
   ]);
 });
 
 test("the packages and the manifest the release writes are what the updater reads", () => {
-  expect(PACKAGES.windows("0.1.1")).toBe("freewheel-0.1.1-windows-x64.zip");
-  expect(PACKAGES.macos("0.1.1")).toBe("freewheel-0.1.1-macos-universal.zip");
+  expect(PACKAGES.windows("0.1.1")).toBe("freewheel-0.1.1-windows-x64.exe");
+  expect(PACKAGES.macos("0.1.1")).toBe("freewheel-0.1.1-macos-universal.dmg");
   expect(SERVED).toEqual({ "windows-x86_64": "windows", "darwin-aarch64": "macos", "darwin-x86_64": "macos" });
   const fixture = JSON.parse(read("./fixtures/portable-latest.json"));
-  const signatures = { "freewheel-0.1.1-windows-x64.zip": "c2ln\n", "freewheel-0.1.1-macos-universal.zip": "c2ln" };
+  const signatures = { "freewheel-0.1.1-windows-x64.exe": "c2ln\n", "freewheel-0.1.1-macos-universal.dmg": "c2ln" };
   const made = manifest({
     version: "0.1.1",
     notes: fixture.notes,
@@ -144,9 +146,9 @@ test("the packages and the manifest the release writes are what the updater read
   expect(made).toEqual(fixture);
   expect(checkLatestJson(made)).toEqual([]);
   expect(manifest({ version: "0.1.1", notes: "", baseUrl: "https://x", signatures, only: ["windows"] }).platforms).toEqual({
-    "windows-x86_64": { url: "https://x/freewheel-0.1.1-windows-x64.zip", signature: "c2ln" },
+    "windows-x86_64": { url: "https://x/freewheel-0.1.1-windows-x64.exe", signature: "c2ln" },
   });
-  expect(() => manifest({ version: "0.1.1", baseUrl: "https://x", signatures: {} })).toThrow(/no signature for freewheel-0.1.1-windows-x64.zip/);
+  expect(() => manifest({ version: "0.1.1", baseUrl: "https://x", signatures: {} })).toThrow(/no signature for freewheel-0.1.1-windows-x64.exe/);
   expect(() => manifest({ version: "nope", baseUrl: "https://x", signatures })).toThrow(/not a version/);
   expect(packageArgs(["package", "--os", "macos", "--version", "0.1.1"])).toEqual({ command: "package", os: "macos", version: "0.1.1" });
 });
@@ -237,7 +239,7 @@ test("latest.json must carry the tag's version and the release notes", () => {
 });
 
 test("each platform's download is fetched once and checked against its signature", async () => {
-  const url = "https://github.com/brinkercode/freewheel/releases/download/v0.2.0/freewheel-0.2.0-macos-universal.zip";
+  const url = "https://github.com/brinkercode/freewheel/releases/download/v0.2.0/freewheel-0.2.0-macos-universal.dmg";
   const json = {
     version: "0.2.0",
     platforms: {
@@ -293,14 +295,15 @@ test("release-please runs on main, pinned, and dispatches the release PR's CI an
 
 const e2e = read("../.github/workflows/update-e2e.yml");
 
-test("update-e2e unzips the previous release into a folder and updates it with that app's own updater", () => {
+test("update-e2e downloads the previous release's exe into a folder and updates it with that app's own updater", () => {
   expect(e2e).toMatch(/^on:\n {2}workflow_dispatch:/m);
   expect(e2e).toMatch(/^ {2}workflow_call:$/m);
   expect(e2e).toMatch(/^permissions:\n {2}contents: read$/m);
   expect(e2e).not.toMatch(/secrets\.|: write\b|setup\.exe|\/S'/);
   expect(e2e).toContain("runs-on: windows-2025");
-  expect(e2e).toContain('--pattern "freewheel-$env:FROM_VERSION-windows-x64.zip"');
-  expect(e2e).toContain("Expand-Archive");
+  expect(e2e).toContain('--pattern "freewheel-$env:FROM_VERSION-windows-x64.exe"');
+  expect(e2e).not.toMatch(/Expand-Archive|\.zip/);
+  expect(e2e).toContain('$exe = "$env:RUNNER_TEMP\\freewheel\\freewheel-$env:FROM_VERSION-windows-x64.exe"');
   expect(e2e.match(/-ArgumentList '--update-check-and-install'/g)).toHaveLength(2);
   expect(e2e).toContain("if ($now -ne $env:TO_VERSION)");
   expect(e2e).toContain('if (Test-Path "$exe.old")');
@@ -319,8 +322,34 @@ test("update-e2e updates from the release before the newest one (or the one aske
   expect(versionOf("v0.1.1")).toBe("0.1.1");
 });
 
-test("the Windows release zip holds freewheel.exe only: the simulator .cmd is for test builds", () => {
-  expect(WINDOWS_FILES).toEqual(["freewheel.exe"]);
-  expect(readFileSync(new URL("./portable-release.mjs", import.meta.url), "utf8")).not.toContain("freewheel-simulate.cmd");
-  expect(readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8")).not.toContain("freewheel-simulate.cmd");
+test("the Windows release file is the exe itself, byte for byte; the simulator .cmd is for test builds", () => {
+  const dir = mkdtempSync(join(tmpdir(), "fw-pkg-"));
+  const exe = join(dir, "freewheel.exe");
+  writeFileSync(exe, Buffer.from("MZ the exe"));
+  const file = makePackage({ os: "windows", version: "0.1.1", out: join(dir, "out"), exe });
+  expect(basename(file)).toBe("freewheel-0.1.1-windows-x64.exe");
+  expect(readFileSync(file).equals(readFileSync(exe))).toBe(true);
+  expect(readdirSync(join(dir, "out"))).toEqual(["freewheel-0.1.1-windows-x64.exe"]);
+  expect(() => makePackage({ os: "windows", version: "0.1.1", out: dir, exe: join(dir, "gone.exe") })).toThrow(/--exe/);
+  expect(() => makePackage({ os: "linux-zip", version: "0.1.1", out: dir })).toThrow(/unknown --os/);
+  const script = read("./portable-release.mjs");
+  expect(script).not.toContain("freewheel-simulate.cmd");
+  expect(read("../.github/workflows/release.yml")).not.toContain("freewheel-simulate.cmd");
+});
+
+test("no zip anywhere in a release: the exe, the .dmg, their signatures, latest.json", () => {
+  const script = read("./portable-release.mjs");
+  expect(script).not.toMatch(/tar\.exe|"-k"|\.zip/);
+  expect(release).not.toMatch(/\.zip\b/);
+  expect(release).toContain("for f in packages/*.exe packages/*.dmg; do");
+  expect(release).toContain("hdiutil verify packages/*.dmg");
+  // The .dmg: freewheel.app and an Applications link, made with hdiutil.
+  expect(DMG_CREATE).toEqual(["create", "-volname", "freewheel", "-fs", "HFS+", "-format", "UDZO", "-ov", "-srcfolder"]);
+  expect(script).toContain('symlinkSync("/Applications", join(stage, "Applications"))');
+  expect(script).toContain('execFileSync("/usr/bin/ditto", [app, join(stage, "freewheel.app")]');
+  // The updater no longer unpacks anything.
+  const rust = read("../src-tauri/src/selfupdate.rs");
+  expect(rust).not.toMatch(/zip::|ZipArchive/);
+  expect(read("../src-tauri/Cargo.toml")).not.toMatch(/^zip = /m);
+  expect(rust).toContain('"-readonly"');
 });

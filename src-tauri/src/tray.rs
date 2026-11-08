@@ -769,6 +769,12 @@ pub async fn sim_tray(app: AppHandle, item: String) -> Result<TrayMenuState, Str
 #[tauri::command]
 pub fn tray_update_state(app: AppHandle, state: Option<UpdateReport>) {
     let state = state.unwrap_or_default();
+    // Each new status once (downloading reports every progress step).
+    static LAST: Mutex<Option<Option<String>>> = Mutex::new(None);
+    let changed = lock(&LAST).replace(state.status.clone()) != Some(state.status.clone());
+    if changed {
+        tracing::info!(status = ?state.status, version = ?state.version, "settings window update state");
+    }
     if let Some(menu) = app.try_state::<TrayMenu<tauri::Wry>>() {
         menu.show_update(&app, &state);
     }
