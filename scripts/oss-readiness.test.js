@@ -87,3 +87,9 @@ test("npm licences: SPDX OR/AND expressions against the allow list", () => {
   const lock = { packages: { "": {}, "node_modules/a": { license: "MIT" }, "node_modules/b": { license: "(MIT OR GPL-3.0)" }, "node_modules/c": { license: "GPL-3.0" }, "node_modules/d": {} } };
   expect(npmLicenseProblems(lock)).toEqual(["node_modules/c: GPL-3.0 is not allowed", "node_modules/d: no licence in package-lock.json"]);
 });
+
+test("npm licences: MPL-2.0 is allowed, as for the Rust crates in deny.toml", async () => {
+  const deny = readFileSync(new URL("../deny.toml", import.meta.url), "utf8");
+  expect(deny).toMatch(/^\s+"MPL-2\.0",$/m);
+  expect(npmLicenseProblems({ packages: { "node_modules/lightningcss": { license: "MPL-2.0" } } })).toEqual([]);
+});
