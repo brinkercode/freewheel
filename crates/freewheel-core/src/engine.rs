@@ -2448,12 +2448,16 @@ mod tests {
                     Some("gedit"),
                 )],
                 pages: vec!["w-draft".into(), "w-review".into()],
+                color: None,
+                icon: None,
             },
             Profile {
                 id: "paint".into(),
                 name: "Paint".into(),
                 apps: vec![app("mspaint", None, None)],
                 pages: vec!["p-canvas".into()],
+                color: None,
+                icon: None,
             },
         ];
         crate::config::validate(&config).unwrap();

@@ -57,6 +57,8 @@ values like `"Dark"` or `"JOG"` may be in any case.
 | `pages.<page>` | object | {} | key name to action | Key name (see Key names) to what the key does (see Actions). Keys left out are not set. |
 | `profiles` | list | [] (none) | profiles, each with a name, apps and pages | App profiles: each has its own pages and is used while one of its apps is in front. The pages above are the Default profile, used while no profile's app is. |
 | `profiles[].name` | text | (required) | unique, not Default | The profile's name. |
+| `profiles[].color` | text | (none: the app's accent) | rose, orange, amber, green, teal, blue, indigo, violet | The profile's colour in the Keys tab. |
+| `profiles[].icon` | text | (none) | brush, code, music_note, sports_esports, movie, edit, photo_camera, terminal | The profile's icon in the Keys tab. |
 | `profiles[].apps` | list | [] (switched to by no app) | app names, or { "name", "windows", "macos", "linux" } objects | The apps the profile is for (see App profiles). |
 | `profiles[].pages` | object | (required) | 1 or more pages | The profile's pages, written as pages is. The first page is where the profile starts. A page key goes to a page of the same profile. |
 | `wheel` | object | scroll mode, speed 10 | — | What turning the wheel does. |
@@ -108,12 +110,15 @@ in the file.
 ## App profiles
 
 `"pages"` are the Default profile. `"profiles"` adds app profiles: each has
-a `name`, the `apps` it is for and its own `pages`, written as `"pages"` is:
+a `name`, the `apps` it is for, its own `pages` (written as `"pages"` is),
+and optionally a `color` and an `icon`:
 
 ```json
 "profiles": [
   {
     "name": "Writing",
+    "color": "teal",
+    "icon": "edit",
     "apps": [
       "notepad.exe",
       { "name": "Word", "windows": "WINWORD.EXE", "macos": "com.microsoft.Word" },
@@ -143,6 +148,10 @@ a `name`, the `apps` it is for and its own `pages`, written as `"pages"` is:
 - DaVinci Resolve stepping aside wins: while freewheel is Off for Resolve,
   no profile turns it back On.
 - The wheel and dial settings are shared by every profile.
+- `color` and `icon` are optional: how the profile looks in the Keys tab.
+  Colours: `rose`, `orange`, `amber`, `green`, `teal`, `blue`, `indigo`,
+  `violet`. Icons: `brush`, `code`, `music_note`, `sports_esports`,
+  `movie`, `edit`, `photo_camera`, `terminal`.
 
 ## Key names
 

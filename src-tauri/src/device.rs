@@ -1003,6 +1003,8 @@ mod tests {
                 linux: Some("notepad.exe".into()),
             }],
             pages: vec!["notes".into()],
+            color: None,
+            icon: None,
         });
         config
     }

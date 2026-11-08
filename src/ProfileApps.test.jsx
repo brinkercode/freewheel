@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, expect, test, vi } from "vitest";
 import KeysTab from "./KeysTab.jsx";
 import ProfileApps, { NO_FRONT_APP, otherOsOnly, profileRule } from "./ProfileApps.jsx";
-import { profileApps, sameApp, setProfileApps, typedApp } from "./keys.js";
+import { addProfile, profileApps, profileLook, sameApp, setProfileApps, setProfileLook, typedApp } from "./keys.js";
 
 afterEach(cleanup);
 
@@ -158,14 +158,47 @@ test("New profile adds a profile with a Main page and opens its apps; rename and
   expect(screen.getByRole("tab", { name: "Default" }).getAttribute("aria-selected")).toBe("true");
 });
 
-test("the live dot shows the profile and the page your Speed Editor is on", async () => {
+test("the profile and page in use are filled in the profile's colour; no dots", async () => {
+  const c = config([notepad]);
+  c.profiles[0] = { ...c.profiles[0], color: "teal", icon: "edit" };
   const status = { connection: "Connected", layer: "music", lit: ["Cam1"] };
-  const { rerender } = render(<KeysTab initial={config([notepad])} status={status} initialFrontApps />);
-  const dot = (list) => within(screen.getByRole("tablist", { name: list })).queryByLabelText(/Your Speed Editor/)?.closest("[role=tab]")?.textContent;
-  expect([dot("Profiles"), dot("Pages")]).toEqual(["Default", "Music"]);
-  // Notepad in front: Notes, on its first page.
-  rerender(<KeysTab initial={config([notepad])} status={{ ...status, layer: "draft", lit: [] }} initialFrontApps />);
-  await waitFor(() => expect(dot("Profiles")).toBe("Notes"));
-  expect(dot("Pages")).toBe("Draft");
-  expect(screen.getByRole("tab", { name: /Notes/ }).getAttribute("aria-selected")).toBe("true");
+  const { rerender } = render(<KeysTab initial={c} status={status} initialFrontApps />);
+  const using = (sel) => [...document.querySelectorAll(`${sel}.is-using [role=tab]`)].map((e) => e.textContent);
+  expect(document.querySelector(".live-dot, .live-legend")).toBeNull();
+  expect(using(".profile-pill")).toEqual(["Default"]);
+  expect(document.querySelector(".profile-pill.is-using").dataset.color).toBe("accent");
+  expect(document.querySelector('.profile-pill.is-using [data-icon="keyboard"]')).toBeTruthy();
+  expect(using(".pill")).toEqual(["Music"]);
+  // Notepad in front: Notes, on its first page, in teal with its icon.
+  rerender(<KeysTab initial={c} status={{ ...status, layer: "draft", lit: [] }} initialFrontApps />);
+  await waitFor(() => expect(using(".profile-pill")).toEqual(["Notes"]));
+  const notes = document.querySelector(".profile-pill.is-using");
+  expect(notes.dataset.color).toBe("teal");
+  expect(notes.querySelector('[data-icon="edit"]')).toBeTruthy();
+  expect(using(".pill")).toEqual(["Draft"]);
+  expect(document.querySelector(".pill.is-using").dataset.color).toBe("teal");
+  expect(document.querySelector(".live-dot")).toBeNull();
+});
+
+test("the profile's editor picks its colour and icon, saved in the config", async () => {
+  const { save } = mount(config([notepad]));
+  const colours = within(screen.getByRole("radiogroup", { name: "Colour" }));
+  expect(colours.getAllByRole("radio").map((r) => r.getAttribute("aria-label"))).toEqual(["rose", "orange", "amber", "green", "teal", "blue", "indigo", "violet"]);
+  await click(colours.getByRole("radio", { name: "indigo" }));
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+  expect(save.mock.calls[0][0].profiles[0].color).toBe("indigo");
+  const icons = within(screen.getByRole("radiogroup", { name: "Icon" }));
+  expect(icons.getAllByRole("radio")).toHaveLength(8);
+  for (const r of icons.getAllByRole("radio")) expect(r.querySelector("svg"), r.getAttribute("aria-label")).toBeTruthy();
+  await click(icons.getByRole("radio", { name: "music note" }));
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+  expect(save.mock.calls[1][0].profiles[0].icon).toBe("music_note");
+});
+
+test("a new profile gets the next colour and icon; Default keeps the accent and the keyboard", () => {
+  const a = addProfile(config());
+  expect(a.config.profiles.at(-1)).toMatchObject({ color: "orange", icon: "code" });
+  expect(profileLook(a.config, null)).toEqual({ color: "accent", icon: "keyboard" });
+  expect(profileLook(config(), "notes")).toEqual({ color: "accent", icon: "tab" });
+  expect(profileLook(setProfileLook(config(), "notes", { color: "pink", icon: "star" }), "notes")).toEqual({ color: "accent", icon: "tab" });
 });

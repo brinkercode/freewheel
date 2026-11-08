@@ -1,7 +1,19 @@
 import { useState } from "react";
 import { AppPicker, appHue } from "./ActionEditor.jsx";
 import Icon from "./Icon.jsx";
-import { APP_NAME_HINT, THIS_OS, appOnOs, profileApps, sameApp, setProfileApps, typedApp } from "./keys.js";
+import {
+  APP_NAME_HINT,
+  PROFILE_COLORS,
+  PROFILE_ICONS,
+  THIS_OS,
+  appOnOs,
+  profileApps,
+  profileLook,
+  sameApp,
+  setProfileApps,
+  setProfileLook,
+  typedApp,
+} from "./keys.js";
 import { profileApp, saveConfig, saveErrorText } from "./settingsApi.js";
 
 const OS_NAMES = { windows: "Windows", macos: "macOS", linux: "Linux" };
@@ -23,9 +35,9 @@ export function otherOsOnly(app, os = THIS_OS) {
 }
 
 /**
- * A profile's apps (the side panel while no key is picked on a profile):
- * the apps it is for, the app picker shared with 'Open an app', and a
- * program name typed by hand. Every change saves.
+ * A profile's editor (the side panel while no key is picked on a profile):
+ * its colour and icon, the apps it is for, the app picker shared with
+ * 'Open an app', and a program name typed by hand. Every change saves.
  */
 export default function ProfileApps({ config, profileId, save = saveConfig, onSaved, toApp = profileApp, supported = true, initialApps = null, loadApps, loadIcons, choose }) {
   const profile = (config.profiles ?? []).find((p) => p.id === profileId);
@@ -35,8 +47,10 @@ export default function ProfileApps({ config, profileId, save = saveConfig, onSa
   const [error, setError] = useState(null);
   if (!profile) return null;
   const [what, example] = APP_NAME_HINT[THIS_OS];
-  const commitApps = (next) => {
-    const changed = setProfileApps(config, profileId, next);
+  const look = profileLook(config, profileId);
+  const commitLook = (change) => commit(setProfileLook(config, profileId, change));
+  const commitApps = (next) => commit(setProfileApps(config, profileId, next));
+  const commit = (changed) => {
     return Promise.resolve(save(changed)).then(
       () => (setError(null), onSaved?.(changed), true),
       (e) => (setError(saveErrorText(e)), false),
@@ -56,8 +70,8 @@ export default function ProfileApps({ config, profileId, save = saveConfig, onSa
   return (
     <section className="key-panel profile-panel" aria-label={`${profile.name} apps`}>
       <header className="panel-head">
-        <span className="keycap profile-keycap" aria-hidden="true">
-          <Icon name="apps" />
+        <span className="keycap profile-keycap" data-color={look.color} aria-hidden="true">
+          <Icon name={look.icon} />
         </span>
         <div className="grow">
           <h2 className="panel-title">{`When is ${profile.name} used?`}</h2>
@@ -68,6 +82,37 @@ export default function ProfileApps({ config, profileId, save = saveConfig, onSa
       </header>
       <div className="panel-body">
         <p className="mode-sub">{profileRule(profile.name)}</p>
+        <div className="field-label first">Colour</div>
+        <div className="profile-swatches" role="radiogroup" aria-label="Colour">
+          {PROFILE_COLORS.map((c) => (
+            <button
+              key={c}
+              role="radio"
+              aria-checked={look.color === c}
+              aria-label={c}
+              title={c[0].toUpperCase() + c.slice(1)}
+              className="profile-swatch"
+              data-color={c}
+              onClick={() => look.color !== c && commitLook({ color: c })}
+            />
+          ))}
+        </div>
+        <div className="field-label">Icon</div>
+        <div className="profile-icons" role="radiogroup" aria-label="Icon" data-color={look.color}>
+          {PROFILE_ICONS.map((i) => (
+            <button
+              key={i}
+              role="radio"
+              aria-checked={look.icon === i}
+              aria-label={i.replace("_", " ")}
+              title={i.replace("_", " ")}
+              className="profile-icon-choice"
+              onClick={() => look.icon !== i && commitLook({ icon: i })}
+            >
+              <Icon name={i} />
+            </button>
+          ))}
+        </div>
         {!supported && (
           <div className="panel-note small" role="note">
             {NO_FRONT_APP}
@@ -93,7 +138,7 @@ export default function ProfileApps({ config, profileId, save = saveConfig, onSa
         )}
         {showPicker ? (
           <>
-            <div className="field-label first">Add an app</div>
+            <div className="field-label">Add an app</div>
             <AppPicker onPick={pick} {...pickerProps} />
             <div className="field-label">Or type its program name</div>
             <div className="input-row">

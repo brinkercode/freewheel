@@ -922,6 +922,8 @@ const PROFILES_FILE: &str = r#"{
   "profiles": [
     {
       "name": "Writing",
+      "color": "Teal",
+      "icon": "edit",
       "apps": ["notepad.exe", { "name": "Word", "windows": "WINWORD.EXE", "macos": "com.microsoft.Word" }],
       "pages": {
         "Main": { "CUT": "Ctrl+Shift+X", "ESC": "page Review" },
@@ -947,6 +949,17 @@ fn profiles_read_with_their_own_pages_and_apps_and_round_trip() {
     assert_eq!(
         writing.pages,
         ["profile-writing-main", "profile-writing-review"]
+    );
+    assert_eq!(
+        (writing.color.as_deref(), writing.icon.as_deref()),
+        (Some("teal"), Some("edit"))
+    );
+    assert_eq!(
+        (
+            c.profiles[1].color.as_deref(),
+            c.profiles[1].icon.as_deref()
+        ),
+        (None, None)
     );
     assert_eq!(
         writing.apps,
@@ -981,6 +994,10 @@ fn profiles_read_with_their_own_pages_and_apps_and_round_trip() {
     let file = String::from_utf8(export(&c, &win())).unwrap();
     assert!(file.contains(r#""profiles": ["#), "{file}");
     assert!(file.contains("\"notepad.exe\",\n"), "{file}");
+    assert!(
+        file.contains("\"color\": \"teal\",\n      \"icon\": \"edit\""),
+        "{file}"
+    );
     let again = read_ok(&file).config;
     assert_eq!(again, c, "{file}");
     // Restored again here: the same ids.
@@ -1025,6 +1042,14 @@ fn profile_mistakes_say_what_to_fix() {
         (
             r#"[{"name": "W", "colour": 1, "pages": {"A": {}}}]"#,
             "unknown field \"colour\"",
+        ),
+        (
+            r#"[{"name": "W", "color": "pink", "pages": {"A": {}}}]"#,
+            "must be one of rose",
+        ),
+        (
+            r#"[{"name": "W", "icon": "star", "pages": {"A": {}}}]"#,
+            "must be one of brush",
         ),
         // A page key goes to a page of its own profile only.
         (

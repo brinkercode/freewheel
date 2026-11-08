@@ -96,6 +96,8 @@ export function sampleConfig() {
             {
               id: "spotify",
               name: "Spotify",
+              color: "green",
+              icon: "music_note",
               apps: [{ name: "Spotify", windows: "Spotify.exe", macos: "com.spotify.client", linux: "spotify" }],
               pages: ["spotify-player", "spotify-library"],
             },

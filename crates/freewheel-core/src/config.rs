@@ -295,7 +295,32 @@ pub struct Profile {
     pub apps: Vec<ProfileApp>,
     /// Its pages (layer ids, at least one): the first is where it starts.
     pub pages: Vec<LayerId>,
+    /// Its colour in the Keys tab: one of [`PROFILE_COLORS`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub color: Option<String>,
+    /// Its icon in the Keys tab: one of [`PROFILE_ICONS`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub icon: Option<String>,
 }
+
+/// The colours a profile can have (src/styles/base.css draws each).
+pub const PROFILE_COLORS: &[&str] = &[
+    "rose", "orange", "amber", "green", "teal", "blue", "indigo", "violet",
+];
+
+/// The icons a profile can have (bundled Material Symbols, src/assets/icons).
+pub const PROFILE_ICONS: &[&str] = &[
+    "brush",
+    "code",
+    "music_note",
+    "sports_esports",
+    "movie",
+    "edit",
+    "photo_camera",
+    "terminal",
+];
 
 /// What the Keys tab calls the pages no profile has.
 pub const DEFAULT_PROFILE_NAME: &str = "Default";
@@ -800,6 +825,24 @@ fn validate_profiles(config: &Config) -> Result<(), SaveError> {
                 ));
             }
             seen_pages.push(page);
+        }
+        if let Some(c) = &p.color
+            && !PROFILE_COLORS.contains(&c.as_str())
+        {
+            return bad(format!(
+                "the profile {} has the colour {c}: pick one of {}",
+                p.name,
+                PROFILE_COLORS.join(", ")
+            ));
+        }
+        if let Some(i) = &p.icon
+            && !PROFILE_ICONS.contains(&i.as_str())
+        {
+            return bad(format!(
+                "the profile {} has the icon {i}: pick one of {}",
+                p.name,
+                PROFILE_ICONS.join(", ")
+            ));
         }
         for app in &p.apps {
             let named = [&app.windows, &app.macos, &app.linux]
@@ -1579,6 +1622,8 @@ mod tests {
                 linux: None,
             }],
             pages: vec!["draft".into(), "review".into()],
+            color: None,
+            icon: None,
         });
         validate(&config).unwrap();
         assert_eq!(
@@ -1620,6 +1665,8 @@ mod tests {
         assert!(bad(&|c| c.profiles[0].pages.clear()).contains("no page"));
         assert!(bad(&|c| c.profiles[0].name = "default".into()).contains("used twice"));
         assert!(bad(&|c| c.profiles[0].apps[0].windows = None).contains("names no program"));
+        assert!(bad(&|c| c.profiles[0].color = Some("pink".into())).contains("colour pink"));
+        assert!(bad(&|c| c.profiles[0].icon = Some("star".into())).contains("icon star"));
         assert!(bad(&|c| c.profiles[0].pages.push("gone".into())).contains("gone"));
         // No profiles: config.json is as 1.0.0 wrote it.
         let plain = serde_json::to_value(Config::default()).unwrap();

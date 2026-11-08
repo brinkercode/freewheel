@@ -392,38 +392,50 @@ input[type="range"] { accent-color: var(--accent); border: none; background: tra
 .page-selector [role="alert"] { flex-basis: 100%; }
 .pills { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .pill { display: flex; align-items: center; height: 32px; border-radius: 16px; border: 1px solid var(--line); background: var(--panel); color: var(--ink2); }
-.pill.is-active { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+.pill.is-active { border-color: var(--pc); background: color-mix(in srgb, var(--pc) 12%, var(--panel)); color: var(--ink); }
+/* The page your Speed Editor is on: filled in its profile's colour. */
+.pill.is-using { border-color: var(--pc); background: var(--pc); color: #fff; }
 .pill button { height: 100%; padding: 0 12px; gap: 7px; border: none; background: transparent; color: inherit; font-weight: var(--fw-semibold); border-radius: 16px; }
 .pill button:hover:not(:disabled) { background: transparent; }
 .pill .pill-icon { padding: 0 4px; }
 .pill .pill-icon:last-of-type { padding: 0 10px 0 2px; }
 .pill .pill-icon .icon { width: 15px; height: 15px; }
 .pill.is-active > button:first-child { padding-right: 4px; }
-.live-dot { width: 7px; height: 7px; border-radius: var(--r-pill); background: #34c06f; box-shadow: 0 0 0 3px rgba(52, 192, 111, 0.25); flex: none; }
 .pill-rename { display: none; height: 32px; width: 130px; border-radius: 16px; border: 2px solid var(--accent); padding: 0 12px; background: var(--panel); font-weight: var(--fw-semibold); outline: none; }
 .pill.is-renaming { border: none; background: transparent; }
 .pill.is-renaming > button { display: none; }
 .pill.is-renaming .pill-rename { display: block; }
-/* App profiles: a row above the page pills; the profile shown is tinted, the page shown filled. */
+/* A profile's colour (config.rs PROFILE_COLORS); Default and pages without one use the accent. */
+:where(.pill, .profile-pill, .profile-keycap, .profile-swatch, .profile-icons) { --pc: var(--accent); }
+[data-color="rose"] { --pc: #d6457a; }
+[data-color="orange"] { --pc: #dd7230; }
+[data-color="amber"] { --pc: #c4930f; }
+[data-color="green"] { --pc: #3a9a5c; }
+[data-color="teal"] { --pc: #1d958d; }
+[data-color="blue"] { --pc: #3a78d8; }
+[data-color="indigo"] { --pc: #5a5ed4; }
+[data-color="violet"] { --pc: #8f52cc; }
+/* App profiles, a row above the page pills: each with its icon in its colour; the one shown is tinted, the one in use filled. */
 .profile-picker { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: none; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .profile-picker [role="alert"] { flex-basis: 100%; }
 .profile-label { font-size: 11px; font-weight: var(--fw-semibold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink3); margin-right: 2px; }
 .profile-pills { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .profile-pill { display: flex; align-items: center; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink2); }
-.profile-pill.is-active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.profile-pill .icon { width: 16px; height: 16px; color: var(--pc); }
+.profile-pill.is-active { border-color: var(--pc); background: color-mix(in srgb, var(--pc) 12%, var(--panel)); color: var(--ink); }
+.profile-pill.is-using { border-color: var(--pc); background: var(--pc); color: #fff; }
+.profile-pill.is-using .icon { color: #fff; }
 .profile-pill button { height: 100%; padding: 0 11px; gap: 7px; border: none; background: transparent; color: inherit; font-weight: var(--fw-semibold); border-radius: 8px; }
 .profile-pill button:hover:not(:disabled) { background: transparent; }
 .profile-pill.is-active > button:first-child:not(:only-child) { padding-right: 4px; }
 .profile-pill .profile-icon { font-size: 0; padding: 0 4px; }
 .profile-pill .profile-icon:last-of-type { padding: 0 9px 0 2px; }
-.profile-pill .profile-icon .icon { width: 15px; height: 15px; }
+.profile-pill .profile-icon .icon { width: 15px; height: 15px; color: inherit; }
 .profile-pill.is-renaming { border: none; background: transparent; }
 .profile-rename { height: 30px; width: 150px; border-radius: 8px; border: 2px solid var(--accent); padding: 0 10px; background: var(--panel); font-weight: var(--fw-semibold); outline: none; }
 .profile-add { height: 30px; padding: 0 11px; border-radius: 8px; border: 1px dashed var(--line2); background: transparent; color: var(--ink2); gap: 4px; }
 .pill-add { height: 32px; padding: 0 12px; border-radius: 16px; border: 1px dashed var(--line2); background: transparent; color: var(--ink2); gap: 4px; }
 .pill-add .icon { width: 17px; height: 17px; }
-.live-legend { display: flex; align-items: center; gap: 5px; margin-left: 4px; font-size: var(--fs-micro); color: var(--ink3); }
-.live-legend-dot { width: 6px; height: 6px; border-radius: var(--r-pill); background: #34c06f; }
 .confirm-inline { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 12px; border-radius: var(--r-row); background: var(--sunk); }
 .confirm-inline .btn-sm { height: 28px; padding: 0 12px; }
 .confirm-inline .btn-sm:not(.btn-danger) { font-weight: var(--fw-regular); }
@@ -629,7 +641,15 @@ td.row-chevron .icon { vertical-align: middle; }
 
 /* A profile's apps (the side panel with no key picked on a profile other than Default). */
 .profile-keycap { display: flex; align-items: center; justify-content: center; padding: 5px 6px; }
+.profile-keycap { background: var(--pc); color: #fff; }
 .profile-keycap .icon { width: 16px; height: 16px; }
+/* A profile's colour and icon choices (its editor). */
+.profile-swatches, .profile-icons { display: flex; flex-wrap: wrap; gap: 5px; }
+.profile-swatch { width: 26px; height: 26px; padding: 0; border-radius: var(--r-pill); border: 2px solid var(--panel); background: var(--pc); box-shadow: 0 0 0 1px var(--line); }
+.profile-swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--pc); }
+.profile-icon-choice { width: 31px; height: 31px; padding: 0; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink2); }
+.profile-icon-choice .icon { width: 18px; height: 18px; }
+.profile-icon-choice[aria-checked="true"] { border-color: var(--pc); background: color-mix(in srgb, var(--pc) 12%, var(--panel)); color: var(--pc); }
 .profile-apps { flex: none; margin-bottom: 4px; }
 .profile-app { cursor: default; }
 .profile-app .grow { display: flex; flex-direction: column; gap: 1px; min-width: 0; }

@@ -273,6 +273,48 @@
           },
           "type": "array"
         },
+        "color": {
+          "anyOf": [
+            {
+              "enum": [
+                "rose",
+                "orange",
+                "amber",
+                "green",
+                "teal",
+                "blue",
+                "indigo",
+                "violet"
+              ]
+            },
+            {
+              "pattern": "^\\s*(?:[Rr][Oo][Ss][Ee]|[Oo][Rr][Aa][Nn][Gg][Ee]|[Aa][Mm][Bb][Ee][Rr]|[Gg][Rr][Ee][Ee][Nn]|[Tt][Ee][Aa][Ll]|[Bb][Ll][Uu][Ee]|[Ii][Nn][Dd][Ii][Gg][Oo]|[Vv][Ii][Oo][Ll][Ee][Tt])\\s*$",
+              "type": "string"
+            }
+          ],
+          "description": "The profile's colour in the Keys tab. Allowed: rose, orange, amber, green, teal, blue, indigo, violet. Default: (none: the app's accent)."
+        },
+        "icon": {
+          "anyOf": [
+            {
+              "enum": [
+                "brush",
+                "code",
+                "music_note",
+                "sports_esports",
+                "movie",
+                "edit",
+                "photo_camera",
+                "terminal"
+              ]
+            },
+            {
+              "pattern": "^\\s*(?:[Bb][Rr][Uu][Ss][Hh]|[Cc][Oo][Dd][Ee]|[Mm][Uu][Ss][Ii][Cc]_[Nn][Oo][Tt][Ee]|[Ss][Pp][Oo][Rr][Tt][Ss]_[Ee][Ss][Pp][Oo][Rr][Tt][Ss]|[Mm][Oo][Vv][Ii][Ee]|[Ee][Dd][Ii][Tt]|[Pp][Hh][Oo][Tt][Oo]_[Cc][Aa][Mm][Ee][Rr][Aa]|[Tt][Ee][Rr][Mm][Ii][Nn][Aa][Ll])\\s*$",
+              "type": "string"
+            }
+          ],
+          "description": "The profile's icon in the Keys tab. Allowed: brush, code, music_note, sports_esports, movie, edit, photo_camera, terminal. Default: (none)."
+        },
         "name": {
           "description": "The profile's name. Allowed: unique, not Default. Default: (required).",
           "not": {

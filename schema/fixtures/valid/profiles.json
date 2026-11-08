@@ -31,7 +31,9 @@
         "Review": {
           "ESC": "back"
         }
-      }
+      },
+      "color": "teal",
+      "icon": "edit"
     }
   ]
 }

@@ -27,7 +27,8 @@ use std::collections::BTreeMap;
 
 use crate::config::{
     Action, Appearance, CONFIG_VERSION, Config, DEFAULT_PROFILE_NAME, JogBinding, JogMode,
-    JogSettings, KeyCombo, Layer, OverrideMode, OverrideSettings, Profile, ProfileApp, SaveError,
+    JogSettings, KeyCombo, Layer, OverrideMode, OverrideSettings, PROFILE_COLORS, PROFILE_ICONS,
+    Profile, ProfileApp, SaveError,
 };
 use json::{Member, Node, Pos, Value};
 use names::{closest, device_key, format_combo, key_id, parse_combo, printed_name};
@@ -95,6 +96,20 @@ pub const FIELDS: &[Field] = &[
         default: "(required)",
         range: "unique, not Default",
         about: "The profile's name.",
+    },
+    Field {
+        path: "profiles[].color",
+        kind: "text",
+        default: "(none: the app's accent)",
+        range: "rose, orange, amber, green, teal, blue, indigo, violet",
+        about: "The profile's colour in the Keys tab.",
+    },
+    Field {
+        path: "profiles[].icon",
+        kind: "text",
+        default: "(none)",
+        range: "brush, code, music_note, sports_esports, movie, edit, photo_camera, terminal",
+        about: "The profile's icon in the Keys tab.",
     },
     Field {
         path: "profiles[].apps",
@@ -832,6 +847,12 @@ impl<'a> Reader<'a> {
                 name,
                 apps,
                 pages: pages.iter().map(|l| l.id.clone()).collect(),
+                color: get("color")
+                    .map(|n| pick(n, &format!("{at} color"), PROFILE_COLORS))
+                    .transpose()?,
+                icon: get("icon")
+                    .map(|n| pick(n, &format!("{at} icon"), PROFILE_ICONS))
+                    .transpose()?,
             });
             layers.extend(pages);
         }
@@ -1060,6 +1081,12 @@ fn page_id(
                 format!("there is no page \"{name}\" in the file{hint}"),
             )
         })
+}
+
+/// One of `names`, in any case.
+fn pick(node: &Node, at: &str, names: &[&'static str]) -> Result<String, SaveError> {
+    let table: Vec<(&'static str, &'static str)> = names.iter().map(|n| (*n, *n)).collect();
+    one_of(node, at, &table).map(str::to_string)
 }
 
 /// A profile's `apps`: names (matched on every OS) or per-OS objects.
@@ -1455,6 +1482,12 @@ pub fn export(config: &Config, host: &dyn Host) -> Vec<u8> {
         .iter()
         .map(|p| {
             let mut members = vec![("name".to_string(), Out::Str(p.name.clone()))];
+            if let Some(c) = &p.color {
+                members.push(("color".into(), Out::Str(c.clone())));
+            }
+            if let Some(i) = &p.icon {
+                members.push(("icon".into(), Out::Str(i.clone())));
+            }
             let apps: Vec<Out> = p.apps.iter().map(app_out).collect();
             if !apps.is_empty() {
                 members.push(("apps".into(), Out::List(apps)));

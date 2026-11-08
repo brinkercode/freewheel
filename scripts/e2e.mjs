@@ -1888,13 +1888,14 @@ export async function main(platform, argv = process.argv.slice(2)) {
       waitFor("simulator", what, `const m = document.querySelector(".fw-sim-meta")?.textContent ?? "";
         if (m.includes("Page " + arguments[0] + " ")) return true;
         throw new Error(m + " / " + (document.querySelector("[data-front-app]")?.textContent ?? ""));`, [want], 20000);
-    /** The live dots: on profile `profile` and on page `page` (when the profile has several pages). */
-    const liveOn = (profile, page) => waitFor("settings", `the live dots on ${profile} / ${page}`, `const [profile, page] = arguments;
-      const p = document.querySelector(".profile-pill .live-dot")?.closest(".profile-pill")?.textContent ?? "";
-      const g = document.querySelector(".pill .live-dot")?.closest(".pill")?.textContent ?? null;
-      const shown = document.querySelector(".profile-pill.is-active")?.textContent ?? "";
-      if (p.includes(profile) && shown.includes(profile) && (page === null || g?.includes(page))) return true;
-      throw new Error("live on " + p + " / " + g + ", showing " + shown);`, [profile, page]);
+    /** In use: profile `profile` and page `page` (when the profile has several pages) are filled, the profile also shown; no dots. */
+    const liveOn = (profile, page) => waitFor("settings", `${profile} / ${page} in use`, `const [profile, page] = arguments;
+      const p = document.querySelector(".profile-pill.is-using [role=tab]")?.textContent ?? "";
+      const g = document.querySelector(".pill.is-using [role=tab]")?.textContent ?? null;
+      const shown = document.querySelector(".profile-pill.is-active [role=tab]")?.textContent ?? "";
+      if (document.querySelector(".live-dot")) throw new Error("a dot is back");
+      if (p === profile && shown === profile && (page === null || g === page)) return true;
+      throw new Error("in use " + p + " / " + g + ", showing " + shown);`, [profile, page]);
     const writing = (c) => (c.profiles ?? []).find((p) => p.name === "Writing");
     await step(`profiles: New profile Writing, for ${F.id}`, async () => {
       await click("settings", "button.profile-add", "New profile");
@@ -1906,6 +1907,10 @@ export async function main(platform, argv = process.argv.slice(2)) {
       await click("settings", '.profile-pill.is-active button[aria-label="Rename profile"]');
       await typeInto("settings", ".profile-pill.is-active input.profile-rename", `${SELECT_ALL}Writing\uE007`);
       await configShows("the profile renamed Writing", (c) => writing(c)?.pages.length === 1);
+      await click("settings", '.side-panel [role=radiogroup][aria-label="Colour"] button[aria-label="teal"]');
+      await click("settings", '.side-panel [role=radiogroup][aria-label="Icon"] button[aria-label="edit"]');
+      await configShows("Writing in teal with the edit icon", (c) => writing(c)?.color === "teal" && writing(c)?.icon === "edit");
+      await waitFor("settings", "the pill in teal with its icon", `const p = document.querySelector('.profile-pill.is-active'); return p?.dataset.color === "teal" && p.querySelector('[data-icon="edit"]');`);
       await click("settings", '.profile-pill.is-active button[aria-label="Apps for this profile"]');
       await waitFor("settings", "Writing's apps panel", `return document.querySelector(".side-panel .profile-panel")?.textContent.includes("When is Writing used?")`);
       await waitFor("settings", "Writing's own page Main", `return [...document.querySelectorAll(".keys-title")].length === 1 && document.querySelector(".profile-pill.is-active")?.textContent.includes("Writing")`);
@@ -1970,7 +1975,7 @@ export async function main(platform, argv = process.argv.slice(2)) {
       const text = readFileSync(join(dialogs, "freewheel-mappings.json"), "utf8");
       const file = JSON.parse(text);
       const w = file.profiles?.find((p) => p.name === "Writing");
-      if (!file.pages?.["Edit Bay"] || !w || Object.keys(w.pages ?? {}).length !== 2 || !JSON.stringify(w.apps).includes(F.id) || !Object.values(w.pages)[0].CUT?.startsWith("page "))
+      if (!file.pages?.["Edit Bay"] || !w || w.color !== "teal" || w.icon !== "edit" || Object.keys(w.pages ?? {}).length !== 2 || !JSON.stringify(w.apps).includes(F.id) || !Object.values(w.pages)[0].CUT?.startsWith("page "))
         throw new Error(`the backup lacks the profile: ${text.slice(0, 900)}`);
       if (earlier) writeFileSync(file0, earlier);
       // Back to the Keys tab without the profile for the steps after.

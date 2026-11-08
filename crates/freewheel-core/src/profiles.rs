@@ -118,6 +118,8 @@ mod tests {
             name: id.into(),
             apps,
             pages: vec![format!("{id}-main")],
+            color: None,
+            icon: None,
         }
     }
 

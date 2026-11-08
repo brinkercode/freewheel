@@ -1090,6 +1090,8 @@ mod tests {
                 linux: Some("notepad.exe".into()),
             }],
             pages: vec!["notes".into()],
+            color: None,
+            icon: None,
         });
         config.layers[0].bindings.insert(
             "Cam1".into(),

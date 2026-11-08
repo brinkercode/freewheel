@@ -29,7 +29,15 @@ apps?: Array<ProfileApp>,
 /**
  * Its pages (layer ids, at least one): the first is where it starts.
  */
-pages: Array<string>, };
+pages: Array<string>, 
+/**
+ * Its colour in the Keys tab: one of [`PROFILE_COLORS`].
+ */
+color?: string, 
+/**
+ * Its icon in the Keys tab: one of [`PROFILE_ICONS`].
+ */
+icon?: string, };
 
 export type ProfileApp = { 
 /**

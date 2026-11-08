@@ -253,6 +253,8 @@ pub fn schema() -> Value {
                 "additionalProperties": false,
                 "properties": {
                     "name": { "type": "string", "pattern": "\\S", "not": { "pattern": format!("^\\s*{}\\s*$", any_case("default", "")) }, "description": about("profiles[].name") },
+                    "color": choice("profiles[].color", crate::config::PROFILE_COLORS),
+                    "icon": choice("profiles[].icon", crate::config::PROFILE_ICONS),
                     "apps": { "type": "array", "description": about("profiles[].apps"), "items": { "$ref": "#/$defs/profileApp" } },
                     "pages": {
                         "type": "object",

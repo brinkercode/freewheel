@@ -292,7 +292,28 @@ export function deletePage(config, id) {
 /** What the Keys tab calls the pages no profile has. */
 export const DEFAULT_PROFILE = "Default";
 
-/** Adds a profile "Profile N" with one empty page "Main"; returns the config, its id and its page's id. */
+/** A profile's colours and icons (config.rs PROFILE_COLORS / PROFILE_ICONS); Default uses the app's accent and DEFAULT_ICON. */
+export const PROFILE_COLORS = ["rose", "orange", "amber", "green", "teal", "blue", "indigo", "violet"];
+export const PROFILE_ICONS = ["brush", "code", "music_note", "sports_esports", "movie", "edit", "photo_camera", "terminal"];
+export const DEFAULT_ICON = "keyboard";
+/** The icon a profile without one shows. */
+export const PLAIN_ICON = "tab";
+
+/** How profile `id` looks (null: Default): { color: a PROFILE_COLORS name or "accent", icon }. */
+export function profileLook(config, id) {
+  const p = id && (config.profiles ?? []).find((x) => x.id === id);
+  if (!p) return { color: "accent", icon: DEFAULT_ICON };
+  return { color: PROFILE_COLORS.includes(p.color) ? p.color : "accent", icon: PROFILE_ICONS.includes(p.icon) ? p.icon : PLAIN_ICON };
+}
+
+/** The config with profile `id`'s colour and/or icon set. */
+export const setProfileLook = (config, id, look) =>
+  withProfiles(
+    config,
+    (config.profiles ?? []).map((p) => (p.id === id ? { ...p, ...look } : p)),
+  );
+
+/** Adds a profile "Profile N" with one empty page "Main" and the next colour and icon; returns the config, its id and its page's id. */
 export function addProfile(config) {
   const profiles = config.profiles ?? [];
   let n = profiles.length + 1;
@@ -300,7 +321,9 @@ export function addProfile(config) {
   const id = freshId((x) => profiles.some((p) => p.id === x), `profile-${n}`);
   const page = freshId((x) => config.layers.some((l) => l.id === x), `${id}-main`);
   const next = withLayers(config, [...config.layers, { id: page, name: "Main", bindings: {} }]);
-  return { config: withProfiles(next, [...profiles, { id, name: `Profile ${n}`, pages: [page] }]), id, page };
+  const k = profiles.length;
+  const profile = { id, name: `Profile ${n}`, pages: [page], color: PROFILE_COLORS[k % PROFILE_COLORS.length], icon: PROFILE_ICONS[k % PROFILE_ICONS.length] };
+  return { config: withProfiles(next, [...profiles, profile]), id, page };
 }
 
 export const renameProfile = (config, id, name) =>

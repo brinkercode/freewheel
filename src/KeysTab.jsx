@@ -5,6 +5,7 @@ import ProfileApps from "./ProfileApps.jsx";
 import drawing from "./assets/speed-editor.svg?raw";
 import {
   DEFAULT_PROFILE,
+  profileLook,
   DRAWING,
   KEYS,
   LABELS,
@@ -42,8 +43,8 @@ export function handlePress(press, { select, setChip, timer, timers = globalThis
 /**
  * App profiles above the pages: Default (the pages no profile has) and each
  * profile, '+ New profile'; the profile shown renames inline, opens its
- * apps and deletes after an inline confirm. The live dot is on the profile
- * your Speed Editor uses.
+ * apps, colour and icon, and deletes after an inline confirm. Each pill has
+ * its profile's icon and colour; the one your Speed Editor uses is filled.
  */
 export function ProfilePicker({ config, profile, liveProfile = undefined, onProfile, onAdd, onRename, onDelete, onApps, error }) {
   const [renaming, setRenaming] = useState(false);
@@ -55,7 +56,6 @@ export function ProfilePicker({ config, profile, liveProfile = undefined, onProf
   }, [renaming]);
   const profiles = config.profiles ?? [];
   const current = profiles.find((p) => p.id === profile);
-  const live = (id) => liveProfile !== undefined && id === liveProfile && <span className="live-dot" aria-label="Your Speed Editor uses this profile" />;
   const forApps = (p) => (p.apps?.length ? `For ${p.apps.map((a) => a.name).join(", ")}` : "No apps yet");
   const finish = () => {
     setRenaming(false);
@@ -96,15 +96,19 @@ export function ProfilePicker({ config, profile, liveProfile = undefined, onProf
               </div>
             );
           return (
-            <div key={p.id ?? "default"} className={`profile-pill${active ? " is-active" : ""}`}>
+            <div
+              key={p.id ?? "default"}
+              className={`profile-pill${active ? " is-active" : ""}${liveProfile !== undefined && p.id === liveProfile ? " is-using" : ""}`}
+              data-color={profileLook(config, p.id).color}
+            >
               <button
                 role="tab"
                 aria-selected={active}
-                title={p.id ? forApps(p) : "Every app no profile is for"}
+                title={[p.id ? forApps(p) : "Every app no profile is for", liveProfile !== undefined && p.id === liveProfile ? "Your Speed Editor uses it now" : null].filter(Boolean).join(" · ")}
                 onClick={() => !active && onProfile(p.id)}
                 onDoubleClick={() => active && p.id && (setName(p.name), setRenaming(true))}
               >
-                {live(p.id)}
+                <Icon name={profileLook(config, p.id).icon} />
                 {p.name}
               </button>
               {active && p.id && (
@@ -138,7 +142,7 @@ export function ProfilePicker({ config, profile, liveProfile = undefined, onProf
  * renames inline (double-click or its pencil) and deletes after an inline
  * confirm.
  */
-export function PageSelector({ config, pages = config.layers, page, livePage = null, onPage, onAdd, onRename, onDelete, error }) {
+export function PageSelector({ config, pages = config.layers, page, livePage = null, color = "accent", onPage, onAdd, onRename, onDelete, error }) {
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const rename = useRef(null);
@@ -161,7 +165,9 @@ export function PageSelector({ config, pages = config.layers, page, livePage = n
         </div>
       </div>
     );
-  const live = (id) => id === livePage && <span className="live-dot" aria-label="Your Speed Editor is on this page" />;
+  // The page your Speed Editor is on is filled in its profile's colour.
+  const using = (id) => (id === livePage ? " is-using" : "");
+  const usingTitle = (id) => (id === livePage ? " · Your Speed Editor is on it" : "");
   return (
     <div className="page-selector">
       {!many && <span className="keys-title">What each key does</span>}
@@ -171,9 +177,8 @@ export function PageSelector({ config, pages = config.layers, page, livePage = n
         <div className="pills" role="tablist" aria-label="Pages">
           {pages.map((l, i) =>
             l.id === page ? (
-              <div key={l.id} className={`pill is-active${renaming ? " is-renaming" : ""}`}>
-                <button role="tab" aria-selected="true" title="Double-click to rename" onDoubleClick={() => setRenaming(true)}>
-                  {live(l.id)}
+              <div key={l.id} className={`pill is-active${using(l.id)}${renaming ? " is-renaming" : ""}`} data-color={color}>
+                <button role="tab" aria-selected="true" title={`Double-click to rename${usingTitle(l.id)}`} onDoubleClick={() => setRenaming(true)}>
                   {l.name}
                 </button>
                 <input
@@ -196,9 +201,8 @@ export function PageSelector({ config, pages = config.layers, page, livePage = n
                 )}
               </div>
             ) : (
-              <div key={l.id} className="pill">
-                <button role="tab" aria-selected="false" title="Show this page" onClick={() => onPage(l.id)}>
-                  {live(l.id)}
+              <div key={l.id} className={`pill${using(l.id)}`} data-color={color}>
+                <button role="tab" aria-selected="false" title={`Show this page${usingTitle(l.id)}`} onClick={() => onPage(l.id)}>
                   {l.name}
                 </button>
               </div>
@@ -211,12 +215,6 @@ export function PageSelector({ config, pages = config.layers, page, livePage = n
         <Icon name="add" />
         Add page
       </button>
-      {many && livePage && (
-        <span className="live-legend">
-          <span className="live-legend-dot" />
-          Your Speed Editor is here
-        </span>
-      )}
       {error && <p role="alert">{error}</p>}
     </div>
   );
@@ -534,6 +532,7 @@ export default function KeysTab({
             pages={pages}
             page={page}
             livePage={pages.some((l) => l.id === livePage) ? livePage : null}
+            color={profileLook(config, profile).color}
             onPage={(p) => (setPage(p), setSelected(null), setPageError(null))}
             onAdd={onAdd}
             onRename={(name) => commit(renamePage(config, page, name))}

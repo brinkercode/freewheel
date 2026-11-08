@@ -956,6 +956,8 @@ mod tests {
                 linux: Some("notepad.exe".into()),
             }],
             pages: vec!["notes".into()],
+            color: None,
+            icon: None,
         });
         commands.send(Command::Reload(Box::new(config))).unwrap();
         std::thread::sleep(Duration::from_millis(50));
