@@ -79,6 +79,48 @@ pub fn normalize(name: &str, os: Os) -> String {
     cut.map(str::to_string).unwrap_or(lower)
 }
 
+/// The program inside an AppImage, from its file name as AppImages are
+/// named (`<name>-<version>-<arch>.AppImage`): `krita-5.2.6-x86_64.AppImage`
+/// is `krita`, `GIMP_AppImage-git-2.10-x86_64.AppImage` is `gimp`. Lower
+/// case; `None` for a name that is not an AppImage's.
+///
+/// The window in front belongs to that program (its process, its window
+/// class), never to a process named after the file (#200).
+pub fn appimage_program(name: &str) -> Option<String> {
+    let file = name.trim().rsplit(['/', '\\']).next().unwrap_or(name);
+    let lower = file.to_lowercase();
+    let stem = lower.strip_suffix(".appimage")?;
+    const ARCHES: [&str; 9] = [
+        "x64", "amd64", "aarch64", "arm64", "armhf", "i386", "i686", "linux", "appimage",
+    ];
+    let mut words = Vec::new();
+    // `x86_64` holds a separator: make it one word first.
+    let stem = stem.replace("x86_64", "x64").replace("x86-64", "x64");
+    for word in stem.split(['-', '_', ' ']) {
+        let version = word.starts_with(|c: char| c.is_ascii_digit())
+            || (word.starts_with('v') && word[1..].starts_with(|c: char| c.is_ascii_digit()));
+        if word.is_empty() || version || ARCHES.contains(&word) || word == "git" {
+            break;
+        }
+        words.push(word);
+    }
+    let program = words.join("-");
+    (!program.is_empty()).then_some(program)
+}
+
+/// The names a profile's entry matches: the entry itself and, on Linux for
+/// an AppImage, the program inside it ([`appimage_program`]).
+fn entry_names(entry: &str, os: Os) -> Vec<String> {
+    let mut names = vec![normalize(entry, os)];
+    if os == Os::Linux
+        && let Some(program) = appimage_program(entry)
+    {
+        names.push(program);
+    }
+    names.retain(|n| !n.is_empty());
+    names
+}
+
 /// Whether `app` (a profile's) is the app `front`, on `os`.
 pub fn app_matches(app: &ProfileApp, os: Os, front: &FrontApp) -> bool {
     if front.own {
@@ -87,8 +129,11 @@ pub fn app_matches(app: &ProfileApp, os: Os, front: &FrontApp) -> bool {
     let Some(entry) = entry_for(app, os) else {
         return false;
     };
-    let entry = normalize(entry, os);
-    !entry.is_empty() && front.ids.iter().any(|id| normalize(id, os) == entry)
+    let names = entry_names(entry, os);
+    front
+        .ids
+        .iter()
+        .any(|id| names.contains(&normalize(id, os)))
 }
 
 /// The first profile listing `front`, in the profiles' order.
@@ -149,6 +194,56 @@ mod tests {
             &notepad,
             Os::Linux,
             &FrontApp::new(&["gedit-helper"])
+        ));
+    }
+
+    #[test]
+    fn an_appimage_is_known_by_the_program_inside_it() {
+        for (file, program) in [
+            ("krita-5.2.6-x86_64.AppImage", Some("krita")),
+            (
+                "/home/me/My Apps/freewheel-1.1.0-linux-x86_64.AppImage",
+                Some("freewheel"),
+            ),
+            ("Obsidian-1.5.3.AppImage", Some("obsidian")),
+            ("balenaEtcher-1.18.11-x64.AppImage", Some("balenaetcher")),
+            (
+                "GIMP_AppImage-git-2.10.25-withPython2-x86_64.AppImage",
+                Some("gimp"),
+            ),
+            ("kdenlive-v24.02-x86_64.appimage", Some("kdenlive")),
+            ("Some-Tool-aarch64.AppImage", Some("some-tool")),
+            ("Tool.AppImage", Some("tool")),
+            ("2048-x86_64.AppImage", None),
+            ("krita", None),
+            ("krita.desktop", None),
+        ] {
+            assert_eq!(appimage_program(file).as_deref(), program, "{file}");
+        }
+        // The profile keeps the file; the window in front is its program
+        // and window class (#200).
+        let krita = app("", "", "krita-5.2.6-x86_64.AppImage");
+        assert!(app_matches(
+            &krita,
+            Os::Linux,
+            &FrontApp::new(&["krita", "Krita"])
+        ));
+        assert!(app_matches(
+            &krita,
+            Os::Linux,
+            &FrontApp::new(&["AppRun", "krita-5.2.6-x86_64.AppImage"])
+        ));
+        assert!(!app_matches(
+            &krita,
+            Os::Linux,
+            &FrontApp::new(&["gimp", "Gimp"])
+        ));
+        // Only on Linux: an AppImage is no Windows or macOS app.
+        let both = app("krita-5.2.6-x86_64.AppImage", "", "");
+        assert!(!app_matches(
+            &both,
+            Os::Windows,
+            &FrontApp::new(&["krita.exe"])
         ));
     }
 

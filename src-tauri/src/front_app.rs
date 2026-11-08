@@ -285,7 +285,9 @@ mod x11 {
         AtomEnum, ChangeWindowAttributesAux, ConnectionExt, EventMask, Window,
     };
 
-    /// The program of process `pid` and its short name (`/proc`).
+    /// The program of process `pid` and its short name (`/proc`), and the
+    /// AppImage file it runs from, if any: a profile that picked
+    /// `krita-5.2.6-x86_64.AppImage` matches its window by that name too.
     pub fn process_names(pid: u32) -> Vec<String> {
         let exe = std::fs::read_link(format!("/proc/{pid}/exe"))
             .ok()
@@ -293,7 +295,10 @@ mod x11 {
         let comm = std::fs::read_to_string(format!("/proc/{pid}/comm"))
             .ok()
             .map(|s| s.trim().to_string());
-        exe.into_iter().chain(comm).collect()
+        let image = std::fs::read(format!("/proc/{pid}/environ"))
+            .ok()
+            .and_then(|raw| super::appimage_of_environ(&raw));
+        exe.into_iter().chain(comm).chain(image).collect()
     }
 
     /// `WM_CLASS`'s instance and class (two NUL-ended strings).
@@ -397,6 +402,20 @@ mod x11 {
             }
         });
     }
+}
+
+/// The AppImage file (its name) a process runs from: the AppImage runtime
+/// sets `APPIMAGE` to the file's path for the program inside it. `raw` is
+/// `/proc/<pid>/environ` (`NAME=value` entries, each NUL-ended).
+#[cfg(any(target_os = "linux", test))]
+pub fn appimage_of_environ(raw: &[u8]) -> Option<String> {
+    raw.split(|b| *b == 0)
+        .find_map(|entry| entry.strip_prefix(b"APPIMAGE="))
+        .map(|path| String::from_utf8_lossy(path).into_owned())
+        .and_then(|path| {
+            let file = path.rsplit('/').next().unwrap_or(&path).trim().to_string();
+            (!file.is_empty()).then_some(file)
+        })
 }
 
 /// The app a profile keeps for a picker choice on `os`, by the name that
@@ -567,6 +586,63 @@ mod tests {
             path: path.into(),
             args: args.iter().map(|a| a.to_string()).collect(),
         }
+    }
+
+    /// #200: the window of a running AppImage belongs to the program inside
+    /// its mount (/proc/<pid>/exe = /tmp/.mount_xxx/usr/bin/krita, comm
+    /// "krita", WM_CLASS "krita"/"Krita"), never to a process named after
+    /// the file.
+    #[test]
+    fn a_picked_appimage_matches_its_window_in_front() {
+        use freewheel_core::profiles::app_matches;
+        let image = choice("Krita", "/home/me/Apps/krita-5.2.6-x86_64.AppImage", &[]);
+        let kept = profile_app_for(&image, Os::Linux, &Fake);
+        // What the X11 watcher reports for the AppImage's window.
+        let front = front_app(
+            1,
+            vec![
+                "krita".into(),
+                "krita".into(),
+                "krita".into(),
+                "Krita".into(),
+            ],
+            Some("Krita".into()),
+        )
+        .unwrap();
+        assert!(
+            app_matches(&kept, Os::Linux, &front),
+            "profile keeps {:?}; the window in front is {:?}",
+            kept.linux,
+            front.ids
+        );
+        // Any other app in front: no match.
+        let other = front_app(1, vec!["gimp".into(), "Gimp".into()], None).unwrap();
+        assert!(!app_matches(&kept, Os::Linux, &other));
+    }
+
+    /// An AppImage whose program isn't named like its file still matches:
+    /// the watcher also reports the AppImage file from the process's
+    /// `APPIMAGE`.
+    #[test]
+    fn the_window_of_an_appimage_is_also_known_by_the_appimage_file() {
+        use freewheel_core::profiles::app_matches;
+        let environ = b"HOME=/home/me\0APPIMAGE=/home/me/My Apps/Odd.Name-x86_64.AppImage\0APPDIR=/tmp/.mount_Odd\0";
+        assert_eq!(
+            appimage_of_environ(environ).as_deref(),
+            Some("Odd.Name-x86_64.AppImage")
+        );
+        assert_eq!(appimage_of_environ(b"HOME=/home/me\0PATH=/usr/bin\0"), None);
+        assert_eq!(appimage_of_environ(b"NOT_APPIMAGE=/x.AppImage\0"), None);
+        let image = choice("Odd", "/home/me/My Apps/Odd.Name-x86_64.AppImage", &[]);
+        let kept = profile_app_for(&image, Os::Linux, &Fake);
+        let ids = vec![
+            "electron".into(),
+            "electron".into(),
+            appimage_of_environ(environ).unwrap(),
+            "unexpected".into(),
+        ];
+        let front = front_app(1, ids, None).unwrap();
+        assert!(app_matches(&kept, Os::Linux, &front), "{:?}", front.ids);
     }
 
     #[test]
