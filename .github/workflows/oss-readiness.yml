@@ -42,21 +42,51 @@ jobs:
         with:
           node-version: "22"
 
+      # The tool archives come from the CI cache, so a GitHub release outage
+      # cannot fail this check: on a miss they are downloaded with retries and
+      # saved at once; every archive, cached or downloaded, is checked against
+      # its sha256 before it is unpacked.
+      - name: Restore the tool archives
+        id: tools-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/freewheel-oss-tools
+          key: oss-tools-${{ runner.os }}-gitleaks-${{ env.GITLEAKS_VERSION }}-${{ env.GITLEAKS_SHA256 }}-cargo-deny-${{ env.CARGO_DENY_VERSION }}-${{ env.CARGO_DENY_SHA256 }}
+
       - name: Tools (pinned versions, checked sha256)
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/bin"
-          cd "$RUNNER_TEMP"
-          curl -fsSLo gitleaks.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum -c -
-          tar -xzf gitleaks.tgz -C bin gitleaks
+          store="$HOME/.cache/freewheel-oss-tools"
+          mkdir -p "$store" "$RUNNER_TEMP/bin"
           deny="cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl"
-          curl -fsSLo deny.tgz "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/${deny}.tar.gz"
-          echo "${CARGO_DENY_SHA256}  deny.tgz" | sha256sum -c -
-          tar -xzf deny.tgz
+          # name in the store, sha256, URL
+          while read -r name sha url; do
+            if [ -f "$store/$name" ] && echo "$sha  $store/$name" | sha256sum -c --status -; then
+              echo "$name: from the cache"
+              continue
+            fi
+            echo "$name: downloading $url"
+            curl --fail --silent --show-error --location --retry 8 --retry-all-errors --retry-delay 15 \
+              --output "$store/$name.part" "$url"
+            echo "$sha  $store/$name.part" | sha256sum -c -
+            mv "$store/$name.part" "$store/$name"
+          done <<EOF
+          gitleaks.tgz ${GITLEAKS_SHA256} https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz
+          deny.tgz ${CARGO_DENY_SHA256} https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/${deny}.tar.gz
+          EOF
+          cd "$RUNNER_TEMP"
+          tar -xzf "$store/gitleaks.tgz" -C bin gitleaks
+          tar -xzf "$store/deny.tgz"
           mv "${deny}/cargo-deny" bin/
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Save the tool archives
+        if: steps.tools-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/freewheel-oss-tools
+          key: ${{ steps.tools-cache.outputs.cache-primary-key }}
 
       - name: No secrets in any commit of any ref (gitleaks)
         run: gitleaks git --log-opts="--all" --config .gitleaks.toml --redact --no-banner --exit-code 1 .

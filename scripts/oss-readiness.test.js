@@ -74,7 +74,10 @@ test("community problems name what is missing or unpinned", () => {
   writeFileSync(join(dir, "LICENSE"), "Apache License\n");
   writeFileSync(join(dir, "package.json"), '{"license":"ISC"}');
   writeFileSync(join(dir, ".github/workflows/x.yml"), "on: push\njobs:\n  a:\n    steps:\n      - uses: actions/checkout@v4\n      - uses: ./local\n");
+  mkdirSync(join(dir, ".github/actions/y"), { recursive: true });
+  writeFileSync(join(dir, ".github/actions/y/action.yml"), "runs:\n  using: composite\n  steps:\n    - uses: actions/cache@v4\n");
   const p = communityProblems(dir);
+  expect(p).toContain(".github/actions/y/action.yml: actions/cache@v4 is not pinned to a commit sha");
   expect(p).toContain("SECURITY.md is missing");
   expect(p).toContain("LICENSE is not the MIT License");
   expect(p).toContain("package.json license is not MIT");

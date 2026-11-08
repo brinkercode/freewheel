@@ -4,7 +4,8 @@ import { checkWorkflow } from "./check-workflow.mjs";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const wf = read("../.github/workflows/test-build.yml");
-const workflows = ["ci.yml", "release.yml", "test-build.yml", "release-please.yml", "update-e2e.yml", "e2e-windows.yml"].map((f) => [f, read(`../.github/workflows/${f}`)]);
+const workflows = ["ci.yml", "release.yml", "test-build.yml", "release-please.yml", "update-e2e.yml", "e2e-windows.yml"].map((f) => [f, read(`../.github/workflows/${f}`)])
+  .concat([["actions/appimage-tools/action.yml", read("../.github/actions/appimage-tools/action.yml")]]);
 
 // Repo rules: SHA pinning required, selected actions only.
 test.each(workflows)("%s pins every action to a commit SHA from an allowed owner", (_file, text) => {
@@ -12,8 +13,9 @@ test.each(workflows)("%s pins every action to a commit SHA from an allowed owner
   expect(uses.length).toBeGreaterThan(0);
   for (const u of uses) {
     if (u === "uses: ./.github/workflows/ci.yml" || u === "uses: ./.github/workflows/update-e2e.yml") continue;
+    if (u === "uses: ./.github/actions/appimage-tools") continue;
     expect(u).toMatch(
-      /^uses: (actions\/[\w-]+|Swatinem\/rust-cache|tauri-apps\/tauri-action|googleapis\/release-please-action)@[0-9a-f]{40}$/,
+      /^uses: (actions\/[\w-]+(?:\/[\w-]+)?|Swatinem\/rust-cache|tauri-apps\/tauri-action|googleapis\/release-please-action)@[0-9a-f]{40}$/,
     );
     expect(u).not.toMatch(/@0{40}$/);
   }
