@@ -20,8 +20,14 @@ pub fn tooltip(status: &str, battery: Option<Battery>) -> String {
     }
 }
 
-/// Fires once when the level drops below the threshold; re-arms after the
-/// device charges or rises back to the threshold or above.
+/// Whether `level` is low: at or below `threshold`
+/// (`settings.low_battery_threshold`, SCHEMA.md `low_battery_warning`).
+pub fn is_low(level: u8, threshold: u8) -> bool {
+    level <= threshold
+}
+
+/// Fires once when the level drops to the threshold or below; re-arms after
+/// the device charges or rises back above the threshold.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LowBatteryAlert {
     armed: bool,
@@ -36,7 +42,7 @@ impl Default for LowBatteryAlert {
 impl LowBatteryAlert {
     /// Takes a battery report; returns whether to notify now.
     pub fn update(&mut self, battery: Battery, threshold: u8) -> bool {
-        if battery.charging || battery.level >= threshold {
+        if battery.charging || !is_low(battery.level, threshold) {
             self.armed = true;
             return false;
         }
@@ -70,20 +76,30 @@ mod tests {
     }
 
     #[test]
-    fn notifies_once_below_the_threshold() {
+    fn notifies_once_at_or_below_the_threshold() {
         let mut alert = LowBatteryAlert::default();
-        assert!(!alert.update(at(15, false), 15));
-        assert!(alert.update(at(14, false), 15));
-        assert!(!alert.update(at(13, false), 15));
+        assert!(!alert.update(at(16, false), 15));
+        // SCHEMA.md: "at or below this percent".
+        assert!(alert.update(at(15, false), 15));
+        assert!(!alert.update(at(14, false), 15));
         assert!(!alert.update(at(5, false), 15));
     }
 
     #[test]
-    fn re_arms_after_rising_to_the_threshold() {
+    fn re_arms_after_rising_above_the_threshold() {
         let mut alert = LowBatteryAlert::default();
         assert!(alert.update(at(14, false), 15));
         assert!(!alert.update(at(15, false), 15));
-        assert!(alert.update(at(14, false), 15));
+        assert!(!alert.update(at(16, false), 15));
+        assert!(alert.update(at(15, false), 15));
+    }
+
+    #[test]
+    fn low_is_at_or_below_the_threshold() {
+        assert!(is_low(15, 15));
+        assert!(is_low(0, 0));
+        assert!(!is_low(16, 15));
+        assert!(!is_low(1, 0));
     }
 
     #[test]

@@ -103,6 +103,15 @@ impl ResolveWatcher {
         &self.process_name
     }
 
+    /// `settings.resolve_process_name` changed: watch for `name` from the
+    /// next poll, as if freewheel had just started with it. A new program
+    /// already running makes freewheel step aside; stepped aside for the old
+    /// one, freewheel switches back On unless the new one runs too.
+    pub fn set_process_name(&mut self, name: impl Into<String>) {
+        self.process_name = name.into();
+        self.resolve_running = self.off_by_resolve;
+    }
+
     /// True while freewheel is Off because Resolve started.
     pub fn off_by_resolve(&self) -> bool {
         self.off_by_resolve
@@ -157,6 +166,32 @@ mod tests {
             ResolveWatcher::from_settings(&settings).process_name(),
             "MyResolve"
         );
+    }
+
+    #[test]
+    fn a_new_process_name_applies_from_the_next_poll() {
+        let (mut ps, mut w) = (FakeProcessLister::new(), ResolveWatcher::new(NAME));
+        ps.start("MyEditor");
+        assert_eq!(w.poll(&mut ps, true), None);
+        // Already running when the setting changes: step aside for it.
+        w.set_process_name("MyEditor");
+        assert!(matches!(
+            w.poll(&mut ps, true),
+            Some(HandOff::SwitchOff { .. })
+        ));
+        // Stepped aside for MyEditor, then back to Resolve (not running).
+        w.set_process_name(NAME);
+        assert_eq!(w.poll(&mut ps, false), Some(HandOff::SwitchOn));
+        assert_eq!(w.poll(&mut ps, true), None);
+        ps.start(NAME);
+        assert!(matches!(
+            w.poll(&mut ps, true),
+            Some(HandOff::SwitchOff { .. })
+        ));
+        // Stepped aside for Resolve; the new program runs too: stay aside.
+        w.set_process_name("MyEditor");
+        assert_eq!(w.poll(&mut ps, false), None);
+        assert!(w.off_by_resolve());
     }
 
     #[test]

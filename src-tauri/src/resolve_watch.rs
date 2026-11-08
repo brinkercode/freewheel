@@ -3,7 +3,8 @@
 //! [`HandOff`] into a [`Command::SetEnabled`] for the device loop and shows
 //! the replug notification. The tray's manual toggle reaches it as
 //! [`Message::Manual`] so a manual Off or On always wins [A10]; the Resolve
-//! tab's step-aside switch as [`Message::StepAside`].
+//! tab's step-aside switch as [`Message::StepAside`], a new program name as
+//! [`Message::Program`].
 
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant};
@@ -22,12 +23,14 @@ pub enum Pause<'a> {
 }
 
 /// What the tray and the settings window tell the hand-off.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Message {
     /// The user switched freewheel On (`true`) or Off by hand.
     Manual(bool),
     /// `settings.step_aside_for_resolve` changed; applies from the next poll.
     StepAside(bool),
+    /// `settings.resolve_process_name` changed; applies from the next poll.
+    Program(String),
 }
 
 /// Runs until the message sender or the device loop is gone.
@@ -54,6 +57,11 @@ pub fn run(
                 watcher.set_step_aside(on);
                 // Poll now, so turning it off while stepped aside switches
                 // back On at once.
+                next_poll = Instant::now();
+            }
+            Ok(Message::Program(name)) => {
+                tracing::info!(program = %name, "Resolve program changed");
+                watcher.set_process_name(name);
                 next_poll = Instant::now();
             }
             Err(RecvTimeoutError::Timeout) => {
@@ -178,6 +186,36 @@ mod tests {
         assert!(commands.try_recv().is_err(), "manual Off was overridden");
         // Paused for Resolve, then no longer once switched by hand.
         assert_eq!(pauses.try_iter().collect::<Vec<_>>(), [true, false, false]);
+    }
+
+    #[test]
+    fn a_new_program_name_is_watched_without_a_restart() {
+        // Only "MyEditor" runs; the watcher starts on Resolve.
+        struct Only(&'static str);
+        impl ProcessLister for Only {
+            fn is_running(&mut self, name: &str) -> bool {
+                name == self.0
+            }
+        }
+        let (manual, manual_rx) = mpsc::channel();
+        let (cmd_tx, commands) = mpsc::channel();
+        let handle = thread::spawn(move || {
+            run(
+                ResolveWatcher::new(NAME),
+                &mut Only("MyEditor"),
+                true,
+                TICK,
+                manual_rx,
+                cmd_tx,
+                |_| {},
+            )
+        });
+        thread::sleep(TICK * 4);
+        assert!(commands.try_recv().is_err(), "Resolve is not running");
+        manual.send(Message::Program("MyEditor".into())).unwrap();
+        assert!(!enabled(commands.recv_timeout(WAIT).unwrap()));
+        drop(manual);
+        handle.join().unwrap();
     }
 
     #[test]

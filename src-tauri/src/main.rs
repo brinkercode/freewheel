@@ -153,7 +153,7 @@ fn spawn_device(
             },
             commands,
             {
-                let mut view = tray::TrayView::new(config.settings.low_battery_threshold);
+                let mut view = tray::TrayView::new();
                 move |update| {
                     if let device::Update::KeyPressed(key) = &update {
                         let _ = app.emit(KEY_PRESSED_EVENT, key);
@@ -411,12 +411,11 @@ fn main() {
             // The tray's update item works in a release build (it has the
             // updater pubkey), or in --simulate with the simulated source; else it says this
             // build can't update itself, as the General tab does.
-            let tray = tray::build(app.handle(), updater || simulate, tray::LOW_BATTERY)?;
+            let tray = tray::build(app.handle(), updater || simulate)?;
             if simulate {
                 simulate::attach(
                     app.handle().clone(),
                     sim_store,
-                    config.settings.low_battery_threshold,
                     real_injector,
                     tray,
                     receiver,

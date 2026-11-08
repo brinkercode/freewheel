@@ -235,7 +235,7 @@ function Settings({ autoUpdate, storage }) {
     restart({ ...u, install }, () => (trace("relaunch"), again(u)), setUpdate, (up) => rememberNotes(storage, up));
   };
   trayActions.current = { check: onCheck, download: onDownload, restart: onRestart };
-  const state = fromStatusEvent(status ?? { connection: "Absent" });
+  const state = fromStatusEvent(status ?? { connection: "Absent" }, config?.settings?.low_battery_threshold);
   // A failed switch is an error that needs action: it is logged, never toasted.
   const turn = (on) =>
     switchOn(setEnabled, on).then(say, (error) => console.error("freewheel: turning", on ? "on" : "off", "failed:", String(error)));
