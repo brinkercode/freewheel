@@ -1135,3 +1135,21 @@ fn profile_icons_read_as_name_or_colon_name_store_bare_and_write_colon_name() {
         "{err}"
     );
 }
+
+/// A shortcut on the ß key keeps that one key (not "SS", which nothing can
+/// press), and its backup restores.
+#[test]
+fn a_sharp_s_shortcut_stays_one_key_and_its_backup_restores() {
+    let file = r#"{ "version": 2, "pages": { "Main": { "CUT": "Ctrl+ß" } } }"#;
+    let c = read_ok(file).config;
+    assert_eq!(
+        c.layers[0].bindings.get("Cut"),
+        Some(&Action::Hotkey {
+            combo: combo(&[Modifier::Ctrl], "ß")
+        })
+    );
+    let out = String::from_utf8(export(&c, &win())).unwrap();
+    assert!(out.contains(r#""CUT": "Ctrl+ß""#), "{out}");
+    let again = import(&c, out.as_bytes(), true, &win()).unwrap_or_else(|e| panic!("{e}\n{out}"));
+    assert_eq!(again.config, c);
+}

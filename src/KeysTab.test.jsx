@@ -148,6 +148,10 @@ test("capture records modifiers plus one key and shows it", () => {
   expect(comboFromEvent({ key: "Shift", shiftKey: true })).toEqual(combo("", "Shift"));
   expect(comboFromEvent({ key: "ArrowUp", altKey: true, metaKey: true })).toEqual(combo("Up", "Alt", "Meta"));
   expect(comboFromEvent({ key: " " })).toEqual(combo("Space"));
+  expect(comboFromEvent({ key: "ä", ctrlKey: true })).toEqual(combo("Ä", "Ctrl"));
+  // ß upper-cases to "SS", which is no key: it stays ß.
+  expect(comboFromEvent({ key: "ß", ctrlKey: true })).toEqual(combo("ß", "Ctrl"));
+  expect(comboError(comboFromEvent({ key: "ß", ctrlKey: true }))).toBeNull();
   const html = renderToString(<KeyEditor keyName="Cut" action={{ Hotkey: { combo: recorded } }} initialMode="Hotkey" />);
   expect(html).toContain('value="Ctrl+Shift+K"');
 });

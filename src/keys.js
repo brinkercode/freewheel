@@ -72,11 +72,17 @@ const FILE_KEYS = [
 ];
 const SENDABLE = new Set([...Object.values(NAMED), ...FILE_KEYS]);
 
+/** A character in upper case, unless that is more than one character ("ß" stays "ß", not "SS"). */
+const upperOne = (c) => {
+  const up = c.toUpperCase();
+  return up.length === 1 ? up : c;
+};
+
 /** The combo a keydown records: its modifiers plus one key ("" while only modifiers are down). */
 export function comboFromEvent(e) {
   const modifiers = MODIFIERS.filter(([flag]) => e[flag]).map(([, name]) => name);
   if (MODIFIER_KEYS.includes(e.key)) return { modifiers, key: "" };
-  const key = NAMED[e.key] ?? (e.key.length === 1 ? e.key.toUpperCase() : e.key);
+  const key = NAMED[e.key] ?? (e.key.length === 1 ? upperOne(e.key) : e.key);
   return { modifiers, key };
 }
 
