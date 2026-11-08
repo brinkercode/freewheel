@@ -621,7 +621,40 @@ fn parse(bytes: &[u8]) -> Result<Config, ConfigError> {
             p.icon = None;
         }
     }
+    repair_profile_pages(&mut config);
     Ok(config)
+}
+
+/// A profile whose page list is empty, or names only pages that don't exist
+/// (a hand edit), gets an empty page named Main: switching to it needs a page
+/// to start on, and the next save must pass [`validate_profiles`]. Nothing the
+/// user wrote is dropped, only names of pages that aren't there.
+fn repair_profile_pages(config: &mut Config) {
+    for i in 0..config.profiles.len() {
+        let layers = &config.layers;
+        let p = &mut config.profiles[i];
+        p.pages.retain(|id| layers.iter().any(|l| &l.id == id));
+        if !p.pages.is_empty() {
+            continue;
+        }
+        let base = format!("{}-main", p.id);
+        let mut id = base.clone();
+        let mut n = 2;
+        while config.layers.iter().any(|l| l.id == id) {
+            id = format!("{base}-{n}");
+            n += 1;
+        }
+        tracing::warn!(
+            "config.json: the profile \"{}\" has no page; it now has an empty page Main",
+            config.profiles[i].name
+        );
+        config.profiles[i].pages.push(id.clone());
+        config.layers.push(Layer {
+            id,
+            name: "Main".into(),
+            bindings: BTreeMap::new(),
+        });
+    }
 }
 
 /// Why `save_config` rejected a config from the settings window (T8). It
@@ -878,6 +911,70 @@ fn validate_profiles(config: &Config) -> Result<(), SaveError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn empty_pages_profile(id: &str, pages: Vec<LayerId>) -> Profile {
+        Profile {
+            id: id.into(),
+            name: id.to_uppercase(),
+            apps: vec![ProfileApp {
+                name: "code".into(),
+                windows: Some("code.exe".into()),
+                macos: Some("code".into()),
+                linux: Some("code".into()),
+            }],
+            pages,
+            color: None,
+            icon: None,
+        }
+    }
+
+    #[test]
+    fn a_profile_with_no_pages_loads_with_an_empty_page() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = Config::default();
+        config.profiles.push(empty_pages_profile("p", vec![]));
+        config
+            .profiles
+            .push(empty_pages_profile("q", vec!["missing".into()]));
+        let before = config.layers.clone();
+        fs::write(
+            dir.path().join(CONFIG_FILE),
+            serde_json::to_vec_pretty(&config).unwrap(),
+        )
+        .unwrap();
+        let mut store = ConfigStore::new(dir.path());
+        let (loaded, err) = store.load_or_default();
+        assert!(err.is_none());
+        for p in &loaded.profiles {
+            assert_eq!(p.pages.len(), 1, "{}", p.id);
+            let page = loaded.layers.iter().find(|l| l.id == p.pages[0]).unwrap();
+            assert_eq!(page.name, "Main");
+            assert!(page.bindings.is_empty());
+        }
+        assert_ne!(loaded.profiles[0].pages, loaded.profiles[1].pages);
+        // Every page that was there is still there.
+        assert!(before.iter().all(|l| loaded.layers.contains(l)));
+        // The repaired config is one the settings window can save.
+        assert_eq!(validate_profiles(&loaded), Ok(()));
+        // Restarting: the saved repair loads the same.
+        store.save(&loaded).unwrap();
+        let (again, err) = ConfigStore::new(dir.path()).load_or_default();
+        assert!(err.is_none());
+        assert_eq!(again, loaded);
+    }
+
+    #[test]
+    fn a_repaired_page_id_never_takes_an_existing_one() {
+        let mut config = Config::default();
+        config.layers.push(Layer {
+            id: "p-main".into(),
+            name: "Other".into(),
+            bindings: BTreeMap::new(),
+        });
+        config.profiles.push(empty_pages_profile("p", vec![]));
+        let loaded = parse(&serde_json::to_vec(&config).unwrap()).unwrap();
+        assert_eq!(loaded.profiles[0].pages, vec!["p-main-2".to_string()]);
+    }
 
     fn combo(key: &str) -> KeyCombo {
         KeyCombo {
