@@ -19,8 +19,12 @@ freewheel ships files you download and run: no installer, no zip.
 
 1. **Check** (at start, once; and on Check for updates):
    `GET https://github.com/brinkercode/freewheel/releases/latest/download/latest.json`
-   (a plain download, no API rate limit). 204/404 = no release. Newer by
-   semver → offered.
+   (a plain download, no API rate limit). Newer by semver → offered; the
+   same or older → up to date. 204/404 (the latest release has no
+   `latest.json`) is a failed check, not up to date: Check for updates says
+   "Couldn’t check for updates. Try again later." and nothing else changes
+   (an update already offered or downloaded stays); the check at start logs
+   it and shows nothing.
 2. **Download**: first checks the app's folder is writable (else: "move the
    folder or download it yourself"), then streams the file for this OS/arch to
    `<temp>/freewheel-update/` with progress, and verifies its signature

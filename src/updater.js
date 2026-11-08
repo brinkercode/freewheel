@@ -12,7 +12,7 @@
 //   { status: "ready", version }
 //   { status: "restarting", version }
 //   { status: "error", during: "check" | "download" | "install", version?, message,
-//     notConfigured?, notWritable?, folder?, badSignature?, cantInstall?, reason? }
+//     notConfigured?, notWritable?, folder?, badSignature?, cantInstall?, reason?, noManifest? }
 
 /** How long 'Checking…' shows at least, so a fast answer still reads as a check. */
 export const MIN_CHECK_MS = 900;
@@ -26,7 +26,8 @@ const sleep = (ms) => new Promise((resolve) => globalThis.setTimeout(resolve, ms
  * can't be changed, `badSignature` when the download did not verify,
  * `cantInstall` (+ `reason`, and the newer `version` a check found) when this
  * copy of freewheel can't replace itself, e.g. on Linux when it doesn't run
- * from its AppImage.
+ * from its AppImage. `noManifest` when the latest release has no latest.json
+ * (204/404): the check failed, it is not "up to date".
  */
 export function errorState(during, error, version) {
   const message = String(error?.message ?? error ?? "");
@@ -39,6 +40,7 @@ export function errorState(during, error, version) {
     state.folder = message.slice(code[0].length);
   }
   if (code?.[1] === "bad-signature") state.badSignature = true;
+  if (during === "check" && code?.[1] === "no-manifest") state.noManifest = true;
   if (code?.[1] === "cant-install") {
     state.cantInstall = true;
     state.reason = message.slice(code[0].length);

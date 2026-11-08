@@ -71,6 +71,7 @@ export function updateText(update) {
       if (update.cantInstall) return cantInstallText(update);
       if (update.during === "download") return `freewheel ${v} didn’t download. Check your internet connection and try again.`;
       if (update.during === "install") return `freewheel ${v} didn’t install. Try again.`;
+      if (update.noManifest) return "Couldn’t check for updates. Try again later.";
       return "Couldn’t check for updates. Check your internet connection and try again.";
     default:
       return "freewheel checks for updates by itself.";

@@ -173,6 +173,10 @@ pub enum UpdateError {
     NotConfigured,
     /// The manifest or the package did not download.
     Network(String),
+    /// The latest release has no manifest (204 or 404 for latest.json): it
+    /// is not published yet or its files are missing. Not "up to date": a
+    /// release exists, so the check failed and is tried again later.
+    NoManifest(String),
     /// The release has no package for this OS/arch, or the manifest is bad.
     NoPackage(String),
     /// The package's signature did not verify: nothing was installed.
@@ -198,6 +202,7 @@ impl std::fmt::Display for UpdateError {
                 write!(f, "not-configured: this build has no updater pubkey")
             }
             UpdateError::Network(e) => write!(f, "network: {e}"),
+            UpdateError::NoManifest(e) => write!(f, "no-manifest: {e}"),
             UpdateError::NoPackage(e) => write!(f, "no-package: {e}"),
             UpdateError::BadSignature(e) => write!(f, "bad-signature: {e}"),
             UpdateError::NotWritable(dir) => write!(f, "not-writable: {}", dir.display()),
@@ -1013,7 +1018,7 @@ impl Updater {
                     return Err(UpdateError::NotConfigured);
                 }
                 match fetch_manifest(url, *loopback).await? {
-                    Some(manifest) if is_newer(&current, &manifest.version)? => {
+                    manifest if is_newer(&current, &manifest.version)? => {
                         let platform =
                             select(&manifest, std::env::consts::OS, std::env::consts::ARCH)?;
                         if !url_allowed(&platform.url, *loopback) {
@@ -1174,8 +1179,10 @@ fn client(loopback: bool) -> Result<reqwest::Client, UpdateError> {
         .map_err(|e| UpdateError::Network(e.to_string()))
 }
 
-/// The manifest, or `None` when there is no release (204 or 404).
-async fn fetch_manifest(url: &str, loopback: bool) -> Result<Option<Manifest>, UpdateError> {
+/// The latest release's manifest. 204 or 404 is [`UpdateError::NoManifest`],
+/// never "up to date": freewheel has releases, so a missing latest.json means
+/// the check could not be made (e.g. a release whose files are not attached).
+async fn fetch_manifest(url: &str, loopback: bool) -> Result<Manifest, UpdateError> {
     if !url_allowed(url, loopback) {
         return Err(UpdateError::Network(format!("not an https URL: {url}")));
     }
@@ -1186,7 +1193,7 @@ async fn fetch_manifest(url: &str, loopback: bool) -> Result<Option<Manifest>, U
         .map_err(|e| UpdateError::Network(e.to_string()))?;
     let status = res.status();
     if status == reqwest::StatusCode::NO_CONTENT || status == reqwest::StatusCode::NOT_FOUND {
-        return Ok(None);
+        return Err(UpdateError::NoManifest(format!("{url}: HTTP {status}")));
     }
     if !status.is_success() {
         return Err(UpdateError::Network(format!("{url}: HTTP {status}")));
@@ -1196,7 +1203,6 @@ async fn fetch_manifest(url: &str, loopback: bool) -> Result<Option<Manifest>, U
         .await
         .map_err(|e| UpdateError::Network(e.to_string()))?;
     serde_json::from_str(&text)
-        .map(Some)
         .map_err(|e| UpdateError::NoPackage(format!("the manifest is not valid: {e}")))
 }
 
@@ -1826,11 +1832,15 @@ mod tests {
     }
 
     fn served_manifest(base: &str, package: &str) -> Vec<u8> {
+        served_manifest_of("0.2.0", base, package)
+    }
+
+    fn served_manifest_of(version: &str, base: &str, package: &str) -> Vec<u8> {
         let key = platform_key(std::env::consts::OS, std::env::consts::ARCH);
         let sig = include_str!("../fixtures/update/package.bin.sig").trim();
         serde_json::to_vec(&serde_json::json!({
-            "version": "0.2.0",
-            "notes": "## 0.2.0\n\n* new",
+            "version": version,
+            "notes": format!("## {version}\n\n* new"),
             "platforms": { key: { "url": format!("{base}{package}"), "signature": sig } }
         }))
         .unwrap()
@@ -1840,7 +1850,9 @@ mod tests {
     fn a_newer_version_is_not_offered_when_this_app_cant_install_it() {
         let base = serve(vec![("/pkg", 200, b"x".to_vec())]);
         let manifest = served_manifest(&base, "/pkg");
-        let up_to_date = serve(vec![("/none.json", 204, Vec::new())]);
+        // Up to date: the latest release is this version.
+        let current = served_manifest_of("0.1.0", "https://example.invalid", "/pkg");
+        let up_to_date = serve(vec![("/none.json", 200, current)]);
         let base = serve(vec![("/latest.json", 200, manifest)]);
         let why = UpdateError::CantInstall(NOT_APPIMAGE.into());
         let u = Updater::for_test_without_target(
@@ -1896,9 +1908,31 @@ mod tests {
                 exe.clone(),
             )
         };
-        // 204: up to date; 500: a check error.
-        let u = run("/none.json", vec![("/none.json", 204, Vec::new())]);
+        // The latest release is this version: up to date.
+        let current = served_manifest_of("0.1.0", "https://example.invalid", "/pkg");
+        let u = run("/current.json", vec![("/current.json", 200, current)]);
         assert_eq!(tauri::async_runtime::block_on(u.check()).unwrap(), None);
+        // 204 or 404 (no latest.json on the latest release): a check error, not up to date.
+        for status in [204, 404] {
+            let u = run("/missing.json", vec![("/missing.json", status, Vec::new())]);
+            let e = tauri::async_runtime::block_on(u.check()).unwrap_err();
+            assert!(e.to_string().starts_with("no-manifest:"), "{status}: {e}");
+            let code = reqwest::StatusCode::from_u16(status).unwrap();
+            assert!(e.to_string().ends_with(&format!(": HTTP {code}")), "{e}");
+            // The failed check keeps the state it found: an offer stays offered.
+            let offer = Offer {
+                version: "0.2.0".into(),
+                notes: String::new(),
+                platform: Platform {
+                    url: "https://example.invalid/pkg".into(),
+                    signature: String::new(),
+                },
+            };
+            *lock(&u.phase) = Phase::Available(offer.clone());
+            assert!(tauri::async_runtime::block_on(u.check()).is_err());
+            assert!(matches!(&*lock(&u.phase), Phase::Available(o) if o.version == offer.version));
+        }
+        // 500: a check error.
         let u = run("/fail.json", vec![("/fail.json", 500, b"no".to_vec())]);
         let e = tauri::async_runtime::block_on(u.check()).unwrap_err();
         assert!(e.to_string().starts_with("network:"), "{e}");
