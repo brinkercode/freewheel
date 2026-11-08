@@ -109,7 +109,9 @@ export function ProfilePicker({ config, profile, liveProfile = undefined, onProf
                 onDoubleClick={() => active && p.id && (setName(p.name), setRenaming(true))}
               >
                 <SymbolIcon name={profileLook(config, p.id).icon} />
-                {p.name}
+                <span className="pill-name" title={p.name}>
+                  {p.name}
+                </span>
               </button>
               {active && p.id && (
                 <>
@@ -140,17 +142,26 @@ export function ProfilePicker({ config, profile, liveProfile = undefined, onProf
 /**
  * Page pills of the profile shown (once it has a 2nd page): the active pill
  * renames inline (double-click or its pencil) and deletes after an inline
- * confirm.
+ * confirm. A rename saves on Enter or clicking away; Escape, or an empty
+ * name, keeps the old name (as profiles do).
  */
 export function PageSelector({ config, pages = config.layers, page, livePage = null, color = "accent", onPage, onAdd, onRename, onDelete, error }) {
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [name, setName] = useState("");
   const rename = useRef(null);
   useEffect(() => {
     if (renaming) rename.current?.select();
   }, [renaming]);
   const current = pages.find((l) => l.id === page);
   const many = pages.length > 1;
+  const startRename = () => (setName(current?.name ?? ""), setRenaming(true));
+  const finish = () => {
+    if (!renaming) return;
+    setRenaming(false);
+    if (current && name.trim() && name.trim() !== current.name) onRename(name.trim());
+  };
+  const cancel = () => (setName(current?.name ?? ""), setRenaming(false));
   if (deleting)
     return (
       <div className="page-selector">
@@ -178,19 +189,21 @@ export function PageSelector({ config, pages = config.layers, page, livePage = n
           {pages.map((l, i) =>
             l.id === page ? (
               <div key={l.id} className={`pill is-active${using(l.id)}${renaming ? " is-renaming" : ""}`} data-color={color}>
-                <button role="tab" aria-selected="true" title={`Double-click to rename${usingTitle(l.id)}`} onDoubleClick={() => setRenaming(true)}>
-                  {l.name}
+                <button role="tab" aria-selected="true" title={`Double-click to rename${usingTitle(l.id)}`} onDoubleClick={startRename}>
+                  <span className="pill-name" title={l.name}>
+                    {l.name}
+                  </span>
                 </button>
                 <input
                   ref={rename}
                   className="pill-rename"
                   aria-label="Page name"
-                  value={l.name}
-                  onChange={(e) => onRename(e.target.value)}
-                  onBlur={() => setRenaming(false)}
-                  onKeyDown={(e) => (e.key === "Enter" || e.key === "Escape") && setRenaming(false)}
+                  value={renaming ? name : l.name}
+                  onChange={(e) => setName(e.target.value)}
+                  onBlur={finish}
+                  onKeyDown={(e) => (e.key === "Enter" ? finish() : e.key === "Escape" && cancel())}
                 />
-                <button className="pill-icon" title="Rename" aria-label="Rename" onClick={() => setRenaming(true)}>
+                <button className="pill-icon" title="Rename" aria-label="Rename" onClick={startRename}>
                   <Icon name="edit" />
                 </button>
                 {i > 0 && (
@@ -203,7 +216,9 @@ export function PageSelector({ config, pages = config.layers, page, livePage = n
             ) : (
               <div key={l.id} className={`pill${using(l.id)}`} data-color={color}>
                 <button role="tab" aria-selected="false" title={`Show this page${usingTitle(l.id)}`} onClick={() => onPage(l.id)}>
-                  {l.name}
+                  <span className="pill-name" title={l.name}>
+                    {l.name}
+                  </span>
                 </button>
               </div>
             ),
@@ -461,7 +476,7 @@ export default function KeysTab({
   }, [status?.layer, config]);
   if (!config) return null;
 
-  // Shown at once (a page name follows each keystroke), undone if the save fails.
+  // Shown at once, undone if the save fails.
   const commit = (next) => {
     const before = config;
     setConfig(next);

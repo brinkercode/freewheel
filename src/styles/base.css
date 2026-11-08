@@ -405,6 +405,12 @@ input[type="range"] { accent-color: var(--accent); border: none; background: tra
 .pill.is-renaming { border: none; background: transparent; }
 .pill.is-renaming > button { display: none; }
 .pill.is-renaming .pill-rename { display: block; }
+/* A long page or profile name is cut with an ellipsis (its title has it whole): the pill never outgrows its row, so Rename and Delete stay in reach. */
+.pills, .profile-pills { min-width: 0; max-width: 100%; }
+.pill, .profile-pill { min-width: 0; max-width: 100%; }
+.pill > button[role="tab"], .profile-pill > button[role="tab"] { flex: 0 1 auto; min-width: 0; }
+.pill .pill-icon, .profile-pill .profile-icon { flex: none; }
+.pill-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A profile's colour (config.rs PROFILE_COLORS); Default and pages without one use the accent. */
 :where(.pill, .profile-pill, .profile-keycap, .profile-swatch, .profile-icons, .icon-picker) { --pc: var(--accent); }
 [data-color="rose"] { --pc: #d6457a; }

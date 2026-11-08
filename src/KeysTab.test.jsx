@@ -28,7 +28,7 @@ test("every Speed Editor key has its printed label and one place in the drawing"
 
 test("the page selector adds, renames and deletes pages", () => {
   const html = renderToString(<PageSelector config={config} page="edit" />);
-  for (const t of [">Main</button>", ">Editing</button>", 'value="Editing"', ">Add page</button>", ">Delete page</button>"]) expect(html).toContain(t);
+  for (const t of [">Main</span></button>", ">Editing</span></button>", 'value="Editing"', ">Add page</button>", ">Delete page</button>"]) expect(html).toContain(t);
   const added = addPage(config);
   expect(added.id).toBe("page-3");
   expect(added.config.layers.at(-1)).toEqual({ id: "page-3", name: "Page 3", bindings: {} });

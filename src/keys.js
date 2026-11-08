@@ -260,12 +260,19 @@ const freshId = (taken, base) => {
   return id;
 };
 
-/** Adds a page named "Page N" to profile `profileId` (null: Default); returns the new config and the page's id. */
+/**
+ * Adds a page named "Page N" to profile `profileId` (null: Default), N the
+ * first number from its page count + 1 that no page of the profile is named;
+ * returns the new config and the page's id.
+ */
 export function addPage(config, profileId = null) {
-  let n = pagesOf(config, profileId).length + 1;
+  const pages = pagesOf(config, profileId);
+  let n = pages.length + 1;
   while (config.layers.some((l) => l.id === `page-${n}`)) n += 1;
   const id = `page-${n}`;
-  const added = withLayers(config, [...config.layers, { id, name: `Page ${pagesOf(config, profileId).length + 1}`, bindings: {} }]);
+  let k = pages.length + 1;
+  while (pages.some((l) => l.name.trim().toLowerCase() === `page ${k}`)) k += 1;
+  const added = withLayers(config, [...config.layers, { id, name: `Page ${k}`, bindings: {} }]);
   if (!profileId) return { config: added, id };
   const profiles = (config.profiles ?? []).map((p) => (p.id === profileId ? { ...p, pages: [...p.pages, id] } : p));
   return { config: withProfiles(added, profiles), id };
