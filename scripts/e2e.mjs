@@ -22,7 +22,7 @@ import { createServer } from "node:http";
 //   with the dialog stubs' env; WebKitWebDriver starts the app (`tauri:options`).
 // Plain fetch and the W3C WebDriver protocol: no npm dependencies.
 import { execFileSync, spawn } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -101,6 +101,86 @@ async function launch(app, port, say, dialogs) {
   throw new Error(`the app's two windows did not show up on DevTools port ${port} within 60 s`);
 }
 
+/**
+ * The folder --simulate's webviews keep their storage in (src-tauri
+ * simulate.rs webview_data_dir): inside the app's local data folder, next
+ * to the real app's webview storage.
+ */
+export const SIMULATOR_WEBVIEW_DIR = "simulator-webview";
+/** The app's identifier (tauri.conf.json): its local data folder's name. */
+export const APP_ID = "com.brinkercode.freewheel";
+/** The app's local data folder (Tauri's app_local_data_dir). */
+export function appLocalData(platform, env = process.env, home = homedir()) {
+  if (platform === "windows") return join(env.LOCALAPPDATA ?? "", APP_ID);
+  return join(env.XDG_DATA_HOME || join(home, ".local", "share"), APP_ID);
+}
+
+/** A DevTools target that is the app's own page (not about:blank before it loads): it may use localStorage. */
+export const appPage = (t) => t.type === "page" && /^https?:\/\/tauri\.localhost\//.test(t.url ?? "");
+
+/** Windows: evaluates `expression` in the first page of the WebView2 on DevTools `port` (raw CDP over its WebSocket); resolves to the value. */
+export async function cdpEval(port, expression) {
+  const list = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(5000) }).then((r) => r.json());
+  const page = list.find(appPage);
+  if (!page) throw new Error(`no app page on DevTools port ${port} (${JSON.stringify(list.map((t) => t.url))})`);
+  const ws = new WebSocket(page.webSocketDebuggerUrl);
+  try {
+    await new Promise((ok, fail) => {
+      ws.onopen = ok;
+      ws.onerror = () => fail(new Error(`DevTools port ${port}: the page's WebSocket did not open`));
+    });
+    const reply = await new Promise((ok, fail) => {
+      const timer = setTimeout(() => fail(new Error(`DevTools port ${port}: no answer to Runtime.evaluate`)), 10000);
+      ws.onmessage = (m) => {
+        const msg = JSON.parse(m.data);
+        if (msg.id === 1) {
+          clearTimeout(timer);
+          ok(msg);
+        }
+      };
+      ws.send(JSON.stringify({ id: 1, method: "Runtime.evaluate", params: { expression, returnByValue: true } }));
+    });
+    if (reply.error || reply.result?.exceptionDetails) throw new Error(`DevTools port ${port}: ${JSON.stringify(reply.error ?? reply.result.exceptionDetails)}`);
+    return reply.result?.result?.value;
+  } finally {
+    ws.close();
+  }
+}
+
+/**
+ * Windows: starts the real freewheel (no --simulate) with its own DevTools
+ * port, the way it runs on a user's PC next to --simulate; resolves once its
+ * settings page is there.
+ */
+async function launchReal(app, port, say) {
+  const env = { ...process.env, [DEVTOOLS_PORT_ENV]: String(port) };
+  const child = spawn(app, [], { env, stdio: "ignore" });
+  child.on("error", () => {});
+  child.on("exit", (code) => say(`the real app exited with ${code}`));
+  const end = Date.now() + 60000;
+  while (Date.now() < end) {
+    if (child.exitCode !== null) throw new Error(`the real app exited with ${child.exitCode} before opening port ${port}`);
+    const pages = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(2000) })
+      .then((r) => r.json())
+      .then((list) => list.filter(appPage).length, () => 0);
+    // Its page loaded far enough to use its storage.
+    if (pages >= 1 && (await cdpEval(port, `document.readyState === "complete"`).catch(() => false)) === true) return child;
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  child.kill();
+  throw new Error(`the real app's settings window did not show up on DevTools port ${port} within 60 s`);
+}
+
+/** Windows: ends a process and every process it started (its WebView2). */
+function killTree(child) {
+  if (!child?.pid || child.exitCode !== null) return;
+  try {
+    execFileSync("taskkill", ["/F", "/T", "/PID", String(child.pid)], { stdio: "ignore", timeout: 20000 });
+  } catch {
+    child.kill();
+  }
+}
+
 /** Linux: true while a process named `name` runs (`ps -C`, exact name). */
 export function running(name) {
   try {
@@ -151,6 +231,13 @@ export const PLATFORMS = {
     async start(opts, say, dialogs) {
       const app = opts.port ? await launch(resolve(opts.app), opts.port, say, dialogs) : null;
       return { app, exited: () => !app || app.exitCode !== null, quit: () => app?.kill() };
+    },
+    /** The real app next to --simulate (#202): started first, on the next DevTools port. */
+    async startReal(opts, say) {
+      if (!opts.port) return null;
+      const port = Number(opts.port) + 1;
+      const child = await launchReal(resolve(opts.app), port, say);
+      return { port, eval: (expression) => cdpEval(port, expression), stop: () => killTree(child) };
     },
     restart: true,
     // A Start Menu shortcut opens through Explorer.
@@ -434,6 +521,7 @@ export async function main(platform, argv = process.argv.slice(2)) {
   let current = null;
   const win = {};
   let app = null;
+  let real = null;
   let cleanup = null;
   const t0 = Date.now();
   const say = (line) => (console.log(`[${((Date.now() - t0) / 1000).toFixed(1)}s] ${line}`), log.push(line));
@@ -850,6 +938,14 @@ export async function main(platform, argv = process.argv.slice(2)) {
     say(`starting ${opts.app} --simulate`);
     mkdirSync(dialogs, { recursive: true });
     cleanup = P.prepare?.(say) ?? null;
+    // Windows: the real freewheel runs first, as on a user's PC; --simulate
+    // must open its windows next to it, with storage of its own (#202).
+    real = (await P.startReal?.(opts, say)) ?? null;
+    if (real) {
+      const mark = await real.eval(`localStorage.setItem("freewheel.e2e-real-app", "real"); localStorage.getItem("freewheel.e2e-real-app")`);
+      if (mark !== "real") throw new Error(`the real app's storage did not keep a value (${JSON.stringify(mark)})`);
+      say(`the real app runs (DevTools port ${real.port}); its storage has freewheel.e2e-real-app`);
+    }
     app = await P.start(opts, say, dialogs);
     await d.start(resolve(opts.app), opts.port);
     await findWindows();
@@ -872,6 +968,28 @@ export async function main(platform, argv = process.argv.slice(2)) {
       await setReal(false);
       await logged("Do actions for real is off");
     }, ["simulator"]);
+    await step("simulate: webview storage of its own, apart from the real app's", async () => {
+      // The real app's storage is not this one's: its first-run flag and
+      // What's new state stay its own (#202).
+      const seen = await ask("settings", `return localStorage.getItem("freewheel.e2e-real-app")`);
+      if (seen !== null) throw new Error(`--simulate's settings window reads the real app's storage (freewheel.e2e-real-app = ${JSON.stringify(seen)})`);
+      await ask("settings", `localStorage.setItem("freewheel.e2e-simulated", "sim"); return localStorage.getItem("freewheel.e2e-simulated")`);
+      const shared = await ask("simulator", `return localStorage.getItem("freewheel.e2e-simulated")`);
+      if (shared !== "sim") throw new Error(`the Simulator window doesn't share --simulate's settings storage (${JSON.stringify(shared)})`);
+      if (real) {
+        const leaked = await real.eval(`localStorage.getItem("freewheel.e2e-simulated")`);
+        if (leaked !== null) throw new Error(`the real app reads --simulate's storage (freewheel.e2e-simulated = ${JSON.stringify(leaked)})`);
+        say("  the real app and --simulate each keep their own storage");
+      }
+      const dir = join(appLocalData(platform), SIMULATOR_WEBVIEW_DIR);
+      if (!existsSync(dir)) throw new Error(`--simulate's webview folder ${dir} is missing`);
+      say(`  --simulate's webview storage: ${dir} (${readdirSync(dir).join(", ")})`);
+      if (real) {
+        real.stop();
+        real = null;
+        say("  the real app is closed again");
+      }
+    }, ["settings", "simulator"]);
     await step("first run: welcome", () => waitFor("settings", "the welcome screen", `return document.querySelector("button.get-started")`), ["settings", "simulator"]);
     await step("first run: get started", async () => {
       await click("settings", "button.get-started");
@@ -2419,6 +2537,7 @@ export async function main(platform, argv = process.argv.slice(2)) {
   } finally {
     await d.quit();
     app?.quit();
+    real?.stop();
     cleanup?.();
   }
 }

@@ -243,6 +243,21 @@ pub fn update_state<R: Runtime>(app: &AppHandle<R>, status: Option<&str>) {
     }
 }
 
+/// The settings window's builder from its tauri.conf.json entry; in
+/// `--simulate` with the simulator's own webview storage (#202).
+pub fn settings_builder<'a, R: Runtime, M: Manager<R>>(
+    app: &'a M,
+    config: &tauri::utils::config::WindowConfig,
+    simulate: bool,
+) -> tauri::Result<tauri::WebviewWindowBuilder<'a, R, M>> {
+    let builder = tauri::WebviewWindowBuilder::from_config(app, config)?;
+    Ok(if simulate {
+        crate::simulate::own_storage(app, builder)
+    } else {
+        builder
+    })
+}
+
 /// Builds the settings window from tauri.conf.json (plus, in --simulate,
 /// the Simulator window), unless it is there. Call off the main thread.
 fn build_settings<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<WebviewWindow<R>> {
@@ -264,8 +279,9 @@ fn build_settings<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<WebviewWindow
         .ok_or(tauri::Error::WindowNotFound)?;
     tracing::info!("building the settings window");
     not_ready(app);
-    let window = tauri::WebviewWindowBuilder::from_config(app, &config)?.build()?;
-    if crate::simulate::simulating(app) {
+    let simulating = crate::simulate::simulating(app);
+    let window = settings_builder(app, &config, simulating)?.build()?;
+    if simulating {
         window.set_title(&freewheel_core::simulator::title(
             "freewheel settings",
             true,
