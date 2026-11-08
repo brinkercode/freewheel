@@ -121,6 +121,12 @@ export const listApps = () => invoke("list_apps");
  */
 export const chooseApp = () => invoke("choose_app");
 
+/** What a profile keeps for a picked app: its name as this OS reports the app in front (front_app.rs). */
+export const profileApp = (choice) => invoke("profile_app", { choice });
+
+/** Whether this computer says which app is in front (false on Linux with Wayland). */
+export const frontAppSupport = () => invoke("front_app_support");
+
 /**
  * The installed apps' real icons (src-tauri app_icons.rs): `paths` (each
  * app's .lnk / .exe / .app) → PNG data URL; apps without one are left out.

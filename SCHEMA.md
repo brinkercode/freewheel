@@ -1,6 +1,6 @@
 # The freewheel mappings file
 
-**Help & backup → Back up…** saves your keys, pages, wheel and dial as one
+**Help & backup → Back up…** saves your keys, pages, profiles, wheel and dial as one
 file, `freewheel-mappings.json`. **Restore from a backup…** reads it back, on
 this computer or another one. The file is short and meant to be written and
 edited by hand:
@@ -35,8 +35,10 @@ edited by hand:
   [`schema/freewheel-mappings.schema.json`](schema/freewheel-mappings.schema.json).
 - Files from earlier freewheel versions (the long `"version": 1` form with
   `"layers"`) still restore. Back up always writes this short form.
+- `"profiles"` is optional: app profiles, each with its own pages, used
+  while one of its apps is in front (see [App profiles](#app-profiles)).
 
-Contents: [Fields](#fields) · [Key names](#key-names) · [Actions](#actions) ·
+Contents: [Fields](#fields) · [App profiles](#app-profiles) · [Key names](#key-names) · [Actions](#actions) ·
 [Shortcuts](#shortcuts) · [How open finds the app](#how-open-finds-the-app) ·
 [Safety: Let restored keys open apps](#safety-let-restored-keys-open-apps) ·
 [Errors](#errors) · [A full example](#a-full-example)
@@ -53,6 +55,10 @@ values like `"Dark"` or `"JOG"` may be in any case.
 | `version` | number | 2 | 1 or 2 | The file format. 1 is the long form earlier versions wrote; it still reads. |
 | `pages` | object | one empty page "Base" | 1 or more pages | Page name to its keys. The first page is where the Speed Editor starts. |
 | `pages.<page>` | object | {} | key name to action | Key name (see Key names) to what the key does (see Actions). Keys left out are not set. |
+| `profiles` | list | [] (none) | profiles, each with a name, apps and pages | App profiles: each has its own pages and is used while one of its apps is in front. The pages above are the Default profile, used while no profile's app is. |
+| `profiles[].name` | text | (required) | unique, not Default | The profile's name. |
+| `profiles[].apps` | list | [] (switched to by no app) | app names, or { "name", "windows", "macos", "linux" } objects | The apps the profile is for (see App profiles). |
+| `profiles[].pages` | object | (required) | 1 or more pages | The profile's pages, written as pages is. The first page is where the profile starts. A page key goes to a page of the same profile. |
 | `wheel` | object | scroll mode, speed 10 | — | What turning the wheel does. |
 | `wheel.mode` | text | "scroll" | jog, scroll, shuttle, volume, brightness | The wheel button lit when freewheel starts. volume and brightness turn the wheel into that knob. |
 | `wheel.speed` | number | 10 | 1 to 10 | How far the wheel turns per step, for every mode: 10 steps on every tick, 1 needs ten ticks. |
@@ -98,6 +104,45 @@ The `wheel.<mode>` blocks say what turning does while that mode's button
 share to also set, for example, `"appearance": "dark"`. Settings you leave
 out stay as they are. Whether freewheel is on, and starting at login, are not
 in the file.
+
+## App profiles
+
+`"pages"` are the Default profile. `"profiles"` adds app profiles: each has
+a `name`, the `apps` it is for and its own `pages`, written as `"pages"` is:
+
+```json
+"profiles": [
+  {
+    "name": "Writing",
+    "apps": [
+      "notepad.exe",
+      { "name": "Word", "windows": "WINWORD.EXE", "macos": "com.microsoft.Word" },
+      { "linux": "org.gnome.TextEditor" }
+    ],
+    "pages": {
+      "Draft": { "CUT": "Ctrl+Shift+X", "ESC": "page Review" },
+      "Review": { "ESC": "back" }
+    }
+  }
+]
+```
+
+- When an app a profile lists comes to the front, freewheel uses that
+  profile, starting on its first page. When any other app comes to the
+  front, it goes back to the Default profile, on the page it was on.
+  freewheel's own window never switches.
+- `page <name>` keys switch between the pages of their own profile.
+- An app as text is matched on every OS. An object names it per OS:
+  `"windows"` is the program file (`notepad.exe`; `.exe` may be left out),
+  `"macos"` the bundle id (`com.apple.TextEdit`), `"linux"` the program
+  (`gedit`) or its window class (`org.gnome.gedit`). `"name"` is what the
+  Keys tab shows; it defaults to the first OS's entry. Names ignore case.
+- When two profiles list the same app, the first one wins.
+- On Linux, apps are seen in an X11 session. Wayland does not tell other
+  apps which window is in front, so there profiles never switch.
+- DaVinci Resolve stepping aside wins: while freewheel is Off for Resolve,
+  no profile turns it back On.
+- The wheel and dial settings are shared by every profile.
 
 ## Key names
 

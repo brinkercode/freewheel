@@ -33,6 +33,8 @@ const COMMANDS: &[&str] = &[
     "update_download",
     "update_install",
     "desktop_hints",
+    "profile_app",
+    "front_app_support",
 ];
 
 /// The env var naming the next release's notes file (scripts/release-notes.mjs

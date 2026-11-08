@@ -14,6 +14,7 @@ mod controls;
 mod ddc_macos;
 mod device;
 mod e2e;
+mod front_app;
 mod hidapi_transport;
 mod inject;
 mod key_names;
@@ -262,6 +263,8 @@ fn with_simulator(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::
             settings::exit_wheel_override,
             apps::list_apps,
             apps::choose_app,
+            front_app::profile_app,
+            front_app::front_app_support,
             settings::get_config,
             settings::save_config,
             settings::get_status,
@@ -365,6 +368,8 @@ fn main() {
             settings::exit_wheel_override,
             apps::list_apps,
             apps::choose_app,
+            front_app::profile_app,
+            front_app::front_app_support,
             app_icons::app_icons,
             tray::tray_update_state,
             app_windows::settings_ready,
@@ -395,6 +400,9 @@ fn main() {
                 settings::Settings::new(store, config.clone(), commands.clone(), manual)
                     .with_logger(logger.clone()),
             );
+            // The app in front picks its profile (sent like any other
+            // device command, so --simulate's session hears it too).
+            front_app::watch(commands.clone());
             spawn_resolve_watch(app.handle().clone(), &config, manual_rx, commands);
             // What the last update left behind: the old version, the download.
             if !simulate {

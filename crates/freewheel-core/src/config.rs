@@ -261,15 +261,85 @@ impl Default for Settings {
     }
 }
 
+/// One app a profile is for: the profile is active while this app is in
+/// front. Each OS names apps its own way: the program file on Windows
+/// (`notepad.exe`), the bundle id on macOS (`com.apple.TextEdit`), the
+/// program or its window class on Linux (`gedit`, `org.gnome.gedit`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct ProfileApp {
+    /// What the Keys tab shows (`Notepad`).
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub windows: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub macos: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub linux: Option<String>,
+}
+
+/// A profile: its own pages, used while one of its apps is in front.
+/// Pages not in any profile belong to the Default profile (the pages
+/// 1.0.0 had), which is used while no profile's app is in front.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct Profile {
+    pub id: String,
+    pub name: String,
+    /// The apps it is for. Left out of config.json when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<Vec<ProfileApp>>", optional))]
+    pub apps: Vec<ProfileApp>,
+    /// Its pages (layer ids, at least one): the first is where it starts.
+    pub pages: Vec<LayerId>,
+}
+
+/// What the Keys tab calls the pages no profile has.
+pub const DEFAULT_PROFILE_NAME: &str = "Default";
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Config {
     pub version: u32,
     pub settings: Settings,
+    /// Every page: the Default profile's and each profile's.
     pub layers: Vec<Layer>,
+    /// The Default profile's first page.
     pub base_layer: LayerId,
     pub jog: JogSettings,
     pub overrides: OverrideSettings,
+    /// The app profiles. Left out of config.json when there are none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<Vec<Profile>>", optional))]
+    pub profiles: Vec<Profile>,
+}
+
+impl Config {
+    /// The profile page `layer` belongs to (None: the Default profile).
+    pub fn profile_of(&self, layer: &str) -> Option<&Profile> {
+        self.profiles
+            .iter()
+            .find(|p| p.pages.iter().any(|l| l == layer))
+    }
+
+    /// The pages of profile `profile` (None: the Default profile's), in order.
+    pub fn pages_of(&self, profile: Option<&str>) -> Vec<&Layer> {
+        match profile.and_then(|id| self.profiles.iter().find(|p| p.id == id)) {
+            Some(p) => p
+                .pages
+                .iter()
+                .filter_map(|id| self.layers.iter().find(|l| &l.id == id))
+                .collect(),
+            None => self
+                .layers
+                .iter()
+                .filter(|l| self.profile_of(&l.id).is_none())
+                .collect(),
+        }
+    }
 }
 
 impl Default for Config {
@@ -286,6 +356,7 @@ impl Default for Config {
             layers: vec![base],
             jog: JogSettings::default(),
             overrides: OverrideSettings::default(),
+            profiles: Vec::new(),
         }
     }
 }
@@ -647,6 +718,7 @@ pub fn validate(config: &Config) -> Result<(), SaveError> {
             target: config.base_layer.clone(),
         });
     }
+    validate_profiles(config)?;
     let key_names: Vec<String> = crate::report::Key::ALL
         .iter()
         .map(|k| format!("{k:?}"))
@@ -660,12 +732,84 @@ pub fn validate(config: &Config) -> Result<(), SaveError> {
                 });
             }
             check_action(format!("layer {} key {key}", layer.id), action)?;
+            // A page key goes to a page of the same profile.
+            if let Action::LayerPush { target } = action {
+                let from = config.profile_of(&layer.id).map(|p| &p.id);
+                if config.profile_of(target).map(|p| &p.id) != from {
+                    return Err(SaveError::Malformed {
+                        message: format!(
+                            "layer {} key {key} goes to page {target} of another profile",
+                            layer.id
+                        ),
+                    });
+                }
+            }
         }
     }
     for (mode, binding) in &config.jog.per_mode {
         for (side, action) in [("left", &binding.left), ("right", &binding.right)] {
             if let Some(action) = action {
                 check_action(format!("jog {mode:?} {side}"), action)?;
+                if let Action::LayerPush { target } = action
+                    && config.profile_of(target).is_some()
+                {
+                    return Err(SaveError::Malformed {
+                        message: format!("jog {mode:?} {side} goes to page {target} of a profile"),
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The profiles: unique ids and names, at least one page each, every page
+/// in one profile at most (the Default profile's first page in none), and
+/// every app named for some OS.
+fn validate_profiles(config: &Config) -> Result<(), SaveError> {
+    let bad = |message: String| Err(SaveError::Malformed { message });
+    let mut seen_pages: Vec<&str> = Vec::new();
+    for (i, p) in config.profiles.iter().enumerate() {
+        if p.id.trim().is_empty() || p.name.trim().is_empty() {
+            return bad(format!("profile {} needs an id and a name", i + 1));
+        }
+        let before = &config.profiles[..i];
+        if before.iter().any(|o| o.id == p.id) {
+            return bad(format!("the profile id {} is used twice", p.id));
+        }
+        if before
+            .iter()
+            .any(|o| o.name.trim().eq_ignore_ascii_case(p.name.trim()))
+            || p.name.trim().eq_ignore_ascii_case(DEFAULT_PROFILE_NAME)
+        {
+            return bad(format!("the profile name {} is used twice", p.name));
+        }
+        if p.pages.is_empty() {
+            return bad(format!("the profile {} has no page", p.name));
+        }
+        for page in &p.pages {
+            if !config.layers.iter().any(|l| &l.id == page) {
+                return Err(SaveError::BadLayerReference {
+                    location: format!("profile {}", p.id),
+                    target: page.clone(),
+                });
+            }
+            if *page == config.base_layer || seen_pages.contains(&page.as_str()) {
+                return bad(format!(
+                    "page {page} is in more than one profile (or is the first page)"
+                ));
+            }
+            seen_pages.push(page);
+        }
+        for app in &p.apps {
+            let named = [&app.windows, &app.macos, &app.linux]
+                .into_iter()
+                .any(|o| o.as_deref().is_some_and(|s| !s.trim().is_empty()));
+            if !named {
+                return bad(format!(
+                    "the app \"{}\" of profile {} names no program for any OS",
+                    app.name, p.name
+                ));
             }
         }
     }
@@ -1402,5 +1546,83 @@ mod tests {
         assert_eq!(config.layers.len(), 2);
         assert!(!config.settings.auto_update);
         assert!(validate(&config).is_ok());
+    }
+
+    #[test]
+    fn profiles_are_checked_on_save_and_left_out_when_there_are_none() {
+        let page = |id: &str, b: &[(&str, &str)]| Layer {
+            id: id.into(),
+            name: id.into(),
+            bindings: b
+                .iter()
+                .map(|(k, t)| {
+                    (
+                        k.to_string(),
+                        Action::LayerPush {
+                            target: t.to_string(),
+                        },
+                    )
+                })
+                .collect(),
+        };
+        let mut config = Config::default();
+        config.layers.push(page("music", &[]));
+        config.layers.push(page("draft", &[("Cam1", "review")]));
+        config.layers.push(page("review", &[]));
+        config.profiles.push(Profile {
+            id: "writing".into(),
+            name: "Writing".into(),
+            apps: vec![ProfileApp {
+                name: "Notepad".into(),
+                windows: Some("notepad.exe".into()),
+                macos: None,
+                linux: None,
+            }],
+            pages: vec!["draft".into(), "review".into()],
+        });
+        validate(&config).unwrap();
+        assert_eq!(
+            config.profile_of("review").map(|p| p.id.as_str()),
+            Some("writing")
+        );
+        let default: Vec<&str> = config
+            .pages_of(None)
+            .iter()
+            .map(|l| l.id.as_str())
+            .collect();
+        assert_eq!(default, ["base", "music"]);
+        // config.json round-trips through the settings window's save.
+        let value = serde_json::to_value(&config).unwrap();
+        assert_eq!(parse_for_save(&value).unwrap(), config);
+        let bad = |f: &dyn Fn(&mut Config)| {
+            let mut c = config.clone();
+            f(&mut c);
+            validate(&c).unwrap_err().to_string()
+        };
+        // A page key to another profile's page.
+        assert!(
+            bad(&|c| {
+                c.layers[0].bindings.insert(
+                    "Cam2".into(),
+                    Action::LayerPush {
+                        target: "draft".into(),
+                    },
+                );
+            })
+            .contains("another profile")
+        );
+        assert!(
+            bad(&|c| c.profiles[0].pages.push("draft".into())).contains("more than one profile")
+        );
+        assert!(
+            bad(&|c| c.profiles[0].pages.push("base".into())).contains("more than one profile")
+        );
+        assert!(bad(&|c| c.profiles[0].pages.clear()).contains("no page"));
+        assert!(bad(&|c| c.profiles[0].name = "default".into()).contains("used twice"));
+        assert!(bad(&|c| c.profiles[0].apps[0].windows = None).contains("names no program"));
+        assert!(bad(&|c| c.profiles[0].pages.push("gone".into())).contains("gone"));
+        // No profiles: config.json is as 1.0.0 wrote it.
+        let plain = serde_json::to_value(Config::default()).unwrap();
+        assert!(plain.get("profiles").is_none());
     }
 }

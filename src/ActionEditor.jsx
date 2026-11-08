@@ -9,13 +9,15 @@ import {
   comboKeys,
   formatCombo,
   longLabel,
+  pagesOf,
+  profileOf,
   setBinding,
 } from "./keys.js";
 import { appIcons, chooseApp, getConfig, listApps, saveConfig, saveErrorText } from "./settingsApi.js";
 
 // The key panel ("When I press X…") of the design handoff (screens-and-components
 // 3b): the choices list, each choice's detail, the record box and the footer.
-// Layers are "pages" in every visible string.
+// Layers are "pages" in every visible string; "profile" is only for app profiles.
 
 export const KINDS = {
   LaunchApp: "Open an app",
@@ -40,7 +42,7 @@ export function blank(kind, config, layerId) {
     case "LaunchApp":
       return { LaunchApp: { path: "", args: [], enabled: true } };
     case "LayerPush":
-      return { LayerPush: { target: config.layers.find((l) => l.id !== layerId)?.id ?? "" } };
+      return { LayerPush: { target: pagesOf(config, profileOf(config, layerId)).find((l) => l.id !== layerId)?.id ?? "" } };
     case "SetJogMode":
       return { SetJogMode: { mode: "Scroll" } };
     default:
@@ -54,7 +56,7 @@ export function validate(action, config, layerId) {
   const v = action[kind];
   const errors = {};
   if (kind === "LaunchApp" && !v.path.trim()) errors.path = "Choose the app to open.";
-  if (kind === "LayerPush" && (v.target === layerId || !config.layers.some((l) => l.id === v.target)))
+  if (kind === "LayerPush" && (v.target === layerId || !pagesOf(config, profileOf(config, layerId)).some((l) => l.id === v.target)))
     errors.target = "Pick another page.";
   if (kind === "SetJogMode" && !(v.mode in JOG_MODES)) errors.mode = "Pick a wheel mode.";
   if (kind === "OverrideToggle" && !(v.mode in OVERRIDE_MODES)) errors.mode = "Pick what the wheel controls.";
@@ -150,16 +152,13 @@ export const otherOsNote = (perOs, os = THIS_OS) => {
 const tauriReady = () => Boolean(globalThis.window?.__TAURI__);
 
 /**
- * The app picker (screens-and-components 3b): search the installed apps
- * (`list_apps`), pick one, or 'Choose file…' (`choose_app`); or a website
- * with Use. Each pick saves at once through `onUse`.
+ * The installed apps to search and pick (`list_apps`) and 'Choose file…'
+ * (`choose_app`), shared by a key's 'Open an app' and a profile's apps.
+ * `onPick` gets the picked app (as list_apps names it).
  */
-export function ActionForm({ action, errors = {}, onUse, initialApps = null, loadApps = listApps, loadIcons = appIcons, choose = chooseApp }) {
-  const v = action.LaunchApp;
-  const web = v.path === OPENER && /^https?:\/\//.test(v.args[0] ?? "") ? v.args[0].replace(/^https?:\/\//, "") : "";
+export function AppPicker({ isCurrent = () => false, onPick, error = null, initialApps = null, loadApps = listApps, loadIcons = appIcons, choose = chooseApp }) {
   const [apps, setApps] = useState(initialApps);
   const [query, setQuery] = useState("");
-  const [site, setSite] = useState(web);
   const [chooseError, setChooseError] = useState(null);
   // The apps' real icons (src-tauri app_icons.rs), by iconSource; letter avatars until they arrive.
   const [icons, setIcons] = useState({});
@@ -179,37 +178,24 @@ export function ActionForm({ action, errors = {}, onUse, initialApps = null, loa
     };
   }, [apps, loadIcons]);
   const shown = filterApps(apps ?? [], query);
-  const use = (picked) => onUse?.(keepPerOs(action, picked));
-  const alsoSet = otherOsNote(v.per_os);
-  const useSite = () => site.trim() && use(websiteAction(site));
   const chooseFile = () => {
     setChooseError(null);
     choose().then(
-      (app) => app && use(toAction(app)),
+      (app) => app && onPick?.(app),
       (e) => setChooseError(`The file could not be chosen: ${String(e)}`),
     );
   };
   return (
     <>
-      {v.enabled === false && v.path && (
-        <div className="panel-note small" role="note">
-          This key came from a restored file, so it is off and opens nothing. Pick the app again to turn it on.
-        </div>
-      )}
-      {alsoSet && (
-        <div className="panel-note small" role="note">
-          {alsoSet} Picking an app here changes only this computer's.
-        </div>
-      )}
       <div className="input-icon-box app-search">
         <Icon name="search" />
         <input aria-label="Search your apps" value={query} placeholder="Search your apps" onChange={(e) => setQuery(e.target.value)} />
       </div>
-      <div className="app-list" role="listbox" aria-label="Your apps" aria-invalid={!!errors.path}>
+      <div className="app-list" role="listbox" aria-label="Your apps" aria-invalid={!!error}>
         {shown.map((app) => {
-          const current = sameLaunch(v, app);
+          const current = isCurrent(app);
           return (
-            <button key={`${app.name}-${app.args[0] ?? app.path}`} role="option" aria-selected={current} className={`app-row${current ? " is-current" : ""}`} onClick={() => use(toAction(app))}>
+            <button key={`${app.name}-${app.args[0] ?? app.path}`} role="option" aria-selected={current} className={`app-row${current ? " is-current" : ""}`} onClick={() => onPick?.(app)}>
               {icons[iconSource(app)] ? (
                 <img className="app-icon" src={icons[iconSource(app)]} alt="" aria-hidden="true" draggable={false} />
               ) : (
@@ -229,8 +215,45 @@ export function ActionForm({ action, errors = {}, onUse, initialApps = null, loa
         <Icon name="folder_open" />
         Choose file…
       </button>
-      {errors.path && <span role="alert">{errors.path}</span>}
+      {error && <span role="alert">{error}</span>}
       {chooseError && <span role="alert">{chooseError}</span>}
+    </>
+  );
+}
+
+/**
+ * The app picker (screens-and-components 3b): search the installed apps
+ * (`list_apps`), pick one, or 'Choose file…' (`choose_app`); or a website
+ * with Use. Each pick saves at once through `onUse`.
+ */
+export function ActionForm({ action, errors = {}, onUse, initialApps = null, loadApps = listApps, loadIcons = appIcons, choose = chooseApp }) {
+  const v = action.LaunchApp;
+  const web = v.path === OPENER && /^https?:\/\//.test(v.args[0] ?? "") ? v.args[0].replace(/^https?:\/\//, "") : "";
+  const [site, setSite] = useState(web);
+  const use = (picked) => onUse?.(keepPerOs(action, picked));
+  const alsoSet = otherOsNote(v.per_os);
+  const useSite = () => site.trim() && use(websiteAction(site));
+  return (
+    <>
+      {v.enabled === false && v.path && (
+        <div className="panel-note small" role="note">
+          This key came from a restored file, so it is off and opens nothing. Pick the app again to turn it on.
+        </div>
+      )}
+      {alsoSet && (
+        <div className="panel-note small" role="note">
+          {alsoSet} Picking an app here changes only this computer's.
+        </div>
+      )}
+      <AppPicker
+        isCurrent={(app) => sameLaunch(v, app)}
+        onPick={(app) => use(toAction(app))}
+        error={errors.path}
+        initialApps={initialApps}
+        loadApps={loadApps}
+        loadIcons={loadIcons}
+        choose={choose}
+      />
       <div className="field-label">Or a website</div>
       <div className="input-row">
         <input
@@ -536,7 +559,8 @@ export function KeyPanel({
       </div>
     );
   else {
-    const others = config?.layers.filter((l) => l.id !== layerId) ?? [];
+    // Page keys go to pages of the same profile.
+    const others = config ? pagesOf(config, profileOf(config, layerId)).filter((l) => l.id !== layerId) : [];
     const names = (config?.layers ?? []).map((l) => l.name.toLowerCase());
     const create = (name) => onCreatePage?.(name.trim() || "New page").then(done);
     body = (
@@ -728,7 +752,7 @@ export default function ActionEditor({
     return r;
   };
   const createPage = (name) => {
-    const added = addPage(config);
+    const added = addPage(config, profileOf(config, layerId));
     const named = { ...added.config, layers: added.config.layers.map((l) => (l.id === added.id ? { ...l, name } : l)) };
     return commit(withBinding(named, layerId, keyName, { LayerPush: { target: added.id } }), save, "the new page").then(saved);
   };

@@ -1,5 +1,7 @@
-// The Keys tab's model: the Speed Editor's keys, the pages (config layers)
-// and the key-combo capture. The UI calls layers "pages" everywhere.
+// The Keys tab's model: the Speed Editor's keys, the pages (config layers),
+// the app profiles (each with its own pages; the pages no profile has are
+// the Default profile) and the key-combo capture. The UI calls layers
+// "pages" everywhere; "profile" is only for app profiles.
 
 /** Binding name (config) to printed label, as core status.rs printed_label. */
 export const LABELS = {
@@ -230,20 +232,49 @@ export function longLabel(action, config) {
 
 const withLayers = (config, layers) => ({ ...config, layers });
 
-/** Adds a page named "Page N"; returns the new config and the page's id. */
-export function addPage(config) {
-  let n = config.layers.length + 1;
+/** The profile page `layerId` belongs to (null: the Default profile). */
+export const profileOf = (config, layerId) => (config.profiles ?? []).find((p) => p.pages.includes(layerId))?.id ?? null;
+
+/** The pages of profile `profileId` (null: the Default profile's), in order. */
+export function pagesOf(config, profileId = null) {
+  const profile = profileId && (config.profiles ?? []).find((p) => p.id === profileId);
+  if (profile) return profile.pages.map((id) => config.layers.find((l) => l.id === id)).filter(Boolean);
+  return config.layers.filter((l) => !profileOf(config, l.id));
+}
+
+/** The first page of profile `profileId` (null: the Default profile's). */
+export const firstPage = (config, profileId = null) =>
+  profileId ? ((config.profiles ?? []).find((p) => p.id === profileId)?.pages[0] ?? config.base_layer) : config.base_layer;
+
+/** The config with these profiles (none: `profiles` left out, as config.json does). */
+function withProfiles(config, profiles) {
+  const { profiles: _old, ...rest } = config;
+  return profiles.length ? { ...rest, profiles } : rest;
+}
+
+const freshId = (taken, base) => {
+  let id = base;
+  for (let n = 2; taken(id); n += 1) id = `${base}-${n}`;
+  return id;
+};
+
+/** Adds a page named "Page N" to profile `profileId` (null: Default); returns the new config and the page's id. */
+export function addPage(config, profileId = null) {
+  let n = pagesOf(config, profileId).length + 1;
   while (config.layers.some((l) => l.id === `page-${n}`)) n += 1;
   const id = `page-${n}`;
-  return { config: withLayers(config, [...config.layers, { id, name: `Page ${n}`, bindings: {} }]), id };
+  const added = withLayers(config, [...config.layers, { id, name: `Page ${pagesOf(config, profileId).length + 1}`, bindings: {} }]);
+  if (!profileId) return { config: added, id };
+  const profiles = (config.profiles ?? []).map((p) => (p.id === profileId ? { ...p, pages: [...p.pages, id] } : p));
+  return { config: withProfiles(added, profiles), id };
 }
 
 export const renamePage = (config, id, name) =>
   withLayers(config, config.layers.map((l) => (l.id === id ? { ...l, name } : l)));
 
-/** Deletes a page; `error` says why it cannot be: the first page or a page a key goes to. */
+/** Deletes a page; `error` says why it cannot be: a profile's first page or a page a key goes to. */
 export function deletePage(config, id) {
-  if (id === config.base_layer) return { error: "The first page can't be deleted." };
+  if (id === config.base_layer || (config.profiles ?? []).some((p) => p.pages[0] === id)) return { error: "The first page can't be deleted." };
   for (const layer of config.layers) {
     if (layer.id === id) continue;
     for (const [key, action] of Object.entries(layer.bindings)) {
@@ -253,8 +284,81 @@ export function deletePage(config, id) {
         };
     }
   }
-  return { config: withLayers(config, config.layers.filter((l) => l.id !== id)) };
+  const layers = withLayers(config, config.layers.filter((l) => l.id !== id));
+  if (!profileOf(config, id)) return { config: layers };
+  return { config: withProfiles(layers, config.profiles.map((p) => ({ ...p, pages: p.pages.filter((l) => l !== id) }))) };
 }
+
+/** What the Keys tab calls the pages no profile has. */
+export const DEFAULT_PROFILE = "Default";
+
+/** Adds a profile "Profile N" with one empty page "Main"; returns the config, its id and its page's id. */
+export function addProfile(config) {
+  const profiles = config.profiles ?? [];
+  let n = profiles.length + 1;
+  while (profiles.some((p) => p.name.toLowerCase() === `profile ${n}`)) n += 1;
+  const id = freshId((x) => profiles.some((p) => p.id === x), `profile-${n}`);
+  const page = freshId((x) => config.layers.some((l) => l.id === x), `${id}-main`);
+  const next = withLayers(config, [...config.layers, { id: page, name: "Main", bindings: {} }]);
+  return { config: withProfiles(next, [...profiles, { id, name: `Profile ${n}`, pages: [page] }]), id, page };
+}
+
+export const renameProfile = (config, id, name) =>
+  withProfiles(config, (config.profiles ?? []).map((p) => (p.id === id ? { ...p, name } : p)));
+
+/** Deletes a profile and its pages (Default can't be deleted). */
+export function deleteProfile(config, id) {
+  const profile = (config.profiles ?? []).find((p) => p.id === id);
+  if (!profile) return { error: "The Default profile can't be deleted." };
+  const layers = withLayers(config, config.layers.filter((l) => !profile.pages.includes(l.id)));
+  return { config: withProfiles(layers, config.profiles.filter((p) => p.id !== id)) };
+}
+
+/** Why a profile name can't be used, or null. */
+export function profileNameError(config, id, name) {
+  const n = name.trim().toLowerCase();
+  if (!n) return "Give the profile a name.";
+  if (n === DEFAULT_PROFILE.toLowerCase()) return "Default is the profile for every other app: pick another name.";
+  if ((config.profiles ?? []).some((p) => p.id !== id && p.name.trim().toLowerCase() === n)) return `There is already a profile named ${name.trim()}.`;
+  return null;
+}
+
+/** The apps a profile is for. */
+export const profileApps = (config, id) => (config.profiles ?? []).find((p) => p.id === id)?.apps ?? [];
+
+/** The config with profile `id`'s apps replaced (an empty list leaves `apps` out, as config.json does). */
+export const setProfileApps = (config, id, apps) =>
+  withProfiles(
+    config,
+    (config.profiles ?? []).map((p) => {
+      if (p.id !== id) return p;
+      const { apps: _old, ...rest } = p;
+      return apps.length ? { ...rest, apps } : rest;
+    }),
+  );
+
+/** The OS this window runs on, as a profile app names it. */
+export const THIS_OS = MAC ? "macos" : LINUX ? "linux" : "windows";
+
+/** What a profile app is called on `os` (null: not set for that OS). */
+export const appOnOs = (app, os = THIS_OS) => app?.[os]?.trim() || null;
+
+/** A profile app typed by hand: its program name on this OS. */
+export const typedApp = (name, os = THIS_OS) => ({ name: name.trim(), [os]: name.trim() });
+
+/** Whether two profile apps are the same on `os` (names ignore case, as the matching does). */
+export const sameApp = (a, b, os = THIS_OS) => {
+  const x = appOnOs(a, os);
+  const y = appOnOs(b, os);
+  return Boolean(x && y) && x.toLowerCase().replace(/\.exe$/, "") === y.toLowerCase().replace(/\.exe$/, "");
+};
+
+/** How the profile editor names this OS's program names, with an example. */
+export const APP_NAME_HINT = {
+  windows: ["the program file", "notepad.exe"],
+  macos: ["the bundle id", "com.apple.TextEdit"],
+  linux: ["the program or its window class", "gedit"],
+};
 
 export const setBinding = (config, pageId, key, action) =>
   withLayers(

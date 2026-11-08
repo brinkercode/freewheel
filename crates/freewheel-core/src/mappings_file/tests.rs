@@ -912,3 +912,127 @@ fn the_parser_agrees_with_the_schema_fixtures() {
     }
     assert!(seen >= 20, "{seen}");
 }
+
+const PROFILES_FILE: &str = r#"{
+  "version": 2,
+  "pages": {
+    "Main": { "CUT": "Ctrl+Z", "ESC": "page Music" },
+    "Music": { "ESC": "back" }
+  },
+  "profiles": [
+    {
+      "name": "Writing",
+      "apps": ["notepad.exe", { "name": "Word", "windows": "WINWORD.EXE", "macos": "com.microsoft.Word" }],
+      "pages": {
+        "Main": { "CUT": "Ctrl+Shift+X", "ESC": "page Review" },
+        "Review": { "ESC": "back" }
+      }
+    },
+    { "name": "Paint", "apps": [{ "windows": "mspaint.exe" }], "pages": { "Canvas": {} } }
+  ]
+}"#;
+
+#[test]
+fn profiles_read_with_their_own_pages_and_apps_and_round_trip() {
+    let c = read_ok(PROFILES_FILE).config;
+    // Default: the pages as 1.0.0 had them.
+    let default: Vec<&str> = c.pages_of(None).iter().map(|l| l.name.as_str()).collect();
+    assert_eq!(default, ["Main", "Music"]);
+    assert_eq!(c.base_layer, "base");
+    let writing = &c.profiles[0];
+    assert_eq!(
+        (writing.id.as_str(), writing.name.as_str()),
+        ("profile-writing", "Writing")
+    );
+    assert_eq!(
+        writing.pages,
+        ["profile-writing-main", "profile-writing-review"]
+    );
+    assert_eq!(
+        writing.apps,
+        [
+            ProfileApp {
+                name: "notepad.exe".into(),
+                windows: Some("notepad.exe".into()),
+                macos: Some("notepad.exe".into()),
+                linux: Some("notepad.exe".into()),
+            },
+            ProfileApp {
+                name: "Word".into(),
+                windows: Some("WINWORD.EXE".into()),
+                macos: Some("com.microsoft.Word".into()),
+                linux: None,
+            },
+        ]
+    );
+    // "page Review" on Writing's Main is Writing's Review, not a Default page.
+    let main = c
+        .layers
+        .iter()
+        .find(|l| l.id == "profile-writing-main")
+        .unwrap();
+    assert_eq!(
+        main.bindings.get("Esc"),
+        Some(&Action::LayerPush {
+            target: "profile-writing-review".into()
+        })
+    );
+    assert_eq!(c.profiles[1].apps[0].name, "mspaint.exe");
+    let file = String::from_utf8(export(&c, &win())).unwrap();
+    assert!(file.contains(r#""profiles": ["#), "{file}");
+    assert!(file.contains("\"notepad.exe\",\n"), "{file}");
+    let again = read_ok(&file).config;
+    assert_eq!(again, c, "{file}");
+    // Restored again here: the same ids.
+    let same = import(&c, file.as_bytes(), true, &win()).unwrap().config;
+    assert_eq!(same, c);
+}
+
+#[test]
+fn a_1_0_0_file_reads_unchanged_and_writes_no_profiles() {
+    let c = read_ok(SCHEMA_EXAMPLE).config;
+    assert!(c.profiles.is_empty());
+    let file = String::from_utf8(export(&c, &win())).unwrap();
+    assert!(!file.contains("profiles"), "{file}");
+    let value: serde_json::Value = serde_json::to_value(&c).unwrap();
+    assert!(
+        value.get("profiles").is_none(),
+        "config.json stays as 1.0.0 wrote it"
+    );
+}
+
+#[test]
+fn profile_mistakes_say_what_to_fix() {
+    let with = |profiles: &str| format!(r#"{{"pages": {{"Main": {{}}}}, "profiles": {profiles}}}"#);
+    for (profiles, want) in [
+        (r#"{}"#, "profiles must be a list"),
+        (r#"[{"pages": {"A": {}}}]"#, "a profile needs a \"name\""),
+        (r#"[{"name": "W"}]"#, "a profile needs \"pages\""),
+        (r#"[{"name": "default", "pages": {"A": {}}}]"#, "is taken"),
+        (
+            r#"[{"name": "W", "pages": {"A": {}}}, {"name": "w", "pages": {"B": {}}}]"#,
+            "is taken",
+        ),
+        (r#"[{"name": "W", "pages": {}}]"#, "is empty"),
+        (
+            r#"[{"name": "W", "apps": [{"name": "x"}], "pages": {"A": {}}}]"#,
+            "an app needs",
+        ),
+        (
+            r#"[{"name": "W", "apps": "x", "pages": {"A": {}}}]"#,
+            "apps must be a list",
+        ),
+        (
+            r#"[{"name": "W", "colour": 1, "pages": {"A": {}}}]"#,
+            "unknown field \"colour\"",
+        ),
+        // A page key goes to a page of its own profile only.
+        (
+            r#"[{"name": "W", "pages": {"A": {"CUT": "page Main"}}}]"#,
+            "there is no page \"Main\"",
+        ),
+    ] {
+        let e = err(&with(profiles));
+        assert!(e.contains(want), "{profiles}: {e}");
+    }
+}

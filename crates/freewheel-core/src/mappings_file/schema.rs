@@ -211,6 +211,11 @@ pub fn schema() -> Value {
                 "propertyNames": { "pattern": "\\S" },
                 "additionalProperties": { "$ref": "#/$defs/page" }
             },
+            "profiles": {
+                "type": "array",
+                "description": about("profiles"),
+                "items": { "$ref": "#/$defs/profile" }
+            },
             "wheel": {
                 "type": "object",
                 "description": about("wheel"),
@@ -242,6 +247,43 @@ pub fn schema() -> Value {
             }
         },
         "$defs": {
+            "profile": {
+                "type": "object",
+                "required": ["name", "pages"],
+                "additionalProperties": false,
+                "properties": {
+                    "name": { "type": "string", "pattern": "\\S", "not": { "pattern": format!("^\\s*{}\\s*$", any_case("default", "")) }, "description": about("profiles[].name") },
+                    "apps": { "type": "array", "description": about("profiles[].apps"), "items": { "$ref": "#/$defs/profileApp" } },
+                    "pages": {
+                        "type": "object",
+                        "minProperties": 1,
+                        "description": about("profiles[].pages"),
+                        "propertyNames": { "pattern": "\\S" },
+                        "additionalProperties": { "$ref": "#/$defs/page" }
+                    }
+                }
+            },
+            "profileApp": {
+                "description": "An app: its program name (matched on every OS), or one name per OS: the program file on Windows (notepad.exe), the bundle id on macOS (com.apple.TextEdit), the program or window class on Linux (gedit).",
+                "anyOf": [
+                    { "type": "string", "pattern": "\\S" },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "anyOf": [
+                            { "required": ["windows"], "properties": { "windows": true } },
+                            { "required": ["macos"], "properties": { "macos": true } },
+                            { "required": ["linux"], "properties": { "linux": true } }
+                        ],
+                        "properties": {
+                            "name": { "type": "string", "description": "What the Keys tab shows." },
+                            "windows": { "type": "string", "pattern": "\\S" },
+                            "macos": { "type": "string", "pattern": "\\S" },
+                            "linux": { "type": "string", "pattern": "\\S" }
+                        }
+                    }
+                ]
+            },
             "page": {
                 "type": "object",
                 "description": about("pages.<page>"),

@@ -7,11 +7,13 @@ use std::time::{Duration, Instant};
 use tracing::{debug, info, warn};
 
 use crate::clock::Clock;
-use crate::config::{Action, Config, JogMode, JogSettings, KeyCombo, Layer, OverrideMode};
+use crate::config::{Action, Config, JogMode, JogSettings, KeyCombo, Layer, OverrideMode, Profile};
 use crate::describe::{self, Detail};
 use crate::hid::HidError;
 use crate::inject::{InjectError, KeyInjector, Keystroke};
 use crate::launch::{LaunchError, Launcher};
+use crate::mappings_file::Os;
+use crate::profiles::{self, FrontApp};
 use crate::report::{
     DeviceEvent, DeviceJogMode, JogLed, Key, Led, jog_led_report, led_report, set_jog_mode,
 };
@@ -79,6 +81,19 @@ pub struct Engine {
     gesture: Option<Gesture>,
     /// Detailed logs on (settings): press lines show a website's whole address.
     detailed_logs: bool,
+    /// The app profiles (each with its own pages).
+    profiles: Vec<Profile>,
+    /// The Default profile's first page.
+    base_layer: String,
+    /// The profile in use (None: Default).
+    active_profile: Option<String>,
+    /// Default's pages (and their keys back) while a profile is in use:
+    /// where the Speed Editor goes back to when no profile's app is in front.
+    default_stack: Option<(Vec<String>, Vec<Key>)>,
+    /// The OS whose app names the profiles' apps are matched by.
+    os: Os,
+    /// The last app in front other than freewheel itself.
+    front: Option<FrontApp>,
 }
 
 impl Engine {
@@ -104,7 +119,71 @@ impl Engine {
             outcomes: Vec::new(),
             gesture: None,
             detailed_logs: config.settings.detailed_logs,
+            profiles: config.profiles.clone(),
+            base_layer: config.base_layer.clone(),
+            active_profile: None,
+            default_stack: None,
+            os: Os::current(),
+            front: None,
         }
+    }
+
+    /// Matches profile apps by `os`'s names (tests fake another OS).
+    pub fn set_os(&mut self, os: Os) {
+        self.os = os;
+    }
+
+    /// Another app came to the front (crate::profiles has the rule): the
+    /// profile that lists it starts on its first page; any other app brings
+    /// the Default profile back, on the page it was on. freewheel's own
+    /// window and another window of the same app change nothing. Returns
+    /// whether the page changed.
+    pub fn front_app(&mut self, app: &FrontApp) -> bool {
+        if app.own || app.ids.iter().all(|i| i.trim().is_empty()) {
+            return false;
+        }
+        if self.front.as_ref().is_some_and(|f| f.same_app(app)) {
+            return false;
+        }
+        self.front = Some(app.clone());
+        let target = profiles::profile_for(&self.profiles, self.os, app).cloned();
+        let target_id = target.as_ref().map(|p| p.id.clone());
+        if target_id == self.active_profile {
+            return false;
+        }
+        if self.active_profile.is_none() {
+            // Leaving Default: keep its pages for the way back.
+            self.default_stack = Some((self.layer_stack.clone(), self.push_keys.clone()));
+        }
+        let (profile_name, stack, keys) = match &target {
+            Some(p) => (p.name.clone(), vec![p.pages[0].clone()], Vec::new()),
+            None => {
+                let (stack, keys) = self
+                    .default_stack
+                    .take()
+                    .unwrap_or_else(|| (vec![self.base_layer.clone()], Vec::new()));
+                (crate::config::DEFAULT_PROFILE_NAME.to_string(), stack, keys)
+            }
+        };
+        self.active_profile = target_id;
+        self.layer_stack = stack;
+        self.push_keys = keys;
+        let page = self.current_page_name();
+        self.outcome(format!(
+            "profile is now \"{profile_name}\", page \"{page}\" ({} is in front)",
+            app.name
+        ));
+        true
+    }
+
+    /// The profile in use (None: Default).
+    pub fn active_profile(&self) -> Option<&str> {
+        self.active_profile.as_deref()
+    }
+
+    /// The last app in front other than freewheel itself.
+    pub fn front(&self) -> Option<&FrontApp> {
+        self.front.as_ref()
     }
 
     /// Marks this engine's lines as coming from the Simulator's device.
@@ -688,8 +767,17 @@ impl Engine {
     /// Pushes `target`, with `key` as its back button. A missing target or a
     /// push beyond [`MAX_LAYER_DEPTH`] is ignored and logged.
     fn push_layer(&mut self, key: Key, target: String) {
+        let in_profile = |id: &str| {
+            self.profiles
+                .iter()
+                .find(|p| p.pages.iter().any(|l| l == id))
+                .map(|p| p.id.clone())
+        };
         if !self.layers.iter().any(|l| l.id == target) {
             warn!("page switch ignored: no page \"{target}\"");
+        } else if in_profile(&target) != self.active_profile {
+            // Page keys stay within the profile in use.
+            warn!("page switch to \"{target}\" ignored: a page of another profile");
         } else if self.layer_stack.len() >= MAX_LAYER_DEPTH {
             warn!("page switch to \"{target}\" ignored: already {MAX_LAYER_DEPTH} pages deep");
         } else {
@@ -2314,5 +2402,200 @@ mod tests {
             engine.take_override_ticks(),
             [(OverrideMode::Brightness, 3)]
         );
+    }
+
+    /// Default: Main (CAM 1 goes to Default's Music); Writing, for Notepad /
+    /// TextEdit / gedit: Draft (CAM 2 goes to its Review); Paint, for
+    /// mspaint: Canvas.
+    fn profile_engine() -> Engine {
+        use crate::config::{Profile, ProfileApp};
+        let page = |id: &str, name: &str, b: &[(&str, &str)]| Layer {
+            id: id.into(),
+            name: name.into(),
+            bindings: b
+                .iter()
+                .map(|(k, t)| {
+                    (
+                        k.to_string(),
+                        Action::LayerPush {
+                            target: t.to_string(),
+                        },
+                    )
+                })
+                .collect(),
+        };
+        let mut config = Config::default();
+        config.layers[0] = page("base", "Main", &[("Cam1", "music")]);
+        config.layers.push(page("music", "Music", &[]));
+        config
+            .layers
+            .push(page("w-draft", "Draft", &[("Cam2", "w-review")]));
+        config.layers.push(page("w-review", "Review", &[]));
+        config.layers.push(page("p-canvas", "Canvas", &[]));
+        let app = |w: &str, m: Option<&str>, l: Option<&str>| ProfileApp {
+            name: w.into(),
+            windows: Some(w.into()),
+            macos: m.map(Into::into),
+            linux: l.map(Into::into),
+        };
+        config.profiles = vec![
+            Profile {
+                id: "writing".into(),
+                name: "Writing".into(),
+                apps: vec![app(
+                    "notepad.exe",
+                    Some("com.apple.TextEdit"),
+                    Some("gedit"),
+                )],
+                pages: vec!["w-draft".into(), "w-review".into()],
+            },
+            Profile {
+                id: "paint".into(),
+                name: "Paint".into(),
+                apps: vec![app("mspaint", None, None)],
+                pages: vec!["p-canvas".into()],
+            },
+        ];
+        crate::config::validate(&config).unwrap();
+        let mut engine = Engine::new(&config);
+        engine.set_os(crate::mappings_file::Os::Windows);
+        engine
+    }
+
+    fn press(engine: &mut Engine, key: Key) {
+        engine
+            .handle(
+                &DeviceEvent::Press(key),
+                &mut MockInjector::new(),
+                &mut MockLauncher::new(),
+            )
+            .unwrap();
+        engine
+            .handle(
+                &DeviceEvent::Release(key),
+                &mut MockInjector::new(),
+                &mut MockLauncher::new(),
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn the_app_in_front_picks_its_profile_on_its_first_page() {
+        let mut engine = profile_engine();
+        assert_eq!(
+            (engine.active_profile(), engine.current_layer()),
+            (None, "base")
+        );
+        assert!(engine.front_app(&FrontApp::new(&["NOTEPAD.EXE"])));
+        assert_eq!(
+            (engine.active_profile(), engine.current_layer()),
+            (Some("writing"), "w-draft")
+        );
+        assert_eq!(
+            engine.take_outcomes(),
+            ["profile is now \"Writing\", page \"Draft\" (NOTEPAD.EXE is in front)"]
+        );
+        // Another Notepad window: the same app, nothing changes.
+        assert!(!engine.front_app(&FrontApp::new(&["NOTEPAD.EXE"])));
+        assert!(engine.front_app(&FrontApp::new(&["mspaint.exe"])));
+        assert_eq!(
+            (engine.active_profile(), engine.current_layer()),
+            (Some("paint"), "p-canvas")
+        );
+    }
+
+    #[test]
+    fn page_keys_stay_within_the_profile_and_default_comes_back_on_its_page() {
+        let mut engine = profile_engine();
+        // On Default, CAM 1 goes to Music.
+        press(&mut engine, Key::Cam1);
+        assert_eq!(engine.current_layer(), "music");
+        assert_eq!(engine.leds().buttons, vec![Led::Cam1]);
+        engine.front_app(&FrontApp::new(&["notepad.exe"]));
+        assert_eq!(engine.current_layer(), "w-draft");
+        assert!(engine.leds().buttons.is_empty());
+        // Writing's CAM 2 goes to its Review page and back; CAM 1 is not set here.
+        press(&mut engine, Key::Cam2);
+        assert_eq!(engine.current_layer(), "w-review");
+        press(&mut engine, Key::Cam2);
+        assert_eq!(engine.current_layer(), "w-draft");
+        press(&mut engine, Key::Cam1);
+        assert_eq!(engine.current_layer(), "w-draft");
+        // Another app: Default, back on Music with CAM 1 lit as its way back.
+        engine.take_outcomes();
+        assert!(engine.front_app(&FrontApp::new(&["code.exe"])));
+        assert_eq!(
+            (engine.active_profile(), engine.current_layer()),
+            (None, "music")
+        );
+        assert_eq!(engine.leds().buttons, vec![Led::Cam1]);
+        assert_eq!(
+            engine.take_outcomes(),
+            ["profile is now \"Default\", page \"Music\" (code.exe is in front)"]
+        );
+        press(&mut engine, Key::Cam1);
+        assert_eq!(engine.current_layer(), "base");
+        // Another app without a profile while on Default: nothing changes.
+        assert!(!engine.front_app(&FrontApp::new(&["explorer.exe"])));
+    }
+
+    #[test]
+    fn a_page_key_to_another_profile_s_page_is_ignored() {
+        let mut engine = profile_engine();
+        engine.push_layer(Key::Cam3, "w-review".into());
+        assert_eq!(engine.current_layer(), "base");
+    }
+
+    #[test]
+    fn freewheels_own_window_never_switches() {
+        let mut engine = profile_engine();
+        engine.front_app(&FrontApp::new(&["notepad.exe"]));
+        assert!(!engine.front_app(&FrontApp::own()));
+        assert_eq!(engine.current_layer(), "w-draft");
+        assert!(!engine.front_app(&FrontApp::new(&["notepad.exe"])));
+    }
+
+    #[test]
+    fn without_profiles_nothing_switches_by_itself() {
+        let mut config = Config::default();
+        config.layers.push(Layer {
+            id: "music".into(),
+            name: "Music".into(),
+            bindings: BTreeMap::new(),
+        });
+        config.layers[0].bindings.insert(
+            "Cam1".into(),
+            Action::LayerPush {
+                target: "music".into(),
+            },
+        );
+        let mut engine = Engine::new(&config);
+        press(&mut engine, Key::Cam1);
+        assert!(!engine.front_app(&FrontApp::new(&["code.exe"])));
+        assert_eq!(engine.current_layer(), "music");
+    }
+
+    #[test]
+    fn each_os_matches_the_profile_apps_by_its_own_names() {
+        use crate::mappings_file::Os;
+        for (os, front, want) in [
+            (Os::Windows, FrontApp::new(&["notepad.exe"]), "w-draft"),
+            (
+                Os::MacOs,
+                FrontApp::new(&["com.apple.TextEdit", "TextEdit"]),
+                "w-draft",
+            ),
+            (
+                Os::Linux,
+                FrontApp::new(&["gedit", "org.gnome.gedit", "Gedit"]),
+                "w-draft",
+            ),
+            (Os::Linux, FrontApp::new(&["notepad.exe"]), "base"),
+        ] {
+            let mut engine = profile_engine();
+            engine.set_os(os);
+            engine.front_app(&front);
+            assert_eq!(engine.current_layer(), want, "{os:?} {front:?}");
+        }
     }
 }

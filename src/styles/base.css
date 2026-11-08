@@ -404,6 +404,22 @@ input[type="range"] { accent-color: var(--accent); border: none; background: tra
 .pill.is-renaming { border: none; background: transparent; }
 .pill.is-renaming > button { display: none; }
 .pill.is-renaming .pill-rename { display: block; }
+/* App profiles: a row above the page pills; the profile shown is tinted, the page shown filled. */
+.profile-picker { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: none; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.profile-picker [role="alert"] { flex-basis: 100%; }
+.profile-label { font-size: 11px; font-weight: var(--fw-semibold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink3); margin-right: 2px; }
+.profile-pills { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.profile-pill { display: flex; align-items: center; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink2); }
+.profile-pill.is-active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.profile-pill button { height: 100%; padding: 0 11px; gap: 7px; border: none; background: transparent; color: inherit; font-weight: var(--fw-semibold); border-radius: 8px; }
+.profile-pill button:hover:not(:disabled) { background: transparent; }
+.profile-pill.is-active > button:first-child:not(:only-child) { padding-right: 4px; }
+.profile-pill .profile-icon { font-size: 0; padding: 0 4px; }
+.profile-pill .profile-icon:last-of-type { padding: 0 9px 0 2px; }
+.profile-pill .profile-icon .icon { width: 15px; height: 15px; }
+.profile-pill.is-renaming { border: none; background: transparent; }
+.profile-rename { height: 30px; width: 150px; border-radius: 8px; border: 2px solid var(--accent); padding: 0 10px; background: var(--panel); font-weight: var(--fw-semibold); outline: none; }
+.profile-add { height: 30px; padding: 0 11px; border-radius: 8px; border: 1px dashed var(--line2); background: transparent; color: var(--ink2); gap: 4px; }
 .pill-add { height: 32px; padding: 0 12px; border-radius: 16px; border: 1px dashed var(--line2); background: transparent; color: var(--ink2); gap: 4px; }
 .pill-add .icon { width: 17px; height: 17px; }
 .live-legend { display: flex; align-items: center; gap: 5px; margin-left: 4px; font-size: var(--fs-micro); color: var(--ink3); }
@@ -610,6 +626,16 @@ td.row-chevron .icon { vertical-align: middle; }
 .app-initial[data-hue="9"] { background: oklch(0.62 0.13 270); }
 .app-initial[data-hue="10"] { background: oklch(0.62 0.13 300); }
 .app-initial[data-hue="11"] { background: oklch(0.62 0.13 330); }
+
+/* A profile's apps (the side panel with no key picked on a profile other than Default). */
+.profile-keycap { display: flex; align-items: center; justify-content: center; padding: 5px 6px; }
+.profile-keycap .icon { width: 16px; height: 16px; }
+.profile-apps { flex: none; margin-bottom: 4px; }
+.profile-app { cursor: default; }
+.profile-app .grow { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.profile-app-id { font-size: 11px; color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-add-app { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; }
+.profile-panel .mode-sub { margin-top: 0; }
 .app-check { width: 18px; height: 18px; color: var(--accent); }
 .app-none { padding: 14px; color: var(--ink3); font-size: 12.5px; }
 .choose-file { flex: none; height: 38px; border-radius: 8px; border: 1px solid var(--line2); background: var(--panel); gap: 6px; }

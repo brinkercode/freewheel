@@ -60,12 +60,13 @@ jobs:
           cache-bin: "true"
 
       # WebKitGTK and its WebDriver, the tray's AppIndicator, Xvfb, a window
-      # manager (maximise / minimise need one) and wmctrl.
+      # manager (maximise / minimise need one), wmctrl, and x11-utils (xmessage
+      # and xev stand in for apps in front, xprop reads the active window).
       - name: Install Tauri Linux dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev \
-            webkit2gtk-driver xvfb openbox wmctrl dbus-x11 xdg-utils
+            webkit2gtk-driver xvfb openbox wmctrl dbus-x11 xdg-utils x11-utils
 
       - name: Install tauri-driver
         run: cargo install tauri-driver --locked --version 2.1.0

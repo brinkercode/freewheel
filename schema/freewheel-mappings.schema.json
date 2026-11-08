@@ -263,6 +263,99 @@
       },
       "type": "object"
     },
+    "profile": {
+      "additionalProperties": false,
+      "properties": {
+        "apps": {
+          "description": "The apps the profile is for (see App profiles). Allowed: app names, or { \"name\", \"windows\", \"macos\", \"linux\" } objects. Default: [] (switched to by no app).",
+          "items": {
+            "$ref": "#/$defs/profileApp"
+          },
+          "type": "array"
+        },
+        "name": {
+          "description": "The profile's name. Allowed: unique, not Default. Default: (required).",
+          "not": {
+            "pattern": "^\\s*[Dd][Ee][Ff][Aa][Uu][Ll][Tt]\\s*$"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "pages": {
+          "additionalProperties": {
+            "$ref": "#/$defs/page"
+          },
+          "description": "The profile's pages, written as pages is. The first page is where the profile starts. A page key goes to a page of the same profile. Allowed: 1 or more pages. Default: (required).",
+          "minProperties": 1,
+          "propertyNames": {
+            "pattern": "\\S"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "name",
+        "pages"
+      ],
+      "type": "object"
+    },
+    "profileApp": {
+      "anyOf": [
+        {
+          "pattern": "\\S",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "anyOf": [
+            {
+              "properties": {
+                "windows": true
+              },
+              "required": [
+                "windows"
+              ]
+            },
+            {
+              "properties": {
+                "macos": true
+              },
+              "required": [
+                "macos"
+              ]
+            },
+            {
+              "properties": {
+                "linux": true
+              },
+              "required": [
+                "linux"
+              ]
+            }
+          ],
+          "properties": {
+            "linux": {
+              "pattern": "\\S",
+              "type": "string"
+            },
+            "macos": {
+              "pattern": "\\S",
+              "type": "string"
+            },
+            "name": {
+              "description": "What the Keys tab shows.",
+              "type": "string"
+            },
+            "windows": {
+              "pattern": "\\S",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      ],
+      "description": "An app: its program name (matched on every OS), or one name per OS: the program file on Windows (notepad.exe), the bundle id on macOS (com.apple.TextEdit), the program or window class on Linux (gedit)."
+    },
     "wheelAction": {
       "anyOf": [
         {
@@ -323,6 +416,13 @@
         "pattern": "\\S"
       },
       "type": "object"
+    },
+    "profiles": {
+      "description": "App profiles: each has its own pages and is used while one of its apps is in front. The pages above are the Default profile, used while no profile's app is. Allowed: profiles, each with a name, apps and pages. Default: [] (none).",
+      "items": {
+        "$ref": "#/$defs/profile"
+      },
+      "type": "array"
     },
     "settings": {
       "additionalProperties": false,

@@ -42,6 +42,7 @@ test("every user-facing control is clicked and its result checked", () => {
     "Press a shortcut", "Play/Pause", "Mute", "Hold a key while I hold this one", "Turn a key on and off",
     "Turn the wheel into", "System volume", "Back to normal", "Open an app or website", "Search your apps",
     "button.choose-file", "Switch to another set of keys", "button.pill-add", "Rename", "Delete page", "Do nothing",
+    "New profile", "Apps for this profile", "Program name", "Rename profile", "Delete profile", "front-window.ps1", "wmctrl", "Bring to front", "Another app",
     "Set up the wheel", "Show the ", "aria-label=\"Close\"", "Turn freewheel on or off", "Turn on", "Computer appearance",
     "Bluetooth 12%", "Empty setup", "Several set", "macOS permission", "Record a key", "New version", "Reload settings",
     "Settings window", "First run", 'aria-label="Do actions for real"', "marker-", "export_logs", 'tray("toggle")', 'tray("open-settings")', 'tray("start-at-login")',

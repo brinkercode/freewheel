@@ -270,3 +270,23 @@ test("a key pressed twice quickly reaches the device as two presses, in order (o
   expect(applied).toEqual(["Trans down", "Trans up", "Trans down", "Trans up"]);
   expect(inFlight).toBe(1);
 });
+
+test("App in front: a profile's app starts its first page, another app brings Default back on its page", async () => {
+  await mount();
+  await click(screen.getByRole("button", { name: "USB" }));
+  await click(group("Keys").getByRole("button", { name: "Several set (2 pages)" }));
+  const input = screen.getByRole("textbox", { name: "App in front" });
+  expect(input.value).toBe("notepad.exe");
+  await click(screen.getByRole("button", { name: "Bring to front" }));
+  await waitFor(() => expect(screen.getByText(/^Page w-main/)).toBeTruthy());
+  expect(screen.getByText("In front: notepad.exe")).toBeTruthy();
+  expect(log()).toContain('profile is now "Writing", page "Main" (notepad.exe is in front)');
+  // freewheel's own window changes nothing.
+  await click(group("Other apps in front").getByRole("button", { name: "freewheel itself" }));
+  expect(screen.getByText(/^Page w-main/)).toBeTruthy();
+  await click(group("Other apps in front").getByRole("button", { name: "Another app" }));
+  await waitFor(() => expect(screen.getByText(/^Page base/)).toBeTruthy());
+  expect(screen.getByText("In front: another-app.exe")).toBeTruthy();
+  fireEvent.change(input, { target: { value: "  " } });
+  expect(screen.getByRole("button", { name: "Bring to front" }).disabled).toBe(true);
+});

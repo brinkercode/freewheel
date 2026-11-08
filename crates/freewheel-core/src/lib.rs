@@ -17,6 +17,7 @@ pub mod logging;
 pub mod mappings_file;
 pub mod overrides;
 pub mod permissions;
+pub mod profiles;
 pub mod resolve;
 pub mod simulator;
 pub mod status;

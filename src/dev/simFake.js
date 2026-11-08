@@ -11,6 +11,8 @@ const KEYS = [
 ];
 
 const SAMPLE = { base: { Cut: "Ctrl+C", In: "I", Out: "O", Esc: "Ctrl+Z", Snap: "page edit" }, edit: { Cut: "X", In: "Ctrl+V" } };
+/** The sample's app profile: Writing (its page "w-main") is for Notepad. */
+const SAMPLE_PROFILES = { writing: { name: "Writing", page: "w-main", pageName: "Main", apps: ["notepad.exe"] } };
 const MODES = { Jog: "Jog", Shtl: "Shuttle", Scrl: "Scroll" };
 
 /** The fake's update notes (selfupdate.rs SIM_NEXT_NOTES and SIM_NOTES). */
@@ -23,8 +25,12 @@ export function createSimFake({ next = SIM_NEXT } = {}) {
     connection: "Absent", bus: null, battery: null, charging: false, low_battery: false, page: "base",
     jog_mode: "Scroll", lit_leds: [], held_keys: [], enabled: true, send_for_real: true, toasts: [],
     keys: KEYS, resolve_open: false, permissions: "Granted", update: null, first_run: false, mapped_keys: 0,
-    wheel_override: null,
+    wheel_override: null, front_app: null,
   };
+  let profiles = {};
+  // Default's page while a profile is in use, and the profile in use.
+  let defaultPage = null;
+  let active = null;
   /** A result line as the engine says it: done, or not done with 'Do actions for real' off. */
   const done = (would, did) => (s.send_for_real ? did : `not done: Do actions for real is off (would ${would})`);
   const trayMenu = { on: true, start_at_login: false, status_line: "", status_fix: false, update: "Check for updates", update_enabled: true, icon: null };
@@ -76,10 +82,13 @@ export function createSimFake({ next = SIM_NEXT } = {}) {
         break;
       case "LoadSampleMappings":
         map = structuredClone(SAMPLE);
+        profiles = structuredClone(SAMPLE_PROFILES);
         toast("sample mappings loaded");
         break;
       case "ClearMappings":
         map = {};
+        profiles = {};
+        active = null;
         s.page = "base";
         toast("empty setup loaded");
         break;
@@ -93,6 +102,21 @@ export function createSimFake({ next = SIM_NEXT } = {}) {
       case "Permissions":
         s.permissions = c.state;
         break;
+      case "FrontApp": {
+        // As Engine::front_app: freewheel itself and the same app change nothing;
+        // a profile's app starts it on its first page, any other app brings
+        // Default back on the page it was on.
+        if (!c.name || c.name === s.front_app) break;
+        s.front_app = c.name;
+        const id = Object.keys(profiles).find((p) => profiles[p].apps.includes(c.name.toLowerCase())) ?? null;
+        if (id === active) break;
+        if (!active) defaultPage = s.page;
+        active = id;
+        s.page = id ? profiles[id].page : (defaultPage ?? "base");
+        const pageName = id ? profiles[id].pageName : s.page;
+        toast(`profile is now "${id ? profiles[id].name : "Default"}", page "${pageName}" (${c.name} is in front)`);
+        break;
+      }
       case "StepUpdate": {
         // As simulator.rs: each press publishes a newer version (the update source runs the rest: selfupdate.rs, src/dev/mockTauri.js).
         s.update = { status: "available", version: "99.0.0" };

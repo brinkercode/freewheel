@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { LABELS } from "./keys.js";
-import { SIM_LOG_EVENT, SIM_TRAY_EVENT } from "./simulateEvents.js";
+import { SIM_LOG_EVENT, SIM_STATUS_EVENT, SIM_TRAY_EVENT } from "./simulateEvents.js";
 import { WindowControls, isMac } from "./TitleBar.jsx";
 import "./styles/simulator.css";
 
@@ -126,6 +126,8 @@ export default function Simulator({ initial = null }) {
   // The next simulated update's notes (sim_notes): { choice, notes, next_available }.
   const [notes, setNotes] = useState(null);
   const [pasted, setPasted] = useState("");
+  // The app the Simulator puts in front, by its program name.
+  const [frontName, setFrontName] = useState("notepad.exe");
   const turning = useRef(null);
   const down = useRef(new Set());
   // Each log line's number, counting up: a new line is told from an old one with the same words.
@@ -192,6 +194,8 @@ export default function Simulator({ initial = null }) {
     // commands (src-tauri simulate.rs note): shown as it happens.
     const unlisten = [
       tauri().event?.listen(SIM_LOG_EVENT, (e) => note(e.payload ?? [], "app")),
+      // A change it did not ask for (the app in front): the status line follows.
+      tauri().event?.listen(SIM_STATUS_EVENT, (e) => e.payload && setStatus(e.payload)),
       // The tray menu changed by itself (the device, the settings window's update flow).
       tauri().event?.listen(SIM_TRAY_EVENT, (e) => {
         if (!e.payload) return;
@@ -370,6 +374,23 @@ export default function Simulator({ initial = null }) {
         current={status ? (status.mapped_keys > 0 ? "sample" : "empty") : null}
         onPick={(v) => send({ type: v === "sample" ? "LoadSampleMappings" : "ClearMappings" })}
       />
+
+      <section className="fw-sim-group fw-sim-front">
+        <h2 className="fw-sim-label">App in front</h2>
+        <div className="fw-sim-line">
+          <input aria-label="App in front" value={frontName} placeholder="like notepad.exe" onChange={(e) => setFrontName(e.target.value)} />
+          <button className="fw-sim-primary" disabled={!frontName.trim()} onClick={() => send({ type: "FrontApp", name: frontName.trim() })}>
+            Bring to front
+          </button>
+        </div>
+        <div className="fw-sim-seg" role="group" aria-label="Other apps in front">
+          <button onClick={() => send({ type: "FrontApp", name: "another-app.exe" })}>Another app</button>
+          <button onClick={() => send({ type: "FrontApp", name: null })}>freewheel itself</button>
+        </div>
+        <p className="fw-sim-meta" data-front-app>
+          {status?.front_app ? `In front: ${status.front_app}` : "No app has come to the front yet."}
+        </p>
+      </section>
 
       <section className="fw-sim-group">
         <h2 className="fw-sim-label">Jump to</h2>
