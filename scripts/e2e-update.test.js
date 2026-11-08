@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -31,6 +31,26 @@ test("the local server moves the manifest's urls to itself; a tampered copy diff
     [4, 8],
     [8, 10],
   ]);
+});
+
+test("the local release server answers the releases API like GitHub: the tag's body, 404 for others", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fw-upd-"));
+  const pkg = join(dir, "freewheel-0.2.0-windows-x64.exe");
+  writeFileSync(pkg, Buffer.alloc(16, 7));
+  const manifest = { version: "0.2.0", notes: "n", platforms: {} };
+  const server = await startUpdateServer({ manifest, package: pkg, releases: { "0.2.0": "### New\n\n* **keys:** x" } });
+  const api = (v, accept = "application/vnd.github+json") => fetch(`${server.url}/repos/brinkercode/freewheel/releases/tags/v${v}`, { headers: { accept } });
+  try {
+    const ok = await api("0.2.0");
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toMatchObject({ tag_name: "v0.2.0", body: "### New\n\n* **keys:** x" });
+    expect((await api("0.3.0")).status).toBe(404);
+    expect((await api("0.2.0", "*/*")).status).toBe(415);
+    expect(server.hits.filter((h) => h.includes("/releases/tags/"))).toHaveLength(3);
+  } finally {
+    await server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("the local release server fails, has nothing, offers the package streamed in chunks, or a tampered one", async () => {
@@ -102,6 +122,11 @@ test("the script checks: tampered rejected with A intact, progress, same path ru
     "the config changed",
     "config.json changed on disk",
     "${app}.old is still there",
+    // What's new's notes from the GitHub release (the local releases API).
+    "[RELEASES_API_ENV]: server.url",
+    "GitHub was asked before What's new opened",
+    "the GitHub release's notes, formatted",
+    "the releases API was not asked exactly once",
   ])
     expect(script).toContain(needle);
 });
@@ -130,7 +155,7 @@ test("the update job: no secrets, a throwaway key, two e2e builds made into rele
 test("shipped builds never get the e2e feature or the e2e override", () => {
   for (const file of ["release.yml", "ci.yml", "test-build.yml", "update-e2e.yml"]) {
     const text = read(`../.github/workflows/${file}`);
-    expect(text, file).not.toMatch(/features[ =]+e2e|features e2e|e2e-update-config|FREEWHEEL_E2E_UPDATE_URL/);
+    expect(text, file).not.toMatch(/features[ =]+e2e|features e2e|e2e-update-config|FREEWHEEL_E2E_UPDATE_URL|FREEWHEEL_E2E_RELEASES_API/);
   }
   expect(read("./tauri-release.mjs")).not.toMatch(/e2e/);
   const cargo = read("../src-tauri/Cargo.toml");

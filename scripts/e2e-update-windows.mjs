@@ -15,8 +15,12 @@
 //   running -> (B published) Try again: downloading with progress -> ready
 //   -> Restart to update -> A swaps B in and starts it -> the same path now
 //   runs B, What's new in B shows B's notes (the next release's real notes,
-//   scripts/release-notes.mjs preview) verbatim, the config is exactly as before, and
-//   the exe's .old copy and the temp download are gone.
+//   scripts/release-notes.mjs preview) verbatim, without asking GitHub, then
+//   with those notes gone (as on a fresh install, or an update from outside
+//   the app) General's What's new in vB shows B's GitHub release notes
+//   (the local server's releases API, FREEWHEEL_E2E_RELEASES_API, e2e builds
+//   only) cleaned and formatted (headings and bullets), asked once; the config
+//   is exactly as before, and the exe's .old copy and the temp download are gone.
 // Every state is screenshotted into the output dir.
 //
 //   node scripts/e2e-update-windows.mjs --app <folder>\freewheel-<A>-windows-x64.exe --manifest <B latest.json> --package <B's freewheel-<B>-windows-x64.exe>
@@ -27,11 +31,16 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { dirname, join, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 import { notesText } from "../src/notesMarkdown.js";
+import { appNotes } from "../src/releaseNotes.js";
 import { DEVTOOLS_PORT_ENV, Driver, FIND_JS, NOTES_ON_PAGE_JS, shotName } from "./e2e-windows.mjs";
 import { startUpdateServer } from "./update-server.mjs";
 
 /** The e2e builds' manifest override (src-tauri/src/selfupdate.rs, `e2e` feature only). */
 export const UPDATE_URL_ENV = "FREEWHEEL_E2E_UPDATE_URL";
+/** ... and the releases API override (src-tauri/src/release_notes.rs, `e2e` feature only). */
+export const RELEASES_API_ENV = "FREEWHEEL_E2E_RELEASES_API";
+/** B's GitHub release body as the local releases API serves it (the release cut: scope labels, PR links, hashes). */
+export const RELEASE_BODY_FILE = fileURLToPath(new URL("./fixtures/release-notes/github-release.md", import.meta.url));
 
 /** The config the update must keep: a shortcut, a page and a key that opens it. */
 export function populate(config) {
@@ -208,14 +217,17 @@ async function main() {
     const expectedNotes = notesText(manifest.notes);
     if (!expectedNotes.length) throw new Error(`B's latest.json has no notes: ${JSON.stringify(manifest.notes)}`);
     say(`B's notes (${expectedNotes.length} lines): ${expectedNotes.slice(0, 4).join(" | ")}${expectedNotes.length > 4 ? " | …" : ""}`);
-    server = await startUpdateServer({ manifest, package: resolve(opts.package), port: Number(opts["server-port"]), mode: "fail" });
+    const releaseBody = readFileSync(RELEASE_BODY_FILE, "utf8");
+    const githubNotes = notesText(appNotes(releaseBody));
+    server = await startUpdateServer({ manifest, package: resolve(opts.package), port: Number(opts["server-port"]), mode: "fail", releases: { [opts.to]: releaseBody } });
+    const apiHits = () => server.hits.filter((h) => h.includes("/releases/tags/"));
     say(`update server on ${server.url} offering ${opts.to} (${opts.package}), mode fail`);
     const before = { exe: sha(app), files: folderFiles(), version: fileVersion(app) };
     say(`A in ${folder}: ${before.files.join(", ")}; file version ${before.version}`);
     if (before.version !== opts.from) throw new Error(`the exe is ${before.version}, expected ${opts.from}`);
 
     say(`starting ${app} (version ${opts.from})`);
-    const env = { ...process.env, [DEVTOOLS_PORT_ENV]: String(opts.port), [UPDATE_URL_ENV]: `${server.url}/latest.json` };
+    const env = { ...process.env, [DEVTOOLS_PORT_ENV]: String(opts.port), [UPDATE_URL_ENV]: `${server.url}/latest.json`, [RELEASES_API_ENV]: server.url };
     child = spawn(app, [], { env, stdio: "inherit", cwd: folder });
     child.on("exit", (code) => say(`A (pid ${child.pid}) exited with ${code}`));
     await waitForPage(opts.port, 60000, () => child.exitCode !== null && `A exited with ${child.exitCode}`);
@@ -326,6 +338,35 @@ async function main() {
     // Long notes scroll inside their card: its end is reachable.
     await d.exec(`const c = document.querySelector(".whats-new-notes"); c.scrollTop = c.scrollHeight;`);
     await shot(`B ${opts.to}: what's new page, notes scrolled to the end`);
+    // The notes stored at update time won: GitHub was never asked.
+    if (apiHits().length) throw new Error(`GitHub was asked before What's new opened: ${apiHits().join(" | ")}`);
+    say("  the notes are the ones stored at update time; the releases API was not asked");
+
+    say("step: What's new without stored notes (a fresh install): the GitHub release's notes");
+    await click(".whats-new-page button, .tab-page button", "Done");
+    await d.exec(`localStorage.removeItem("freewheel.update-notes"); localStorage.removeItem("freewheel.release-notes"); location.reload();`);
+    await sleep(1000);
+    await waitFor("the settings tabs", `return document.readyState === "complete" && document.querySelector("nav.toolbar")`);
+    await click("nav.toolbar button.tab", "General");
+    await sleep(500);
+    if (apiHits().length) throw new Error(`GitHub was asked before What's new opened: ${apiHits().join(" | ")}`);
+    await click(".version-card .whats-new-link", `What’s new in v${opts.to}`);
+    await waitFor("the GitHub release's notes, formatted", NOTES_ON_PAGE_JS, [JSON.stringify(githubNotes)], 20000);
+    const formatted = await d.exec(`const c = document.querySelector(".whats-new-notes");
+      return { headings: [...c.querySelectorAll("h3, h4")].map((e) => e.textContent), bullets: [...c.querySelectorAll("li")].map((e) => e.textContent), text: c.textContent };`);
+    say(`  ${JSON.stringify(formatted)}`);
+    if (!formatted.headings.includes("New") || formatted.bullets.length < 2) throw new Error(`no heading and bullets: ${JSON.stringify(formatted)}`);
+    if (/\*\*|\(\[#|\/commit\//.test(formatted.text)) throw new Error(`the notes were not cleaned: ${formatted.text}`);
+    await shot(`B ${opts.to}: what's new from GitHub (fresh)`);
+    if (apiHits().length !== 1) throw new Error(`the releases API was not asked exactly once: ${apiHits().join(" | ")}`);
+    if (!apiHits()[0].startsWith(`GET /repos/brinkercode/freewheel/releases/tags/v${opts.to} `)) throw new Error(`asked ${apiHits()[0]}`);
+    // Opened again: the kept notes, no second request.
+    await click(".tab-page button", "Done");
+    await click(".version-card .whats-new-link", `What’s new in v${opts.to}`);
+    await waitFor("the kept notes", NOTES_ON_PAGE_JS, [JSON.stringify(githubNotes)]);
+    if (apiHits().length !== 1) throw new Error(`the releases API was not asked exactly once: ${apiHits().join(" | ")}`);
+    await click(".tab-page button", "Done");
+    say(`  What's new shows the GitHub release's ${githubNotes.length} lines, asked once (${apiHits()[0]})`);
 
     say("step: settings kept, nothing left behind");
     const kept = (await invoke("get_config")).ok;

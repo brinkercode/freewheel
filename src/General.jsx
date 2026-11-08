@@ -2,6 +2,7 @@
 import Icon from "./Icon.jsx";
 import { Switch } from "./ResolveTab.jsx";
 import { UpdateProgress } from "./UpdateBanner.jsx";
+import { releasePage } from "./whatsNew.js";
 
 // The prototype's appearance icons (bundled SVGs, never fetched).
 const ICONS = { System: "contrast", Light: "light_mode", Dark: "dark_mode" };
@@ -88,7 +89,7 @@ export function updateButton(update, { onCheck, onDownload, onRestart } = {}) {
   return { label: status === "error" ? "Try again" : "Check for updates", onClick: onCheck, disabled: !onCheck };
 }
 
-export default function General({ settings, onSetting, startAtLogin, onStartAtLogin, version, update, onCheck, onDownload, onRestart, trayHint = null }) {
+export default function General({ settings, onSetting, startAtLogin, onStartAtLogin, version, update, onCheck, onDownload, onRestart, onWhatsNew, trayHint = null }) {
   const appearance = settings?.appearance ?? "System";
   const button = updateButton(update, { onCheck, onDownload, onRestart });
   return (
@@ -140,6 +141,18 @@ export default function General({ settings, onSetting, startAtLogin, onStartAtLo
                 {updateText(update)}
               </div>
               {update?.status === "downloading" && <UpdateProgress progress={update.progress} />}
+              {onWhatsNew && version && (
+                <a
+                  className="card-sub whats-new-link"
+                  href={releasePage(version)}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    onWhatsNew();
+                  }}
+                >
+                  What’s new in v{version}
+                </a>
+              )}
             </div>
             <button
               className={`update-button${button.primary ? " btn-primary" : ""}`}

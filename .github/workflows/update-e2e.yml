@@ -6,7 +6,9 @@
 # against the pubkey built into that release, the exe swapped in place
 # under the same name) and requires the same path
 # to become the newest release, start (--simulate --smoke), remove the old
-# exe it left aside and then report itself up to date. Runs after each
+# exe it left aside and then report itself up to date, and its What's new
+# show the newest release's notes from its GitHub release, formatted
+# (scripts/update-e2e-whats-new.mjs over WebDriver). Runs after each
 # release (release.yml calls it) and on demand. Public releases only: no
 # secrets, read-only token.
 name: update-e2e
@@ -107,6 +109,48 @@ jobs:
           if (Test-Path "$env:TEMP\freewheel-update") { throw "the update's temp dir is still there" }
           node scripts/check-windows-exe.mjs $exe
           if ($LASTEXITCODE -ne 0) { throw "smoke failed" }
+
+      # msedgedriver must match the WebView2 runtime the app runs in.
+      - name: Install the msedgedriver matching WebView2
+        if: steps.pick.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          $key = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          $version = (Get-ItemProperty $key).pv
+          Write-Host "WebView2 runtime $version"
+          $zip = "$env:RUNNER_TEMP\edgedriver.zip"
+          Invoke-WebRequest "https://msedgedriver.microsoft.com/$version/edgedriver_win64.zip" -OutFile $zip
+          Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP\edgedriver" -Force
+          & "$env:RUNNER_TEMP\edgedriver\msedgedriver.exe" --version
+
+      # No notes were stored by the window (the update ran headless): What's
+      # new must show the newest release's notes from its GitHub release.
+      - name: What's new shows the new release's notes from GitHub
+        if: steps.pick.outputs.skip != 'true'
+        shell: pwsh
+        env:
+          FROM_VERSION: ${{ steps.pick.outputs.from_version }}
+          TO_VERSION: ${{ steps.pick.outputs.to_version }}
+        run: |
+          New-Item -ItemType Directory -Force update-e2e-shots | Out-Null
+          $driver = Start-Process -FilePath "$env:RUNNER_TEMP\edgedriver\msedgedriver.exe" -ArgumentList '--port=4444','--verbose',"--log-path=$PWD\update-e2e-shots\msedgedriver.log" -PassThru -NoNewWindow
+          $deadline = (Get-Date).AddSeconds(30)
+          do { Start-Sleep -Milliseconds 300; $up = Test-NetConnection 127.0.0.1 -Port 4444 -InformationLevel Quiet -WarningAction SilentlyContinue } until ($up -or (Get-Date) -gt $deadline)
+          if (-not $up) { throw "msedgedriver did not start" }
+          node scripts/update-e2e-whats-new.mjs --app $env:FREEWHEEL_EXE --from $env:FROM_VERSION --to $env:TO_VERSION --port 9224 --out update-e2e-shots
+          $code = $LASTEXITCODE
+          Stop-Process -Id $driver.Id -Force -ErrorAction SilentlyContinue
+          Get-CimInstance Win32_Process | Where-Object ExecutablePath -eq $env:FREEWHEEL_EXE | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+          exit $code
+
+      - name: Upload What's new screenshots
+        if: always() && steps.pick.outputs.skip != 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: update-e2e-whats-new
+          path: update-e2e-shots
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Keep the app's logs
         if: failure()

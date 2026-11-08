@@ -9,8 +9,8 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-/** Names only e2e builds contain (src-tauri/src/selfupdate.rs). */
-export const E2E_ONLY = ["FREEWHEEL_E2E_UPDATE_URL"];
+/** Names only e2e builds contain (src-tauri/src/selfupdate.rs, release_notes.rs). */
+export const E2E_ONLY = ["FREEWHEEL_E2E_UPDATE_URL", "FREEWHEEL_E2E_RELEASES_API"];
 
 /** Problems with the binary's bytes (empty when it is fit to ship). */
 export function binaryProblems(bytes, { pubkey } = {}) {

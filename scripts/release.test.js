@@ -77,6 +77,11 @@ test("what ships is checked: no e2e-only code, the pubkey baked in, the Windows 
   const rust = read("../src-tauri/src/selfupdate.rs");
   expect(rust).toMatch(/#\[cfg\(feature = "e2e"\)\]\npub const E2E_MANIFEST_URL_ENV: &str = "FREEWHEEL_E2E_UPDATE_URL";/);
   expect(rust.match(/"FREEWHEEL_E2E_UPDATE_URL"/g)).toHaveLength(2); // the const, and the test that a shipped build ignores it
+  // The same for What's new's releases API override (release_notes.rs).
+  expect(binaryProblems(Buffer.from("x FREEWHEEL_E2E_RELEASES_API x"))).toEqual(["contains FREEWHEEL_E2E_RELEASES_API: built with the e2e feature, never ship it"]);
+  const notes = read("../src-tauri/src/release_notes.rs");
+  expect(notes).toMatch(/#\[cfg\(feature = "e2e"\)\]\npub const E2E_RELEASES_API_ENV: &str = "FREEWHEEL_E2E_RELEASES_API";/);
+  expect(notes.match(/"FREEWHEEL_E2E_RELEASES_API"/g)).toHaveLength(2);
 });
 
 test("no installer: the bundle is the macOS .app only, macOS 15.0", () => {
@@ -306,7 +311,8 @@ test("update-e2e downloads the previous release's exe into a folder and updates 
   expect(e2e).not.toMatch(/secrets\.|: write\b|setup\.exe|\/S'/);
   expect(e2e).toContain("runs-on: windows-2025");
   expect(e2e).toContain('--pattern "freewheel-$env:FROM_VERSION-windows-x64.exe"');
-  expect(e2e).not.toMatch(/Expand-Archive|\.zip/);
+  // No zips of freewheel: only the WebDriver (What's new step) comes zipped.
+  expect(e2e.replace(/edgedriver_win64\.zip|edgedriver\.zip|Expand-Archive \$zip -DestinationPath "\$env:RUNNER_TEMP\\edgedriver"/g, "")).not.toMatch(/Expand-Archive|\.zip/);
   expect(e2e).toContain('$exe = "$env:RUNNER_TEMP\\freewheel\\freewheel-$env:FROM_VERSION-windows-x64.exe"');
   expect(e2e.match(/-ArgumentList '--update-check-and-install'/g)).toHaveLength(2);
   expect(e2e).toContain("if ($now -ne $env:TO_VERSION)");
@@ -314,6 +320,24 @@ test("update-e2e downloads the previous release's exe into a folder and updates 
   expect(e2e).toContain("node scripts/check-windows-exe.mjs $exe");
   expect(e2e).toContain("if ($run.ExitCode -ne 2)");
   expect(read("../src-tauri/src/selfupdate.rs")).toContain('pub const HEADLESS_FLAG: &str = "--update-check-and-install";');
+});
+
+test("update-e2e then opens the updated exe's What's new: the new release's notes from its GitHub release, formatted", async () => {
+  expect(e2e).toContain("node scripts/update-e2e-whats-new.mjs --app $env:FREEWHEEL_EXE --from $env:FROM_VERSION --to $env:TO_VERSION");
+  expect(e2e.indexOf("node scripts/update-e2e-whats-new.mjs")).toBeGreaterThan(e2e.indexOf("node scripts/check-windows-exe.mjs $exe"));
+  const { parseArgs: args, releaseApi, releaseBody } = await import("./update-e2e-whats-new.mjs");
+  expect(args(["--app", "a.exe", "--from", "1.0.0", "--to", "1.1.0"])).toMatchObject({ app: "a.exe", from: "1.0.0", to: "1.1.0", port: "9224" });
+  expect(() => args(["--app", "a.exe"])).toThrow(/--from/);
+  // The URL the app asks (release_notes.rs), with GitHub's headers and no token.
+  const rust = read("../src-tauri/src/release_notes.rs");
+  expect(releaseApi("1.1.0")).toBe(`${rust.match(/RELEASES_API: &str = "([^"]+)"/)[1]}/tags/v1.1.0`);
+  let asked;
+  const body = await releaseBody("1.1.0", async (url, init) => ((asked = { url, init }), { ok: true, json: async () => ({ body: "### New\n\n* x" }) }));
+  expect(body).toBe("### New\n\n* x");
+  expect(asked.url).toBe("https://api.github.com/repos/brinkercode/freewheel/releases/tags/v1.1.0");
+  expect(asked.init.headers).toEqual({ accept: "application/vnd.github+json", "user-agent": "freewheel-update-e2e" });
+  await expect(releaseBody("1.1.0", async () => ({ ok: false, status: 403 }))).rejects.toThrow(/HTTP 403/);
+  await expect(releaseBody("1.1.0", async () => ({ ok: true, json: async () => ({ body: "" }) }))).rejects.toThrow(/no notes/);
 });
 
 test("update-e2e updates from the release before the newest one (or the one asked for)", () => {

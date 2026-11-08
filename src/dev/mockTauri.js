@@ -210,6 +210,13 @@ export function installMockTauri(win = window) {
       onEvent.onmessage({ event: "Finished" });
       return null;
     },
+    // As release_notes.rs: the GitHub release's body (the release cut, scope
+    // labels and PR links still in), or ?github=none for a build that can't ask.
+    release_notes: async ({ version }) => {
+      await sleep(400);
+      if (params.get("github") === "none") throw "not-configured: this build makes no requests";
+      return githubReleaseBody(version);
+    },
     desktop_hints: () => ({ tray: null }),
     // The window says it is ready to hear the tray (app_windows.rs settings_ready).
     settings_ready: () => null,
@@ -270,6 +277,25 @@ export function installMockTauri(win = window) {
     storage.setItem("freewheel.update-notes", JSON.stringify({ version: updated, notes: params.get("notes") ?? sampleNotes(updated) }));
   }
   return { invoke, commands: Object.keys(commands) };
+}
+
+/** A release's body as GitHub's releases API returns it (scripts/release-notes.mjs release). */
+function githubReleaseBody(version) {
+  const r = "https://github.com/brinkercode/freewheel";
+  return [
+    `## [${version}](${r}/compare/v1.0.0...v${version}) (2026-11-08)`,
+    "",
+    "",
+    "### New",
+    "",
+    `* **profiles:** profiles that switch automatically for each app ([#185](${r}/issues/185)) ([3f2a9c1](${r}/commit/3f2a9c1d2e4b5a6978c0d1e2f3a4b5c6d7e8f901))`,
+    "",
+    "",
+    "### Fixed",
+    "",
+    `* **updates:** What's new shows the release notes from GitHub ([#188](${r}/issues/188))`,
+    "",
+  ].join("\n");
 }
 
 /** A small patch's notes as latest.json carries them (release-please's, after scripts/release-notes.mjs filter). */

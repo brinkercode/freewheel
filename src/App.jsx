@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import UpdateBanner from "./UpdateBanner.jsx";
 import { WhatsNewNotice, WhatsNewPage } from "./WhatsNew.jsx";
-import { markSeen, openReleasePage, rememberNotes, whatsNew } from "./whatsNew.js";
+import { currentNews, loadNotes, markSeen, openReleasePage, rememberNotes, whatsNew } from "./whatsNew.js";
 import { checkNow, download, restart, startupCheck } from "./updater.js";
 import { simRelaunch } from "./simUpdate.js";
 import { trace } from "./trace.js";
@@ -171,6 +171,21 @@ function Settings({ autoUpdate, storage }) {
   useEffect(() => {
     if (shownVersion) setNews(whatsNew(storage, shownVersion));
   }, [shownVersion, storage]);
+  // The notes page opened without notes stored from the update: the
+  // version's GitHub release notes (src/whatsNew.js loadNotes), asked for
+  // only now, never in the background.
+  const newsVersion = newsOpen && news && !news.notes && !news.loaded ? news.version : null;
+  useEffect(() => {
+    if (!newsVersion) return;
+    let live = true;
+    setNews((n) => (n?.version === newsVersion ? { ...n, loading: true } : n));
+    loadNotes({ version: newsVersion }, { storage }).then((notes) => {
+      if (live) setNews((n) => (n?.version === newsVersion ? { ...n, notes, loading: false, loaded: true } : n));
+    });
+    return () => {
+      live = false;
+    };
+  }, [newsVersion, storage]);
   const seeNews = (open) => {
     markSeen(storage, news.version);
     if (open) setNewsOpen(true);
@@ -305,6 +320,14 @@ function Settings({ autoUpdate, storage }) {
               onCheck={onCheck}
               onDownload={onDownload}
               onRestart={onRestart}
+              onWhatsNew={
+                shownVersion
+                  ? () => {
+                      setNews(currentNews(storage, shownVersion));
+                      setNewsOpen(true);
+                    }
+                  : undefined
+              }
               trayHint={trayHint}
             />
           )}

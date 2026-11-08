@@ -44,10 +44,16 @@ test("the README names the sections a user looks for", () => {
   expect(sections).toEqual(["What it does", "Download and run", "Screens", "Troubleshooting"]);
 });
 
-test("the privacy section (docs/updates.md) names the update manifest URL the app uses", () => {
+test("the privacy section (docs/updates.md) names the exact URLs the app requests", () => {
   const src = readFileSync(new URL("../src-tauri/src/selfupdate.rs", import.meta.url), "utf8");
   const url = src.match(/MANIFEST_URL: &str =\s*"([^"]+)"/)[1];
-  expect(updates.split(/^## /m).find((s) => s.startsWith("Privacy"))).toContain(url);
+  const privacy = updates.split(/^## /m).find((s) => s.startsWith("Privacy"));
+  expect(privacy).toContain(url);
+  // What's new's notes (release_notes.rs): the releases API's tag URL.
+  const notes = readFileSync(new URL("../src-tauri/src/release_notes.rs", import.meta.url), "utf8");
+  const api = notes.match(/RELEASES_API: &str = "([^"]+)"/)[1];
+  expect(notes).toContain('format!("{base}/tags/v{v}")');
+  expect(privacy).toContain(`${api}/tags/v<version>`);
 });
 
 test("every screenshot docs/development.md shows is committed", () => {
