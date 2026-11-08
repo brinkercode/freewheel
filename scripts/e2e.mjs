@@ -1951,6 +1951,9 @@ export async function main(platform, argv = process.argv.slice(2)) {
       await liveOn("Default", basePage(c).name);
     }, ["simulator", "settings"]);
     await step("profiles: Back up writes the profile with its apps and pages", async () => {
+      // The steps after restore the earlier backup: keep it.
+      const file0 = join(dialogs, "freewheel-mappings.json");
+      const earlier = existsSync(file0) ? readFileSync(file0) : null;
       await click("settings", "nav.toolbar button.tab", "Help & backup");
       await click("settings", "#backup button", "Back up");
       await shows("settings", "Your keys are backed up.");
@@ -1959,6 +1962,7 @@ export async function main(platform, argv = process.argv.slice(2)) {
       const w = file.profiles?.find((p) => p.name === "Writing");
       if (!file.pages?.["Edit Bay"] || !w || Object.keys(w.pages ?? {}).length !== 2 || !JSON.stringify(w.apps).includes(F.id) || !Object.values(w.pages)[0].CUT?.startsWith("page "))
         throw new Error(`the backup lacks the profile: ${text.slice(0, 900)}`);
+      if (earlier) writeFileSync(file0, earlier);
       // Back to the Keys tab without the profile for the steps after.
       await click("settings", "nav.toolbar button.tab", "Keys");
       await click("settings", ".profile-pill button[role=tab]", "Writing");
