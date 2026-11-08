@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { expect, test } from "vitest";
 import { checkLatestJson } from "./check-latest-json.mjs";
+import { expectedAssets, releaseAssetProblems } from "./check-release-assets.mjs";
 import { checkReleaseWorkflow } from "./check-workflow.mjs";
 import { DMG_CREATE, PACKAGES, PLATFORMS as SERVED, makePackage, manifest, parseArgs as packageArgs } from "./portable-release.mjs";
 import { binaryProblems } from "./check-release-binary.mjs";
@@ -14,6 +15,7 @@ import { boundVersion, latestProblems, signatureProblem, verifyLatest } from "./
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const release = read("../.github/workflows/release.yml");
 const conf = JSON.parse(read("../src-tauri/tauri.conf.json"));
+const e2eWorkflow = read("../.github/workflows/update-e2e.yml");
 
 test("release.yml passes the release lint", () => {
   expect(checkReleaseWorkflow(release)).toEqual([]);
@@ -23,7 +25,7 @@ test.each([
   ["an unpinned action", release.replace(/checkout@[0-9a-f]{40}/, "checkout@v4"), "not pinned to a 40-hex SHA"],
   ["a short SHA", release.replace(/checkout@[0-9a-f]{40}/, "checkout@11bd719"), "not pinned to a 40-hex SHA"],
   ["no release environment on the build", release.replace("  build:\n    needs: [test, notes]\n    environment: release\n", "  build:\n    needs: [test, notes]\n"), "'Build freewheel.app (macOS)' does not declare 'environment: release'"],
-  ["no release environment on the signing", release.replace("  publish:\n    needs: [build, notes]\n    environment: release\n", "  publish:\n    needs: [build, notes]\n"), "'Sign the packages' does not declare 'environment: release'"],
+  ["no release environment on the signing", release.replace("  upload:\n    needs: [build, notes]\n    environment: release\n", "  upload:\n    needs: [build, notes]\n"), "'Sign the packages' does not declare 'environment: release'"],
   ["an APPLE_ secret in the job env", release.replace("    runs-on: ${{ matrix.os }}\n", "    runs-on: ${{ matrix.os }}\n    env:\n      APPLE_ID: ${{ secrets.APPLE_ID }}\n"), "APPLE_* outside the 'Build freewheel.app (macOS)' step env"],
   ["a TAURI_SIGNING_ secret in another step", release.replace("      - run: npm ci\n", "      - run: npm ci\n        env:\n          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}\n"), "TAURI_SIGNING_* outside the 'Sign the packages' step env"],
   ["the signing key in the build", release.replace("          TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}\n        run: npm run tauri -- build --no-bundle", "          TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}\n          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}\n        run: npm run tauri -- build --no-bundle"), "TAURI_SIGNING_* outside"],
@@ -38,7 +40,7 @@ test("release.yml runs on v* tags (pushed, or dispatched on the tag by release-p
   expect(release).toMatch(/^ {2}test:\n {4}if: startsWith\(github\.ref, 'refs\/tags\/v'\)\n {4}uses: \.\/\.github\/workflows\/ci\.yml$/m);
   expect(release).toMatch(/^ {2}notes:\n {4}if: startsWith\(github\.ref, 'refs\/tags\/v'\)$/m);
   expect(release).toMatch(/^ {2}build:\n {4}needs: \[test, notes\]$/m);
-  expect(release).toMatch(/^ {2}publish:\n {4}needs: \[build, notes\]$/m);
+  expect(release).toMatch(/^ {2}upload:\n {4}needs: \[build, notes\]$/m);
   expect(release.match(/- os: \S+/g)).toEqual(["- os: windows-2025", "- os: macos-15", "- os: ubuntu-22.04"]);
   expect(release).not.toMatch(/\bstable\b|dtolnay\/rust-toolchain|self-hosted/);
   expect(release).toContain("rustup toolchain install");
@@ -47,7 +49,7 @@ test("release.yml runs on v* tags (pushed, or dispatched on the tag by release-p
   expect(release).toContain('test "v$version" = "$GITHUB_REF_NAME"');
 });
 
-test("release.yml uploads the portable packages, their signatures and latest.json with release-please's notes to the published release", () => {
+test("release.yml uploads the portable packages, their signatures and latest.json with release-please's notes to the draft release", () => {
   expect(release).not.toMatch(/tauri-action|releaseDraft|uploadUpdaterJson|nsis|NSIS|--bundles dmg|msi|setup\.exe/);
   expect(release).toContain("gh release view \"$GITHUB_REF_NAME\" --repo \"$GITHUB_REPOSITORY\" --json body --jq .body");
   expect(release).toContain("NOTES: ${{ needs.notes.outputs.body }}");
@@ -61,8 +63,91 @@ test("release.yml uploads the portable packages, their signatures and latest.jso
   expect(release).toContain('gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber packages/*');
   expect(release).toContain("node scripts/check-latest-json.mjs latest.json");
   expect(release).toContain('node scripts/verify-update-sig.mjs latest.json --version "$GITHUB_REF_NAME"');
-  expect(release).toContain("--json isDraft --jq .isDraft)\" = false");
-  expect(release).toMatch(/^ {2}update-e2e:\n {4}needs: latest-json\n {4}uses: \.\/\.github\/workflows\/update-e2e\.yml$/m);
+  expect(release).toMatch(/^ {2}update-e2e:\n {4}needs: publish\n {4}uses: \.\/\.github\/workflows\/update-e2e\.yml$/m);
+});
+
+/** The jobs of a workflow: name -> its lines (two-space indented keys under jobs:). */
+const jobsOf = (text) => {
+  const body = text.slice(text.indexOf("\njobs:\n") + 7);
+  return Object.fromEntries(body.split(/\n(?= {2}[a-z][\w-]*:\n)/).map((b) => [b.match(/^\s*([\w-]+):/)[1], b]));
+};
+const stepsOf = (job) => [...job.matchAll(/^ {6}- (?:name: (.+)|uses: (\S+)|run: (.+))$/gm)].map((m) => m[1] ?? m[2] ?? m[3]);
+
+test("a release stays a draft until its files and latest.json are on it and checked; publishing it is the last step", () => {
+  const jobs = jobsOf(release);
+  expect(Object.keys(jobs)).toEqual(["test", "notes", "build", "upload", "latest-json", "publish", "update-e2e"]);
+  // the chain: build -> upload (to the draft) -> latest-json (checks the draft) -> publish -> update-e2e
+  expect(jobs.upload).toMatch(/^ {4}needs: \[build, notes\]$/m);
+  expect(jobs["latest-json"]).toMatch(/^ {4}needs: upload$/m);
+  expect(jobs.publish).toMatch(/^ {4}needs: latest-json$/m);
+  expect(jobs["update-e2e"]).toMatch(/^ {4}needs: publish$/m);
+  // The only undraft is the publish job's, and every step before it requires a draft.
+  expect(release.match(/--draft=false/g)).toHaveLength(1);
+  expect(release.match(/--latest\b/g)).toHaveLength(1);
+  expect(jobs.publish).toContain('gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest');
+  expect(release).not.toContain("--json isDraft --jq .isDraft)\" = false\n          gh release");
+  expect(jobs.notes).toContain("--generate-notes --draft");
+  expect(jobs.notes).toContain("--json isDraft --jq .isDraft)\" = true");
+  expect(jobs.upload).toContain("--json isDraft --jq .isDraft)\" = true");
+  // The draft is checked before it is published: every file and latest.json pointing at this tag.
+  const check = 'node scripts/check-release-assets.mjs "$RUNNER_TEMP/release.json"';
+  expect(jobs["latest-json"]).toContain(`${check} draft/latest.json --repo "$GITHUB_REPOSITORY" --draft`);
+  expect(jobs["latest-json"]).toContain('node scripts/verify-update-sig.mjs draft/latest.json --version "$GITHUB_REF_NAME" --dir draft');
+  expect(jobs["latest-json"]).toMatch(/^ {6}contents: write/m); // drafts are hidden from read-only tokens
+  const publish = stepsOf(jobs.publish);
+  expect(publish.slice(-2)).toEqual(["Publish the release as the latest", "The public latest.json is this release's"]);
+  const step = jobs.publish.slice(jobs.publish.indexOf("Publish the release as the latest"));
+  expect(step.indexOf(`${check} "$RUNNER_TEMP/latest.json" --repo "$GITHUB_REPOSITORY" --draft`)).toBeGreaterThan(0);
+  expect(step.indexOf(`${check}`)).toBeLessThan(step.indexOf("--draft=false --latest"));
+  // After publishing, installed apps' URL serves this version.
+  expect(jobs.publish).toContain('url="https://github.com/$GITHUB_REPOSITORY/releases/latest/download/latest.json"');
+  expect(jobs.publish).toContain('node scripts/verify-update-sig.mjs latest.json --version "$GITHUB_REF_NAME"');
+  // update-e2e only lists published releases, so it must run after publish.
+  expect(e2eWorkflow).toContain("--exclude-drafts --exclude-pre-releases");
+});
+
+test("release-please makes the release a draft with its tag, so release.yml runs on the tag and the next version finds it", () => {
+  expect(rpConfig.draft).toBe(true);
+  expect(rpConfig["force-tag-creation"]).toBe(true);
+  expect(rpConfig.prerelease).toBeUndefined();
+  expect(rpConfig.packages["."].draft).toBeUndefined();
+  expect(read("../.github/workflows/release-please.yml")).toContain('gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"');
+});
+
+const v111 = JSON.parse(read("./fixtures/release-v1.1.1.json"));
+const v111Latest = JSON.parse(read("./fixtures/release-v1.1.1-latest.json"));
+const REPO = "brinkercode/freewheel";
+
+test("the release file check passes on the real v1.1.1 release and names each problem", () => {
+  expect(expectedAssets("1.1.1")).toEqual(v111.assets.map((a) => a.name).sort());
+  expect(releaseAssetProblems({ release: v111, latest: v111Latest, repo: REPO })).toEqual([]);
+  expect(releaseAssetProblems({ release: v111, latest: v111Latest, repo: REPO, draft: true })).toEqual(["v1.1.1 is already published, not a draft"]);
+  const draft = { ...v111, isDraft: true };
+  expect(releaseAssetProblems({ release: draft, latest: v111Latest, repo: REPO, draft: true })).toEqual([]);
+  const without = (name) => ({ ...draft, assets: draft.assets.filter((a) => a.name !== name) });
+  expect(releaseAssetProblems({ release: without("latest.json"), latest: v111Latest, repo: REPO, draft: true })).toEqual(["missing latest.json"]);
+  expect(releaseAssetProblems({ release: without("freewheel-1.1.1-macos-universal.dmg.sig"), latest: v111Latest, repo: REPO })).toEqual(["missing freewheel-1.1.1-macos-universal.dmg.sig"]);
+  expect(releaseAssetProblems({ release: { ...draft, assets: [] }, latest: v111Latest, repo: REPO })).toHaveLength(7 + 4);
+  const edit = (name, change) => ({ ...draft, assets: draft.assets.map((a) => (a.name === name ? { ...a, ...change } : a)) });
+  expect(releaseAssetProblems({ release: edit("freewheel-1.1.1-windows-x64.exe", { size: 0 }), latest: v111Latest, repo: REPO })).toEqual(["freewheel-1.1.1-windows-x64.exe is empty"]);
+  expect(releaseAssetProblems({ release: edit("freewheel-1.1.1-windows-x64.exe", { state: "starter" }), latest: v111Latest, repo: REPO })).toEqual(["freewheel-1.1.1-windows-x64.exe is starter, not uploaded"]);
+  expect(releaseAssetProblems({ release: { ...draft, assets: [...draft.assets, { name: "freewheel.zip", size: 1, state: "uploaded" }] }, latest: v111Latest, repo: REPO })).toEqual(["unexpected file freewheel.zip"]);
+});
+
+test("the release file check fails when latest.json is not this tag's", () => {
+  // the previous release's latest.json on the new tag's release
+  const v112 = { tagName: "v1.1.2", isDraft: true, assets: v111.assets.map((a) => ({ ...a, name: a.name.replace("1.1.1", "1.1.2") })) };
+  const problems = releaseAssetProblems({ release: v112, latest: v111Latest, repo: REPO, draft: true });
+  expect(problems).toContain("latest.json is version 1.1.1, not 1.1.2");
+  expect(problems).toContain("latest.json 'windows-x86_64' does not point at v1.1.2: https://github.com/brinkercode/freewheel/releases/download/v1.1.1/freewheel-1.1.1-windows-x64.exe");
+  // the right version, but one url at another tag
+  const moved = structuredClone(v111Latest);
+  moved.platforms["linux-x86_64"].url = moved.platforms["linux-x86_64"].url.replace("/v1.1.1/", "/v1.1.0/");
+  expect(releaseAssetProblems({ release: v111, latest: moved, repo: REPO })).toEqual([
+    "latest.json 'linux-x86_64' does not point at v1.1.1: https://github.com/brinkercode/freewheel/releases/download/v1.1.0/freewheel-1.1.1-linux-x86_64.AppImage",
+  ]);
+  expect(releaseAssetProblems({ release: v111, latest: v111Latest, repo: "someone/else" })).toHaveLength(4);
+  expect(releaseAssetProblems({ release: { tagName: "main", assets: [] }, latest: v111Latest, repo: REPO })).toEqual(["'main' is not a v* version tag"]);
 });
 
 test("what ships is checked: no e2e-only code, the pubkey baked in, the Windows zero-install gate, the macOS signature", () => {

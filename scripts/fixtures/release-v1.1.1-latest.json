@@ -1,0 +1,23 @@
+{
+  "version": "1.1.1",
+  "notes": "## 1.1.1 (2026-11-08)\n\n### Fixed\n\n* Keys keep working when a profile has no pages, closes\n* Release builds can only reach GitHub over HTTPS\n",
+  "pub_date": "2026-11-08T19:45:47.189Z",
+  "platforms": {
+    "windows-x86_64": {
+      "url": "https://github.com/brinkercode/freewheel/releases/download/v1.1.1/freewheel-1.1.1-windows-x64.exe",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRWlpoQ0tqTVZqZHRxWHVlNXgzQkJ6a2M3L3dhcS9VV2lUZDdnZVFlL2FaTG1RNmxaYUcyVFhZVStCTi9JYUt6U0RwSXlRcHlYMGdEZkRYanZwQ0RYU3Z2OVJhbFNaYmdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MTY3MTQ2CWZpbGU6ZnJlZXdoZWVsLTEuMS4xLXdpbmRvd3MteDY0LmV4ZQl2ZXJzaW9uOjEuMS4xCktIS3RaNVhGVTNNQ3JyZG5mT1JyYVhPckJNMjhzLzd3NHpWUnNwY0V2eGVPcDV2WGxBRGdrZkxRN1hxVDdFcUxya01oTmxKSGh5b0ljZllUVWc2dkR3PT0K"
+    },
+    "darwin-aarch64": {
+      "url": "https://github.com/brinkercode/freewheel/releases/download/v1.1.1/freewheel-1.1.1-macos-universal.dmg",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRWlpoQ0tqTVZqZG5mSzM0aWV0UkhqdW9CekRBeVZxZU15TC9mQmZORGlMVXJ1TFJqNWV0M296R2YyMHQ5T2ZUazY1NUttc0N0dmxNdFd4aTkwQU0wSDlVOWR2aWxVamd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MTY3MTQ2CWZpbGU6ZnJlZXdoZWVsLTEuMS4xLW1hY29zLXVuaXZlcnNhbC5kbWcJdmVyc2lvbjoxLjEuMQpxT0wxNm1VTTNSVEJ4RittNUtIaEZNamhOSHJxeThwRnZILzRUa0RNdGJ3dVNtNDJ3eTZvVFR1WUk3My9pN0hkUDgrK0lRbXM3OE1YKzQzdUJqU2xCdz09Cg=="
+    },
+    "darwin-x86_64": {
+      "url": "https://github.com/brinkercode/freewheel/releases/download/v1.1.1/freewheel-1.1.1-macos-universal.dmg",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRWlpoQ0tqTVZqZG5mSzM0aWV0UkhqdW9CekRBeVZxZU15TC9mQmZORGlMVXJ1TFJqNWV0M296R2YyMHQ5T2ZUazY1NUttc0N0dmxNdFd4aTkwQU0wSDlVOWR2aWxVamd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MTY3MTQ2CWZpbGU6ZnJlZXdoZWVsLTEuMS4xLW1hY29zLXVuaXZlcnNhbC5kbWcJdmVyc2lvbjoxLjEuMQpxT0wxNm1VTTNSVEJ4RittNUtIaEZNamhOSHJxeThwRnZILzRUa0RNdGJ3dVNtNDJ3eTZvVFR1WUk3My9pN0hkUDgrK0lRbXM3OE1YKzQzdUJqU2xCdz09Cg=="
+    },
+    "linux-x86_64": {
+      "url": "https://github.com/brinkercode/freewheel/releases/download/v1.1.1/freewheel-1.1.1-linux-x86_64.AppImage",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRWlpoQ0tqTVZqZHNITWVRdUQvVVdMdkRJVEJxeE5rY3ZIcGNKOVA0RFBFbXI5QWtPWFZTWjNwWHVLbG9pWHhKYU5sNUFzWkVIRy9FeVd6MGlkWWdXTVhDQ3lHN2lKQXdRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MTY3MTQ3CWZpbGU6ZnJlZXdoZWVsLTEuMS4xLWxpbnV4LXg4Nl82NC5BcHBJbWFnZQl2ZXJzaW9uOjEuMS4xCkxud2RPVXQ4S3NBWEE1bVpncjVBeHBNY1VIRFZzdTJJeFhJNEYxZ1Z1VWZZemxtemJVSm0zbEFrTDZ0WmhDcnBOcGdXMnlBMWEwZytpNlZDTGw3bUNRPT0K"
+    }
+  }
+}
