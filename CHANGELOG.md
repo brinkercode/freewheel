@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.1](https://github.com/brinkercode/freewheel/compare/v1.1.0...v1.1.1) (2026-11-08)
+
+
+### Fixed
+
+* keys keep working when a profile has no pages ([#208](https://github.com/brinkercode/freewheel/issues/208)) ([085c741](https://github.com/brinkercode/freewheel/commit/085c741db5f44af4b0601a4f072112b5ca87f7ab)), closes [#193](https://github.com/brinkercode/freewheel/issues/193)
+* release builds can only reach GitHub over HTTPS ([#192](https://github.com/brinkercode/freewheel/issues/192)) ([b859e40](https://github.com/brinkercode/freewheel/commit/b859e40d25f386b6492d7e5323edbea1b19b39b7))
+
 ## [1.1.0](https://github.com/brinkercode/freewheel/compare/v1.0.0...v1.1.0) (2026-11-08)
 
 
