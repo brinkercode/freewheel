@@ -20,3 +20,10 @@ The Apache License 2.0 text is in LICENSES/Apache-2.0.txt.
 
 No third-party code is used in freewheel beyond what this NOTICE lists.
 Dependencies fetched by Cargo and npm keep their own licenses.
+
+freewheel is not affiliated with Blackmagic Design. Speed Editor and DaVinci
+Resolve are trademarks of Blackmagic Design.
+
+The README banner draws "freewheel" in Coiny (Marcelo Magalhaes) and its
+tagline in Inter (The Inter Project Authors), both under the SIL Open Font
+License 1.1, as outlines.
