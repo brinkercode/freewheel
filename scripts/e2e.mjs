@@ -2102,7 +2102,7 @@ export async function main(platform, argv = process.argv.slice(2)) {
         return readFileSync(join(dialogs, "freewheel-mappings.json"), "utf8");
       };
       const text = await backUp();
-      const main = JSON.parse(text).profiles?.Main;
+      const main = JSON.parse(text).pages?.Main;
       if (JSON.stringify(main?.CAM1) !== JSON.stringify(cam1) || JSON.stringify(main?.CAM2) !== JSON.stringify(cam2))
         throw new Error(`the backup lost an OS's app:\n${text}`);
       say(`  exported: CAM1 ${JSON.stringify(main.CAM1)}, CAM2 ${JSON.stringify(main.CAM2)}`);
@@ -2123,7 +2123,7 @@ export async function main(platform, argv = process.argv.slice(2)) {
         if (!a || a.path === roundTrip || JSON.stringify(a.per_os) !== JSON.stringify(cam1.open)) throw new Error(JSON.stringify(a));
         return true;
       });
-      const again = JSON.parse(await backUp()).profiles?.Main?.CAM1;
+      const again = JSON.parse(await backUp()).pages?.Main?.CAM1;
       if (Object.keys(cam1.open).some((k) => k !== platform && again?.open?.[k] !== cam1.open[k]) || !again?.open?.[platform] || again.open[platform] === roundTrip)
         throw new Error(`after a new pick the backup is ${JSON.stringify(again)}`);
       say(`  after picking ${first}: ${JSON.stringify(again)}`);
