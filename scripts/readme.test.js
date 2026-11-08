@@ -68,3 +68,14 @@ test("the README's relative links point at files that exist", () => {
   for (const [, link] of readme.matchAll(/\]\(((?!https?:|#)[^)]+)\)/g))
     if (link !== "SCHEMA.md") expect(existsSync(new URL(`../${link}`, import.meta.url)), link).toBe(true);
 });
+
+test("the header's badges: the latest release's build, and the license, with no external badge service", () => {
+  const header = readme.slice(0, readme.indexOf("## What it does"));
+  expect(header).toContain('<a href="https://github.com/brinkercode/freewheel/releases/latest"><img src="https://github.com/brinkercode/freewheel/actions/workflows/release.yml/badge.svg" alt="Release build"></a>');
+  expect(header).toContain('<a href="LICENSE"><img src=".github/assets/license-mit.svg" alt="License: MIT"></a>');
+  expect(header).not.toMatch(/shields\.io|workflows\/ci\.yml/);
+  expect(existsSync(new URL("../.github/assets/license-mit.svg", import.meta.url))).toBe(true);
+  // The release workflow runs only for version tags, so its badge is the latest release's build.
+  const release = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
+  expect(release).toMatch(/^on:\r?\n  push:\r?\n    tags: \["v\*"\]\r?\n  workflow_dispatch:/m);
+});
