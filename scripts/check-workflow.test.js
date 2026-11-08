@@ -130,12 +130,14 @@ test("ci.yml triggers exactly as written, and cancels superseded runs", () => {
     "  workflow_call:",
   ].join("\n"));
   expect(ci).not.toMatch(/pull_request_target|schedule:/);
-  expect(ci).toMatch(/^concurrency:\r?\n  group: ci-\$\{\{ github\.workflow \}\}-\$\{\{ github\.ref \}\}\r?\n  cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}$/m);
+  expect(ci).toMatch(/^concurrency:\r?\n  group: ci-\$\{\{ github\.workflow \}\}-\$\{\{ github\.event_name == 'pull_request' && github\.ref \|\| github\.run_id \}\}\r?\n  cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}$/m);
 });
 
-test("a push to main never cancels a run: only a pull request's newer push does", () => {
+test("a push to main never cancels a run, and is never cancelled while it waits", () => {
   for (const f of readdirSync(new URL("../.github/workflows/", import.meta.url))) {
     const wf = readFileSync(new URL(`../.github/workflows/${f}`, import.meta.url), "utf8");
     expect(wf, f).not.toMatch(/cancel-in-progress: true/);
+    // A group keyed by the ref alone holds one pending run per branch: a third push cancels it.
+    if (/^  push:\r?\n    branches: \[main\]/m.test(wf)) expect(wf, f).not.toMatch(/^  group: [^\n]*-\$\{\{ github\.ref \}\}\r?$/m);
   }
 });
