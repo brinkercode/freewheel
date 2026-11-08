@@ -570,7 +570,13 @@ pub fn wait_after_update(args: impl IntoIterator<Item = String>, timeout: Durati
         return;
     };
     let pid = sysinfo::Pid::from_u32(pid);
-    let mut sys = sysinfo::System::new();
+    let mut sys = match sysinfo::System::new() {
+        Ok(sys) => sys,
+        Err(e) => {
+            tracing::warn!(%pid, error = %e, "after update: can't read the process list");
+            return;
+        }
+    };
     let end = std::time::Instant::now() + timeout;
     loop {
         sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);

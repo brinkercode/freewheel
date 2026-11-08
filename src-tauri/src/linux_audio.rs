@@ -211,7 +211,9 @@ pub fn step_streams(
 
 /// True when `pid` descends from `ancestor` (sysinfo's parent links).
 pub fn descends_from(pid: u32, ancestor: u32) -> bool {
-    let mut sys = sysinfo::System::new();
+    let Ok(mut sys) = sysinfo::System::new() else {
+        return false;
+    };
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
     let mut at = sysinfo::Pid::from_u32(pid);
     for _ in 0..32 {
