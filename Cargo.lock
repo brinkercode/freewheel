@@ -1127,7 +1127,7 @@ dependencies = [
 
 [[package]]
 name = "freewheel"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "base64 0.23.1",
  "core-foundation",
@@ -1166,7 +1166,7 @@ dependencies = [
 
 [[package]]
 name = "freewheel-core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "directories",
  "serde",
