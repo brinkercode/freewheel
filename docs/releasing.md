@@ -149,38 +149,38 @@ unchanged and no `.old` or temp download left.
   `googleapis/release-please-action@*` is an allowed action; the `release`
   environment allows `v*` tags.
 
-## First release (v0.1.0)
+## First release (v1.0.0)
 
-`release-please-config.json` has `"release-as": "0.1.0"` for the first
+`release-please-config.json` has `"release-as": "1.0.0"` for the first
 release only.
 
-1. Merge the release PR `chore(main): release 0.1.0` once its checks are green
+1. Merge the release PR `chore(main): release 1.0.0` once its checks are green
    (rebase it on main first if release-please has not refreshed it since the
    portable-update change: its version files must match).
-2. Watch `release-please`, then `release` on the `v0.1.0` tag. `update-e2e`
+2. Watch `release-please`, then `release` on the `v1.0.0` tag. `update-e2e`
    is skipped (no older release).
 3. Check the release lists the `.exe` and the `.dmg`, their `.sig` files and
    `latest.json`,
    and that
    `https://github.com/brinkercode/freewheel/releases/latest/download/latest.json`
-   shows `"version": "0.1.0"`, the notes, and both file URLs.
-4. By hand: download `freewheel-0.1.0-windows-x64.exe` and run it;
+   shows `"version": "1.0.0"`, the notes, and both file URLs.
+4. By hand: download `freewheel-1.0.0-windows-x64.exe` and run it;
    General → Check for updates says You're up to date.
 
-## A patch (v0.1.1)
+## A patch (v1.0.1)
 
-1. In one PR: remove `"release-as": "0.1.0"` from `release-please-config.json`
+1. In one PR: remove `"release-as": "1.0.0"` from `release-please-config.json`
    and include a small `fix:` change (the PR title is the squash commit, so
    it must start with `fix:`).
-2. Merge it; release-please opens `chore(main): release 0.1.1`. Merge that.
-3. `release.yml` on `v0.1.1` ends with `update-e2e`, which downloads v0.1.0's
-   exe into a folder and updates it to v0.1.1 headless, then checks the same
-   path runs 0.1.1, its `.old` copy and the temp download are gone and a second
+2. Merge it; release-please opens `chore(main): release 1.0.1`. Merge that.
+3. `release.yml` on `v1.0.1` ends with `update-e2e`, which downloads v1.0.0's
+   exe into a folder and updates it to v1.0.1 headless, then checks the same
+   path runs 1.0.1, its `.old` copy and the temp download are gone and a second
    check is up to date. It can also be run by hand: Actions → update-e2e →
    Run workflow (optionally with the tag to start from).
-4. By hand: the v0.1.0 exe from step 4 above, started, offers 0.1.1;
+4. By hand: the v1.0.0 exe from step 4 above, started, offers 1.0.1;
    Download and install → Restart to update → the same
-   `freewheel-0.1.0-windows-x64.exe` file is now 0.1.1, What's new in v0.1.1
+   `freewheel-1.0.0-windows-x64.exe` file is now 1.0.1, What's new in v1.0.1
    shows, your keys are unchanged.
 
 ## Manual checklist
