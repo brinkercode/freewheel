@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.1.2](https://github.com/brinkercode/freewheel/compare/v1.1.1...v1.1.2) (2026-11-08)
+
+
+### Fixed
+
+* --simulate no longer changes the real app's first run or What's new ([#219](https://github.com/brinkercode/freewheel/issues/219)) ([72e26b9](https://github.com/brinkercode/freewheel/commit/72e26b948a84c6211cc411efc7fc7c4183e39038))
+* a backup with pages named Ärger and ärger restores, and each page key goes to its own page ([#209](https://github.com/brinkercode/freewheel/issues/209)) ([e06319d](https://github.com/brinkercode/freewheel/commit/e06319de72dc4d86a27ff73eecb7f4ce22612b29)), closes [#194](https://github.com/brinkercode/freewheel/issues/194)
+* keys can be picked with the keyboard, in settings and the Simulator ([#213](https://github.com/brinkercode/freewheel/issues/213)) ([4b1b437](https://github.com/brinkercode/freewheel/commit/4b1b4376c20e8aa99a916d2f27f6a16478af1955))
+* page names can't be left blank or doubled, and long names keep their buttons in reach ([#211](https://github.com/brinkercode/freewheel/issues/211)) ([426e05e](https://github.com/brinkercode/freewheel/commit/426e05eae60d96b38844785d70419a3992734e72))
+* profiles for apps picked as an AppImage switch on when the app is in front ([#218](https://github.com/brinkercode/freewheel/issues/218)) ([6705cc0](https://github.com/brinkercode/freewheel/commit/6705cc04db0a01297754b35f9f143d4f8d7d54fb))
+* restored Resolve program and low-battery warning apply without a restart ([#216](https://github.com/brinkercode/freewheel/issues/216)) ([ac345e5](https://github.com/brinkercode/freewheel/commit/ac345e536558f668c6ebe977af8630798e05a803)), closes [#196](https://github.com/brinkercode/freewheel/issues/196)
+* shortcuts on the ß key stay on ß instead of becoming SS ([#210](https://github.com/brinkercode/freewheel/issues/210)) ([4308645](https://github.com/brinkercode/freewheel/commit/4308645e976b517075641c70cab9234be7334a83)), closes [#195](https://github.com/brinkercode/freewheel/issues/195)
+* start at login works from a folder with a space in its path ([#212](https://github.com/brinkercode/freewheel/issues/212)) ([d4d73da](https://github.com/brinkercode/freewheel/commit/d4d73da8f1a4b880e94a9196115af044be9aa519))
+* the Wheel tab shows the wheel button your Speed Editor has lit ([#214](https://github.com/brinkercode/freewheel/issues/214)) ([00c2321](https://github.com/brinkercode/freewheel/commit/00c2321e35fa202eef6bf1e0f90678d8afbef98d))
+* updating without the AppImage says why instead of blaming the connection ([#217](https://github.com/brinkercode/freewheel/issues/217)) ([0211c61](https://github.com/brinkercode/freewheel/commit/0211c61be0149181992eb6efe9014f4f398bfcfb))
+
 ## [1.1.1](https://github.com/brinkercode/freewheel/compare/v1.1.0...v1.1.1) (2026-11-08)
 
 
