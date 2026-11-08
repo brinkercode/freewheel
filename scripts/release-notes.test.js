@@ -329,3 +329,11 @@ test("one cleanup: the app's What's new runs this script's appNotes (src/release
   const curated = readFileSync(new URL("../release-notes/v1.0.0.md", import.meta.url), "utf8");
   expect(app.appNotes(curated)).toContain("### What you can do");
 });
+
+test("app bullets start with a capital, but names keep their case (freewheel, macOS)", async () => {
+  const { appBullet } = await import("../src/releaseNotes.js");
+  expect(appBullet("**keys:** a key opens a folder ([#3](https://github.com/brinkercode/freewheel/issues/3))")).toBe("A key opens a folder");
+  expect(appBullet("freewheel starts faster")).toBe("freewheel starts faster");
+  expect(appBullet("macOS 15 (Apple Silicon and Intel): x.dmg")).toBe("macOS 15 (Apple Silicon and Intel): x.dmg");
+  expect(appBullet("iPhone-style toggles")).toBe("iPhone-style toggles");
+});

@@ -123,10 +123,11 @@ const SCOPE_LABEL = /^\*\*[^*:]+:\*\*\s*/;
 /** "## [0.1.1](…/compare/v0.1.0...v0.1.1) (2026-11-20)" -> "## 0.1.1 (2026-11-20)". */
 const VERSION_LINK = /^(#{1,6}\s+)\[(v?\d+\.\d+\.\d+[^\]]*)\]\([^)]*\)/;
 
-/** One bullet as What's new shows it: no scope label, no PR link, a capital first letter (freewheel stays lowercase). */
+/** One bullet as What's new shows it: no scope label, no PR link, a capital first letter (freewheel and macOS keep theirs). */
 export function appBullet(text) {
   let t = String(text).replace(SCOPE_LABEL, "").replace(PR_LINK, "").trim();
-  if (!/^freewheel\b/.test(t)) t = t.replace(/^[a-z]/, (c) => c.toUpperCase());
+  // Names keep their case: freewheel, macOS, iPhone.
+  if (!/^(freewheel\b|[a-z]+[A-Z])/.test(t)) t = t.replace(/^[a-z]/, (c) => c.toUpperCase());
   return t;
 }
 
