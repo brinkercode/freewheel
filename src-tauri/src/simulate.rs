@@ -609,6 +609,52 @@ pub fn note<R: tauri::Runtime>(app: &tauri::AppHandle<R>, line: impl Into<String
     }
 }
 
+/// How long the main thread may not answer before the log says it is
+/// blocked ([`watch_main_thread`]).
+pub const MAIN_THREAD_STALL: Duration = Duration::from_secs(2);
+
+/// `--simulate`: a freeze shows in the log. A thread keeps asking the main
+/// thread for a round trip, one after another; when an answer takes over
+/// [`MAIN_THREAD_STALL`], it logs that the main thread is blocked (and,
+/// once it answers, for how long), so a stuck UI step in the e2e can be told
+/// from a deadlock by the log's timeline.
+pub fn watch_main_thread<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
+    std::thread::spawn(move || {
+        loop {
+            let (tx, rx) = mpsc::channel();
+            let asked = std::time::Instant::now();
+            if app
+                .run_on_main_thread(move || {
+                    let _ = tx.send(());
+                })
+                .is_err()
+            {
+                return;
+            }
+            match rx.recv_timeout(MAIN_THREAD_STALL) {
+                Ok(()) => {}
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    tracing::warn!(
+                        ms = MAIN_THREAD_STALL.as_millis() as u64,
+                        "main thread blocked: no answer"
+                    );
+                    if rx.recv().is_err() {
+                        return;
+                    }
+                    tracing::warn!(
+                        ms = asked.elapsed().as_millis() as u64,
+                        "main thread answers again"
+                    );
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => return,
+            }
+            // The watchdog's own pace (one round trip a second), not a wait
+            // in any flow.
+            std::thread::sleep(Duration::from_secs(1).saturating_sub(asked.elapsed()));
+        }
+    });
+}
+
 /// Whether this run is `--simulate` (the [`SimHandle`] is managed only then).
 pub fn simulating<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
     use tauri::Manager;

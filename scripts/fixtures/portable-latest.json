@@ -4,15 +4,15 @@
   "pub_date": "2026-11-08T12:00:00.000Z",
   "platforms": {
     "windows-x86_64": {
-      "url": "https://github.com/brinkercode/freewheel/releases/download/v0.1.1/freewheel-0.1.1-windows-x64.zip",
+      "url": "https://github.com/brinkercode/freewheel/releases/download/v0.1.1/freewheel-0.1.1-windows-x64.exe",
       "signature": "c2ln"
     },
     "darwin-aarch64": {
-      "url": "https://github.com/brinkercode/freewheel/releases/download/v0.1.1/freewheel-0.1.1-macos-universal.zip",
+      "url": "https://github.com/brinkercode/freewheel/releases/download/v0.1.1/freewheel-0.1.1-macos-universal.dmg",
       "signature": "c2ln"
     },
     "darwin-x86_64": {
-      "url": "https://github.com/brinkercode/freewheel/releases/download/v0.1.1/freewheel-0.1.1-macos-universal.zip",
+      "url": "https://github.com/brinkercode/freewheel/releases/download/v0.1.1/freewheel-0.1.1-macos-universal.dmg",
       "signature": "c2ln"
     }
   }

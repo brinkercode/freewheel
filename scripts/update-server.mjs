@@ -1,6 +1,6 @@
 // The Windows update e2e's local release server (scripts/e2e-update-windows.mjs):
 // serves a release's latest.json (scripts/portable-release.mjs) and its
-// portable package on 127.0.0.1, as GitHub's release download URLs would.
+// release file (the exe) on 127.0.0.1, as GitHub's release download URLs would.
 // Never used by a shipped build: only e2e builds (the `e2e` cargo feature)
 // read FREEWHEEL_E2E_UPDATE_URL and allow plain http to 127.0.0.1.
 //
@@ -64,7 +64,7 @@ export function startUpdateServer({ manifest, package: pkg, port = 0, mode = "fa
     }
     if (decodeURIComponent(req.url.slice(1)) === name) {
       const data = current === "tampered" ? bad : good;
-      res.writeHead(200, { "content-type": "application/zip", "content-length": data.length });
+      res.writeHead(200, { "content-type": "application/octet-stream", "content-length": data.length });
       let i = 0;
       const next = () => {
         if (i >= parts.length) return res.end();

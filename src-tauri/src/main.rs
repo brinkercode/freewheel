@@ -408,6 +408,7 @@ fn main() {
                     receiver,
                 );
                 simulate::open_window(app.handle())?;
+                simulate::watch_main_thread(app.handle().clone());
             } else {
                 spawn_device(app.handle().clone(), config, tray, receiver);
                 spawn_permission_watch(app.handle().clone());

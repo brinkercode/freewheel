@@ -32,9 +32,10 @@ click the tray menu's items, and jump the settings window to any screen.
   `would press Ctrl+C`). Tick **Send for real** to send it to the focused app.
 - Window titles contain "Simulator".
 
-On Windows, `freewheel-simulate.cmd` (in `src-tauri/windows/`, and next to
-the exe in the test-build and e2e artifacts) starts `freewheel.exe
---simulate` with a double-click. Release zips do not include it.
+On Windows, `freewheel-simulate.cmd` (in `src-tauri/windows/`, and an
+artifact of its own next to the `freewheel.exe` artifact in the test-build
+and e2e runs: download both into one folder) starts `freewheel.exe
+--simulate` with a double-click. Releases do not include it.
 
 <img alt="The Simulator window: the simulated Speed Editor's keys, wheel, log, connection and tray menu" src="images/simulator.png" width="320">
 

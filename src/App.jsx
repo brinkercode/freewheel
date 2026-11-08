@@ -4,6 +4,7 @@ import { WhatsNewNotice, WhatsNewPage } from "./WhatsNew.jsx";
 import { markSeen, openReleasePage, rememberNotes, whatsNew } from "./whatsNew.js";
 import { checkNow, download, restart, startupCheck } from "./updater.js";
 import { simRelaunch } from "./simUpdate.js";
+import { trace } from "./trace.js";
 import { awaitRestart, rustUpdates } from "./selfUpdate.js";
 import General, { applyAppearance, changeSetting, switchLogin } from "./General.jsx";
 import Simulator from "./Simulator.jsx";
@@ -50,7 +51,15 @@ export default function App({ autoUpdate = true, storage = globalThis.localStora
  * first run / permission fix in place of all of it) and the toast.
  */
 function Settings({ autoUpdate, storage }) {
-  const [update, setUpdate] = useState(null);
+  const [update, setUpdateState] = useState(null);
+  // Every change of update state is traced (src/trace.js; progress only once per status).
+  const lastTraced = useRef(null);
+  const setUpdate = (s) => {
+    const status = s?.status ?? null;
+    if (status !== lastTraced.current) trace("update", { status, version: s?.version, during: s?.during, message: s?.message });
+    lastTraced.current = status;
+    setUpdateState(s);
+  };
   const [tab, setTab] = useState(TABS[0]);
   const [status, setStatus] = useState(null);
   const [config, setConfig] = useState(null);
@@ -130,7 +139,10 @@ function Settings({ autoUpdate, storage }) {
       onStatus(setStatus),
       onFixPermissions(() => setFixing(true)),
       // The tray's 'Check for updates' / 'Restart to update' item.
-      onTrayUpdate((action) => trayActions.current[action]?.()),
+      onTrayUpdate((action) => {
+        trace("tray", { action, pending: pending.current?.version ?? null, status: current.current.update?.status ?? null });
+        trayActions.current[action]?.();
+      }),
       // The tray's 'Download logs for support…' opens Help & backup, which says where they went.
       onLogsSaved((saved) => {
         setFixing(false);
@@ -143,7 +155,7 @@ function Settings({ autoUpdate, storage }) {
     // built or loading arrives now (app_windows.rs settings_ready). A status
     // change between get_status and its listener is read again.
     Promise.allSettled([...unlisten, sim.ready])
-      .then(() => settingsReady())
+      .then(() => (trace("page ready"), settingsReady()))
       .then(() => getStatus().then(setStatus))
       .catch((e) => console.error("freewheel: the settings window could not say it is ready:", String(e)));
     return () => {
@@ -173,6 +185,7 @@ function Settings({ autoUpdate, storage }) {
       check,
       relaunch: (u) =>
         simRelaunch(() => {
+          trace("restarted", { version: u.version });
           pending.current = null;
           setSimVersion(u.version);
           setUpdate(null);
@@ -201,9 +214,10 @@ function Settings({ autoUpdate, storage }) {
   const onDownload = () => (pending.current ? download(pending.current, setUpdate) : runCheck(true));
   const onRestart = () => {
     const u = pending.current;
-    if (!u) return;
+    if (!u) return trace("restart: nothing downloaded");
     const { relaunch: again } = source();
-    restart(u, () => again(u), setUpdate, (up) => rememberNotes(storage, up));
+    const install = () => (trace("install", { version: u.version }), u.install().then((r) => (trace("installed", { result: r }), r)));
+    restart({ ...u, install }, () => (trace("relaunch"), again(u)), setUpdate, (up) => rememberNotes(storage, up));
   };
   trayActions.current = { check: onCheck, download: onDownload, restart: onRestart };
   const state = fromStatusEvent(status ?? { connection: "Absent" });

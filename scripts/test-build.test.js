@@ -38,14 +38,20 @@ test("test-build job builds the portable exe on hosted Windows, no installer, no
   for (const uses of wf.match(/uses: \S+/g)) expect(uses).toMatch(/@[0-9a-f]{40}$/);
 });
 
-test("test-build job uploads only the portable freewheel.exe and freewheel-simulate.cmd, kept 1 day", () => {
-  const upload = wf.match(/- uses: actions\/upload-artifact@[0-9a-f]{40}.*\r?\n((?:\s{8,}.*\r?\n)*)/);
-  expect(upload).not.toBeNull();
-  expect(upload[1]).toMatch(/^\s+retention-days: 1$/m);
-  expect(upload[1]).toMatch(/^\s+if-no-files-found: error$/m);
-  expect(upload[1]).toMatch(/^\s+path: test-build$/m);
-  expect(wf).toContain("cp target/release/freewheel.exe src-tauri/windows/freewheel-simulate.cmd test-build/");
-  expect(upload[1]).not.toMatch(/bundle|setup/);
+test("test-build uploads freewheel.exe and freewheel-simulate.cmd unzipped, one artifact each, kept 1 day", () => {
+  const uploads = [...wf.matchAll(/- name: (Upload .*)\r?\n\s+uses: (actions\/upload-artifact@[0-9a-f]{40}) # (v\S+)\r?\n\s+with:\r?\n((?:\s{10,}.*\r?\n?)*)/g)];
+  expect(uploads.map((u) => u[1])).toEqual(["Upload freewheel.exe", "Upload freewheel-simulate.cmd"]);
+  for (const [, , uses, version, body] of uploads) {
+    // `archive: false` (one file, not zipped) needs upload-artifact v7.
+    expect(uses).toBe("actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9");
+    expect(version).toBe("v7.0.2");
+    expect(body).toMatch(/^\s+archive: false$/m);
+    expect(body).toMatch(/^\s+retention-days: 1$/m);
+    expect(body).toMatch(/^\s+if-no-files-found: error$/m);
+    expect(body).not.toMatch(/bundle|setup|name:/);
+  }
+  expect(uploads[0][4]).toMatch(/^\s+path: target\/release\/freewheel\.exe$/m);
+  expect(uploads[1][4]).toMatch(/^\s+path: src-tauri\/windows\/freewheel-simulate\.cmd$/m);
 });
 
 test("freewheel-simulate.cmd starts the exe next to it with --simulate, CRLF", () => {
@@ -66,7 +72,8 @@ test("test-build runs release.yml's checks after the build and before the upload
   expect(gate).toBeGreaterThan(build);
   expect(e2e).toBeGreaterThan(gate);
   expect(upload).toBeGreaterThan(e2e);
-  expect(upload).toBe(wf.lastIndexOf("uses: actions/upload-artifact"));
+  // Both uploads come after every check.
+  expect(wf.lastIndexOf("uses: actions/upload-artifact")).toBeGreaterThan(upload);
 });
 
 test("a failed check fails the job, so nothing is uploaded", () => {

@@ -42,13 +42,13 @@ the draft unpublished. Open one issue from this template per release and tick th
 - [ ] Battery: on Bluetooth the tray tooltip shows the battery level, and one notification appears when it drops below 15%.
 - [ ] Start at login: on a fresh install the tray's "Start at login" is unchecked. Checking it adds freewheel to Settings > Apps > Startup and freewheel starts after signing out and in; unchecking it removes the entry and freewheel no longer starts. The checkbox matches the Startup entry after a restart, including when the entry was switched off there.
 - [ ] Import and export: export writes freewheel-mappings.json; importing it asks for confirmation, backs up the current config first, and an imported LaunchApp stays disabled until opted in.
-- [ ] SmartScreen on install: running the unzipped, unsigned `freewheel.exe` the first time shows SmartScreen or not (record what is shown); "More info > Run anyway" starts it.
-- [ ] Update: unzipping the previous release into a folder and starting it offers the new version; accepting downloads it with progress, Restart to update restarts into it from the same folder, What's new shows, the keys and settings are unchanged and `freewheel.exe.old` is gone. SmartScreen on update: record whether the updated exe prompts again (it should not: the app downloads it, so it has no mark of the web). In a folder you can't change (Program Files) the update says to move freewheel or download it.
+- [ ] SmartScreen on install: running the downloaded, unsigned `freewheel-<version>-windows-x64.exe` the first time shows SmartScreen or not (record what is shown); "More info > Run anyway" starts it.
+- [ ] Update: downloading the previous release's exe and starting it offers the new version; accepting downloads it with progress, Restart to update restarts into it from the same file (same name, same folder), What's new shows, the keys and settings are unchanged and its `.old` copy is gone. SmartScreen on update: record whether the updated exe prompts again (it should not: the app downloads it, so it has no mark of the web). In a folder you can't change (Program Files) the update says to move freewheel or download it.
 - [ ] [T3] Update with a tampered .sig: serving a latest.json whose signature is altered (one character changed) makes the update fail with a signature error and is rejected; the folder's version is unchanged.
 
 ### macOS 15 (Apple Silicon and Intel)
 
-Run every item on an Apple Silicon Mac and on an Intel Mac, from the universal zip.
+Run every item on an Apple Silicon Mac and on an Intel Mac, from the universal .dmg (open it: freewheel.app and an Applications link; dragging copies the app).
 
 - [ ] [C9a] USB: plugged in, the Speed Editor opens and authenticates (status shows connected over USB); a Press fires its binding and a Jog turn scrolls.
 - [ ] [C9a] Bluetooth: paired and with the USB cable out, the Speed Editor opens and authenticates (status shows connected over Bluetooth); a Press fires its binding and a Jog turn scrolls.
@@ -68,7 +68,7 @@ Run every item on an Apple Silicon Mac and on an Intel Mac, from the universal z
 - [ ] Battery: on Bluetooth the menu bar tooltip shows the battery level, and one notification appears when it drops below 15%.
 - [ ] Start at login: on a fresh install the menu bar's "Start at login" is unchecked. Checking it adds freewheel to System Settings > General > Login Items and freewheel starts after logging out and in; unchecking it removes the item and freewheel no longer starts. The checkbox matches Login Items after a restart, including when the item was removed there.
 - [ ] Import and export: export writes freewheel-mappings.json; importing it asks for confirmation, backs up the current config first, and an imported LaunchApp stays disabled until opted in.
-- [ ] Update: unzipping the previous release, moving freewheel.app to Applications and starting it offers the new version; accepting downloads it, Restart to update replaces freewheel.app in place and restarts into it (no Gatekeeper prompt), What's new shows, Login Items and Accessibility/Input Monitoring still list freewheel (record whether the permissions had to be granted again: ad-hoc signed builds may need it), and `freewheel.app.old` is gone.
+- [ ] Update: opening the previous release's .dmg, dragging freewheel.app to Applications and starting it offers the new version; accepting downloads it, Restart to update replaces freewheel.app in place and restarts into it (no Gatekeeper prompt), What's new shows, Login Items and Accessibility/Input Monitoring still list freewheel (record whether the permissions had to be granted again: ad-hoc signed builds may need it), and `freewheel.app.old` is gone.
 - [ ] [T3] Update with a tampered .sig: serving a latest.json whose signature is altered (one character changed) makes the update fail with a signature error and is rejected; the app's version is unchanged.
 
 ### Open items the hardware spike left unconfirmed

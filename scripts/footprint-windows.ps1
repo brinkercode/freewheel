@@ -1,6 +1,7 @@
 # Windows probes for scripts/footprint-windows.mjs (one call per probe):
 #   procs              every process as JSON: pid, parent, name, working set,
-#                      private bytes, CPU time (100 ns units)
+#                      private bytes, CPU time (100 ns units), start time
+#                      (ms since 1970: a reused parent pid is told apart)
 #   windows -Pids a,b  the visible top-level app windows (title freewheel…)
 #                      of those processes
 #   close   -Pids a,b  asks each of them to close (WM_CLOSE, as the title
@@ -21,6 +22,7 @@ if ($Action -eq "procs") {
         workingSet = [int64]$_.WorkingSetSize
         privateBytes = [int64]$_.PrivatePageCount
         cpu100ns = [int64]$_.KernelModeTime + [int64]$_.UserModeTime
+        created = if ($_.CreationDate) { [DateTimeOffset]::new($_.CreationDate).ToUnixTimeMilliseconds() } else { 0 }
       }
     } | ConvertTo-Json -Compress -Depth 2
   exit 0

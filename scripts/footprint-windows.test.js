@@ -26,8 +26,22 @@ test("the app's tree is freewheel.exe and every WebView2 process under it, nothi
     privateBytes: 70 * MB,
     webviewWorkingSet: 120 * MB,
     webviewPrivateBytes: 60 * MB,
+    names: ["freewheel.exe", "msedgewebview2.exe", "msedgewebview2.exe", "msedgewebview2.exe"],
   });
   expect(tree(procs, 99)).toEqual([]);
+});
+
+test("a process whose parent pid was reused by the app is not the app's child", () => {
+  const at = (p, created) => ({ ...p, created });
+  const procs = [
+    at(proc(10, 1, "freewheel-0.1.0-windows-x64.exe", 20), 5000),
+    // Started (by an earlier owner of pid 10) before the app: not its child.
+    at(proc(30, 10, "conhost.exe", 36), 1000),
+    at(proc(11, 10, "msedgewebview2.exe", 30), 6000),
+    at(proc(12, 11, "msedgewebview2.exe", 40), 7000),
+  ];
+  expect(tree(procs, 10).map((p) => p.pid)).toEqual([10, 11, 12]);
+  expect(read("./footprint-windows.ps1")).toContain("ToUnixTimeMilliseconds()");
 });
 
 test("idle CPU is the tree's CPU time over the wall time, per core and per machine", () => {
@@ -41,7 +55,7 @@ test("idle CPU is the tree's CPU time over the wall time, per core and per machi
 
 const result = (trayMB, cpu) => ({
   exe: 10 * MB,
-  package: 3 * MB,
+  exeName: "freewheel-0.1.0-windows-x64.exe",
   modes: {
     normal: {
       memory: { open: memory([proc(1, 0, "freewheel.exe", 200)]), tray: memory([proc(1, 0, "freewheel.exe", trayMB)]) },
@@ -52,7 +66,7 @@ const result = (trayMB, cpu) => ({
 });
 
 test("a number over its budget fails; a missing budget is not checked", () => {
-  const b = { exeMB: 12, packageMB: 4, idleCpuPercentOfOneCore: 1, modes: { normal: { diskMB: 8, tray: { workingSetMB: 30, privateMB: 20 } } } };
+  const b = { exeMB: 12, idleCpuPercentOfOneCore: 1, modes: { normal: { diskMB: 8, tray: { workingSetMB: 30, privateMB: 20 } } } };
   expect(overBudget(result(20, 0.1), b)).toEqual([]);
   expect(overBudget(result(40, 2), b)).toEqual([
     "normal tray working set MB: 40.00 > budget 30",
@@ -65,8 +79,8 @@ test("a number over its budget fails; a missing budget is not checked", () => {
 test("the summary is a table per mode with sizes, disk and CPU", () => {
   const r = { ...result(20, 0.05), problems: [] };
   const md = summary(r);
-  expect(md).toContain("| freewheel.exe | 10.0 MB |");
-  expect(md).toContain("| portable zip | 3.0 MB |");
+  expect(md).toContain("| freewheel-0.1.0-windows-x64.exe (the download) | 10.0 MB |");
+  expect(md).not.toMatch(/zip/);
   expect(md).toContain("| tray | 1 (0) | 20.0 MB | 10.0 MB | 0.0 MB | 0.0 MB |");
   expect(md).toContain("CPU 0.050 % of one core");
   expect(md).toContain("WebView2 data 5.0 MB");
@@ -89,7 +103,11 @@ test("the footprint job measures the release build and enforces the budgets", ()
   expect(wf).toContain("name: footprint (windows-2025)");
   expect(wf).toContain('node "$TAURI_CLI" build --ci --no-bundle');
   expect(wf).toContain("node scripts/portable-release.mjs package --os windows");
-  expect(wf).toContain('node scripts/footprint-windows.mjs --app target/release/freewheel.exe --package "$zip" --budgets scripts/footprint-budgets.json');
+  expect(wf).toContain("exe=$(ls footprint-package/freewheel-*-windows-x64.exe | head -n 1)");
+  expect(wf).toContain('node scripts/footprint-windows.mjs --app "$exe" --budgets scripts/footprint-budgets.json');
+  // The download is the exe: its size is the budget, no zip.
+  expect(budgets.packageMB).toBeUndefined();
+  expect(budgets.exeMB).toBeLessThanOrEqual(20);
   expect(budgets.idleCpuPercentOfOneCore).toBeLessThanOrEqual(1);
   // Closed to the tray, no WebView2 runs (src-tauri/src/app_windows.rs).
   for (const mode of ["normal", "simulate"]) {
