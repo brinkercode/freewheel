@@ -5,6 +5,7 @@ mod app_icons;
 mod app_volume;
 mod app_windows;
 mod apps;
+mod autostart;
 #[cfg(windows)]
 mod brightness;
 #[cfg(any(target_os = "macos", all(unix, test)))]
@@ -330,11 +331,7 @@ fn main() {
     let mut builder = builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
-        ));
+        .plugin(tauri_plugin_notification::init());
     // `--simulate` never updates for real: the same update state machine
     // runs with the simulated source (src/selfupdate.rs).
     let updater = !simulate && selfupdate::configured();
@@ -407,6 +404,10 @@ fn main() {
             // What the last update left behind: the old version, the download.
             if !simulate {
                 std::thread::spawn(selfupdate::cleanup_current);
+                // A login item an older freewheel wrote unquoted (#197) is
+                // written again with this freewheel's quoted path.
+                let handle = app.handle().clone();
+                std::thread::spawn(move || autostart::refresh(&handle));
             }
             // The tray's update item works in a release build (it has the
             // updater pubkey), or in --simulate with the simulated source; else it says this
