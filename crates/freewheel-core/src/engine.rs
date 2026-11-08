@@ -146,7 +146,11 @@ impl Engine {
             return false;
         }
         self.front = Some(app.clone());
-        let target = profiles::profile_for(&self.profiles, self.os, app).cloned();
+        // A profile with no page has nowhere to start (config.json loading
+        // gives each one a page; this keeps the keys working regardless).
+        let target = profiles::profile_for(&self.profiles, self.os, app)
+            .filter(|p| !p.pages.is_empty())
+            .cloned();
         let target_id = target.as_ref().map(|p| p.id.clone());
         if target_id == self.active_profile {
             return false;
@@ -2506,6 +2510,79 @@ mod tests {
             (engine.active_profile(), engine.current_layer()),
             (Some("paint"), "p-canvas")
         );
+    }
+
+    fn no_pages_config() -> Config {
+        use crate::config::{Profile, ProfileApp};
+        let mut config = Config::default();
+        config.layers[0].bindings.insert(
+            "Cam1".to_string(),
+            Action::LayerPush {
+                target: "music".into(),
+            },
+        );
+        config.layers.push(Layer {
+            id: "music".into(),
+            name: "Music".into(),
+            bindings: BTreeMap::new(),
+        });
+        config.profiles.push(Profile {
+            id: "p".into(),
+            name: "P".into(),
+            apps: vec![ProfileApp {
+                name: "code".into(),
+                windows: Some("code.exe".into()),
+                macos: Some("code".into()),
+                linux: Some("code".into()),
+            }],
+            pages: vec![],
+            color: None,
+            icon: None,
+        });
+        config
+    }
+
+    #[test]
+    fn a_profile_with_no_pages_leaves_the_keys_working() {
+        let mut engine = Engine::new(&no_pages_config());
+        engine.set_os(crate::mappings_file::Os::Linux);
+        assert!(!engine.front_app(&FrontApp::new(&["code"])));
+        assert_eq!(
+            (engine.active_profile(), engine.current_layer()),
+            (None, "base")
+        );
+        press(&mut engine, Key::Cam1);
+        assert_eq!(engine.current_layer(), "music");
+    }
+
+    #[test]
+    fn after_a_restart_a_profile_with_no_pages_starts_on_its_new_page() {
+        use crate::config::ConfigStore;
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("config.json"),
+            serde_json::to_vec_pretty(&no_pages_config()).unwrap(),
+        )
+        .unwrap();
+        for _ in 0..2 {
+            // Each start loads config.json, and a save writes the repair back.
+            let mut store = ConfigStore::new(dir.path());
+            let (loaded, err) = store.load_or_default();
+            assert!(err.is_none());
+            let mut engine = Engine::new(&loaded);
+            engine.set_os(crate::mappings_file::Os::Linux);
+            assert!(engine.front_app(&FrontApp::new(&["code"])));
+            assert_eq!(
+                (engine.active_profile(), engine.current_layer()),
+                (Some("p"), "p-main")
+            );
+            press(&mut engine, Key::Cam1);
+            assert_eq!(engine.current_layer(), "p-main");
+            assert!(engine.front_app(&FrontApp::new(&["firefox"])));
+            press(&mut engine, Key::Cam1);
+            assert_eq!(engine.current_layer(), "music");
+            store.save(&loaded).unwrap();
+        }
     }
 
     #[test]
