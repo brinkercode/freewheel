@@ -198,7 +198,8 @@ fn fold(s: &str) -> String {
 }
 
 /// The stored name of the key `name` presses: a named key, or one
-/// character (letters upper case, as the key panel records them).
+/// character (letters upper case, as the key panel records them; a letter
+/// whose upper case is more than one letter, like `ß`, stays as it is).
 pub fn shortcut_key(name: &str) -> Option<String> {
     let name = name.trim();
     let mut chars = name.chars();
@@ -206,7 +207,12 @@ pub fn shortcut_key(name: &str) -> Option<String> {
         if c.is_control() {
             return None;
         }
-        return Some(c.to_uppercase().collect());
+        let mut upper = c.to_uppercase();
+        let key = match (upper.next(), upper.next()) {
+            (Some(u), None) => u,
+            _ => c,
+        };
+        return Some(key.to_string());
     }
     let want = fold(name);
     named_keys()
@@ -420,6 +426,16 @@ mod tests {
         }
         assert_eq!(format_combo(&c(&[Meta], "Q"), true), "Cmd+Q");
         assert_eq!(parse_combo("Shift", true).unwrap(), c(&[Shift], ""));
+    }
+
+    #[test]
+    fn a_one_character_key_stays_one_character() {
+        assert_eq!(shortcut_key("k").as_deref(), Some("K"));
+        assert_eq!(shortcut_key("ä").as_deref(), Some("Ä"));
+        // ß upper-cases to the two letters "SS", which is no key.
+        assert_eq!(shortcut_key("ß").as_deref(), Some("ß"));
+        assert_eq!(shortcut_key("ẞ").as_deref(), Some("ẞ"));
+        assert_eq!(shortcut_key("ŉ").as_deref(), Some("ŉ"));
     }
 
     #[test]
