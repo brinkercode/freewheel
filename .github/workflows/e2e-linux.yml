@@ -25,8 +25,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# A pull request's newer push cancels its older run; any other run (a push
+# to main) has a group of its own, so it never waits behind or is cancelled
+# by a newer push (a group holds one pending run and cancels the one before).
 concurrency:
-  group: e2e-linux-${{ github.ref }}
+  group: e2e-linux-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
