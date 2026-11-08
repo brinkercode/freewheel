@@ -75,7 +75,7 @@ test package verified with a test key) and never installs.
      made with `hdiutil create`, then `hdiutil verify`).
    - `publish` (`release` environment): signs each file with the updater key
      (the only step that sees it), writes `latest.json` with the release's
-     user-facing notes (the `notes` job's `scripts/release-notes.mjs filter`),
+     app notes (the `notes` job's `scripts/release-notes.mjs filter`),
      verifies every signature locally, uploads all to the release.
    - `latest-json` re-downloads the published `latest.json` and verifies every
      package against `vars.TAURI_UPDATER_PUBKEY`.
@@ -100,24 +100,32 @@ unchanged and no `.old` or temp download left.
 
 - release-please writes `CHANGELOG.md` and the GitHub release from the
   conventional commits; `changelog-sections` in `release-please-config.json`
-  shows Features, Bug Fixes and Performance Improvements and hides chore, ci,
-  test, build, docs, refactor, style and revert. CHANGELOG.md and the GitHub
-  release keep everything in those sections.
-- The app's What's new gets the user-facing cut: `scripts/release-notes.mjs
-  filter` drops bullets whose scope is developer-only
-  (`scripts/release-notes.json` `hidden_scopes`: scripts, ci, e2e, release,
-  deps-dev, test, footprint, workflow), strips commit hashes, drops the
-  `**freewheel-…:**` ticket labels (`unlabelled_scopes`) and keeps PR links.
-  Write commit subjects for users when the change is user-visible; give
-  developer-only fixes one of the hidden scopes.
+  shows New (feat), Fixed (fix) and Faster (perf) and hides chore, ci, test,
+  build, docs, refactor, style and revert. CHANGELOG.md keeps everything in
+  those sections.
+- The `notes` job replaces the GitHub release body with the cleaned cut,
+  `scripts/release-notes.mjs release`: it drops bullets whose scope is
+  developer-only (`scripts/release-notes.json` `hidden_scopes`: scripts, ci,
+  e2e, release, deps-dev, test, footprint, workflow), strips commit hashes,
+  drops the `**freewheel-…:**` ticket labels (`unlabelled_scopes`) and keeps
+  the other scope labels and the PR links.
+- The app's What's new (`latest.json`) gets the app cut, `release-notes.mjs
+  filter`: the cleaned cut without the `**scope:**` labels and the PR links,
+  each line starting with a capital, the version heading without its compare
+  link. The page links to the GitHub release for the rest.
+- `feat:`, `fix:` and `perf:` PR titles are the release notes, so write them
+  for users (`fix: the Speed Editor reconnects after sleep`); the
+  `oss-readiness` check enforces it (`pr-title`). Give developer-only fixes
+  one of the hidden scopes.
 - Hand-written notes: put them in `release-notes/v<version>.md` (plain
   Markdown, one line per paragraph or bullet, written for users). When that
   file is in the tag, the `notes` job makes it the GitHub release body and
   What's new shows it as is, in place of the generated notes
-  (`release-notes.mjs curated` / `filter --version`). `preview` uses it too.
+  (`release-notes.mjs release --version` / `filter --version`). `preview`
+  uses it too.
 - Preview what the next release's What's new will say:
-  `node scripts/release-notes.mjs preview` (`--raw` for release-please's
-  version). It groups `git log <last v* tag>..HEAD` as release-please does and
+  `node scripts/release-notes.mjs preview` (`--release` for the release
+  page's cut, `--raw` for release-please's version). It groups `git log <last v* tag>..HEAD` as release-please does and
   runs the same filter. Test and e2e builds embed it
   (`FREEWHEEL_NEXT_NOTES_FILE`, read by `src-tauri/build.rs`) for the
   Simulator's "New version's notes: Next release (real notes)"; "Sample notes"

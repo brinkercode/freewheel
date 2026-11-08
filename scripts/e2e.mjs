@@ -320,7 +320,7 @@ throw new Error("the page shows " + got.slice(0, 600));`;
 /** What the e2e pastes into the Simulator's "Paste notes…": every part of the markdown subset. */
 export const PASTED_NOTES = `## Pasted in the e2e
 
-### Features
+### New
 
 * **keys:** a pasted change with \`code\` and a [link](https://github.com/brinkercode/freewheel/pull/1)
 * a second pasted change
@@ -932,7 +932,7 @@ export async function main(platform, argv = process.argv.slice(2)) {
         const state = await simNotesState();
         if (state.choice !== choice) throw new Error(`picked ${choice}, the app has ${JSON.stringify(state).slice(0, 200)}`);
         if (choice === "Paste" && state.notes !== PASTED_NOTES) throw new Error(`the app kept other notes: ${JSON.stringify(state.notes)}`);
-        if (choice === "Sample" && !state.notes.includes("smoother scrolling")) throw new Error(`not the sample notes: ${state.notes}`);
+        if (choice === "Sample" && !state.notes.includes("Smoother scrolling")) throw new Error(`not the sample notes: ${state.notes}`);
         expectedNotes = notesText(state.notes);
       }, ["simulator"]);
       await step(`updates (${label}): New version, available`, async () => {

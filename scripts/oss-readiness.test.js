@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { DENYLIST, communityProblems, fileRules, lineHits, npmLicenseProblems, parseRules, textHits } from "./oss-readiness.mjs";
+import { DENYLIST, PR_JARGON, communityProblems, fileRules, lineHits, npmLicenseProblems, parseRules, prTitleProblems, textHits } from "./oss-readiness.mjs";
 
 const rules = parseRules(readFileSync(new URL(`../${DENYLIST}`, import.meta.url), "utf8"));
 const cats = (line) => lineHits(line, rules).map((h) => h.rule.category);
@@ -92,4 +92,57 @@ test("npm licences: MPL-2.0 is allowed, as for the Rust crates in deny.toml", as
   const deny = readFileSync(new URL("../deny.toml", import.meta.url), "utf8");
   expect(deny).toMatch(/^\s+"MPL-2\.0",$/m);
   expect(npmLicenseProblems({ packages: { "node_modules/lightningcss": { license: "MPL-2.0" } } })).toEqual([]);
+});
+
+test("pr-title: user-visible feat/fix/perf titles read as release notes", () => {
+  for (const ok of [
+    "fix: the Speed Editor reconnects after sleep",
+    "feat(keys): a key can open a folder",
+    "perf(tray): use less memory in the tray",
+    "feat(config)!: mappings files from 0.0.x no longer load",
+    "fix(device): the wheel scrolls again after waking",
+  ])
+    expect(prTitleProblems(ok), ok).toEqual([]);
+  expect(prTitleProblems("fix: reconnects after sleep")).toEqual([expect.stringMatching(/under 4 words/)]);
+  expect(prTitleProblems("fix: The Speed Editor reconnects after sleep")).toEqual([expect.stringMatching(/starts with a capital/)]);
+  expect(prTitleProblems("fix: the Speed Editor reconnects after sleep.")).toEqual([expect.stringMatching(/ends with a period/)]);
+  for (const word of ["CI", "e2e", "refactor", "lint", "clippy", "CodeQL", "test", "tests", "workflow", "script", "bump"])
+    expect(prTitleProblems(`fix(device): the wheel ${word} works after sleep`), word).toEqual([expect.stringMatching(new RegExp(`"${word}" is developer jargon`))]);
+  // Jargon is whole words only.
+  expect(prTitleProblems("feat(keys): a key can bumper the latest testament")).toEqual([]);
+  // The message says how to write it.
+  expect(prTitleProblems("fix: x")[0]).toContain("fix: the Speed Editor reconnects after sleep");
+  expect(PR_JARGON).toEqual(expect.arrayContaining(["CI", "e2e", "refactor", "lint", "clippy", "CodeQL", "test", "tests", "workflow", "script", "bump"]));
+});
+
+test("pr-title: developer-only scopes and the other types are hidden from the notes, so only the format counts", () => {
+  for (const ok of [
+    "fix(ci): retry the macOS runner download",
+    "fix(scripts): CodeQL",
+    "feat(e2e): the Windows e2e clicks every control",
+    "chore(deps): bump vite from 7.3.7 to 8.3.5",
+    "chore(ci): bump actions/checkout from 4.2.2 to 7.0.1",
+    "chore(main): release 0.1.1",
+    "test(linux): Linux e2e click-through + footprint in CI",
+    "docs: CONTRIBUTING",
+    "refactor: tidy",
+    'Revert "feat(keys): a key can open a folder"',
+  ])
+    expect(prTitleProblems(ok, { hiddenScopes: ["ci", "scripts", "e2e"] }), ok).toEqual([]);
+  // The scopes come from scripts/release-notes.json by default.
+  expect(prTitleProblems("fix(workflow): pin setup-node")).toEqual([]);
+});
+
+test("pr-title: the title must be a conventional commit", () => {
+  for (const bad of ["Fix the wheel", "fix:missing space", "feature: a key can open a folder", "fix(): the wheel works after sleep", "", "Fix: the wheel works after sleep"])
+    expect(prTitleProblems(bad), bad).toEqual([expect.stringMatching(/is not a conventional commit/)]);
+});
+
+test("pr-title runs in the PR text step, which sees the title", () => {
+  const wf = readFileSync(new URL("../.github/workflows/oss-readiness.yml", import.meta.url), "utf8");
+  expect(wf).toContain("PR_TITLE: ${{ github.event.pull_request.title }}");
+  expect(wf).toContain("node scripts/oss-readiness.mjs text PR_TITLE PR_BODY");
+  expect(wf).toMatch(/types: \[opened, synchronize, reopened, edited\]/);
+  const contributing = readFileSync(new URL("../CONTRIBUTING.md", import.meta.url), "utf8");
+  expect(contributing).toContain("`feat:`/`fix:`/`perf:` titles are the release notes");
 });

@@ -37,13 +37,15 @@ jobs:
     uses: ./.github/workflows/ci.yml
 
   # The tag's release, published, and its notes: release-please made it; for
-  # a hand-pushed tag it is made here with GitHub's generated notes. The
-  # release keeps those notes in full (as CHANGELOG.md does); the app's
-  # What's new gets the user-facing ones: developer-only bullets dropped,
-  # commit hashes stripped (scripts/release-notes.mjs filter, the same
-  # script the Simulator's "Next release" notes and the update e2e use).
+  # a hand-pushed tag it is made here with GitHub's generated notes. Two cuts
+  # of those notes (scripts/release-notes.mjs, the same script the
+  # Simulator's "Next release" notes and the update e2e use):
+  #   release  replaces the release body: developer-only bullets and commit
+  #            hashes removed, scope labels and PR links kept;
+  #   filter   What's new (latest.json): also without scope labels and PR
+  #            links, each line starting with a capital.
   # Hand-written notes win: with release-notes/v<version>.md in the tag, that
-  # file becomes both the release body and What's new.
+  # file is both. CHANGELOG.md keeps release-please's full notes.
   notes:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
@@ -71,11 +73,12 @@ jobs:
               --title "freewheel $GITHUB_REF_NAME" --generate-notes
           fi
           test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = false
-          if node scripts/release-notes.mjs curated --version "${GITHUB_REF_NAME#v}" --out "$RUNNER_TEMP/curated.md"; then
-            gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/curated.md"
-          fi
-          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$RUNNER_TEMP/release-notes.md"
-          node scripts/release-notes.mjs filter --version "${GITHUB_REF_NAME#v}" --in "$RUNNER_TEMP/release-notes.md" --out "$RUNNER_TEMP/user-notes.md"
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$RUNNER_TEMP/release-please.md"
+          node scripts/release-notes.mjs release --version "${GITHUB_REF_NAME#v}" --in "$RUNNER_TEMP/release-please.md" --out "$RUNNER_TEMP/release-notes.md"
+          node scripts/release-notes.mjs filter --version "${GITHUB_REF_NAME#v}" --in "$RUNNER_TEMP/release-please.md" --out "$RUNNER_TEMP/user-notes.md"
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/release-notes.md"
+          echo "The release page shows:"
+          cat "$RUNNER_TEMP/release-notes.md"
           echo "What's new will show:"
           cat "$RUNNER_TEMP/user-notes.md"
           {

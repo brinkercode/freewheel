@@ -110,6 +110,7 @@ export function sampleStatus() {
   };
 }
 
+/** Installs the fake bridge on `win`; returns its invoke and the command names it answers. */
 export function installMockTauri(win = window) {
   let config = sampleConfig();
   const status = sampleStatus();
@@ -210,6 +211,13 @@ export function installMockTauri(win = window) {
       return null;
     },
     desktop_hints: () => ({ tray: null }),
+    // The window says it is ready to hear the tray (app_windows.rs settings_ready).
+    settings_ready: () => null,
+    // A notes link (WhatsNew.jsx openNotesLink) opens in a new tab.
+    "plugin:opener|open_url": ({ url }) => {
+      win.open?.(url, "_blank", "noopener");
+      return null;
+    },
     update_install: () => {
       if (!updates.offer) throw "nothing: no update to download or install";
       updates.current = updates.offer;
@@ -261,20 +269,21 @@ export function installMockTauri(win = window) {
     storage.setItem("freewheel.last-seen-version", "0.0.0");
     storage.setItem("freewheel.update-notes", JSON.stringify({ version: updated, notes: params.get("notes") ?? sampleNotes(updated) }));
   }
+  return { invoke, commands: Object.keys(commands) };
 }
 
 /** A small patch's notes as latest.json carries them (release-please's, after scripts/release-notes.mjs filter). */
 function sampleNotes(version) {
   return [
-    `## [${version}](https://github.com/brinkercode/freewheel/compare/v0.1.0...v${version}) (2026-11-07)`,
+    `## ${version} (2026-11-07)`,
     "",
-    "### Features",
+    "### New",
     "",
-    "* **keys:** a key can open a folder, like `C:\\Music` ([#133](https://github.com/brinkercode/freewheel/issues/133))",
+    "* A key can open a folder, like `C:\\Music`",
     "",
-    "### Bug Fixes",
+    "### Fixed",
     "",
-    "* **keys:** a held Shift is released when freewheel turns Off ([#131](https://github.com/brinkercode/freewheel/issues/131))",
-    "* the wheel scrolls again after waking from sleep ([#132](https://github.com/brinkercode/freewheel/issues/132))",
+    "* A held Shift is released when freewheel turns Off",
+    "* The wheel scrolls again after waking from sleep",
   ].join("\n");
 }
