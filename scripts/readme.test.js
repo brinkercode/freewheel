@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 
 const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+const updates = readFileSync(new URL("../docs/updates.md", import.meta.url), "utf8");
 const images = [...readme.matchAll(/(?:src|srcset)="(docs\/images\/[^"]+)"/g)].map((m) => m[1]);
 
 test("every screenshot the README shows is committed", () => {
@@ -14,28 +15,39 @@ test("the hero has a light and a dark screenshot", () => {
   expect(readme).toContain(`src="docs/images/light-keys.png"`);
 });
 
-test("Back up and restore points at the mappings format", () => {
-  expect(readme.split(/^## /m).find((s) => s.startsWith("Back up and restore"))).toContain("Write or edit a mappings file by hand: see [SCHEMA.md](SCHEMA.md)");
+test("the README links the mappings format and the updates, backups and privacy page", () => {
+  expect(readme).toContain("[SCHEMA.md](SCHEMA.md)");
+  expect(readme).toContain("[docs/updates.md](docs/updates.md)");
+  expect(updates.split(/^## /m).find((s) => s.startsWith("Back up and restore"))).toContain("[SCHEMA.md](../SCHEMA.md)");
+});
+
+test("the README opens with the light and dark banner, and the tagline is its alt text", () => {
+  expect(readme).toContain('srcset=".github/assets/freewheel-logo-dark.svg"');
+  expect(readme).toContain('src=".github/assets/freewheel-logo-light.svg"');
+  expect(readme).toContain("No telemetry, no accounts, no analytics, always portable");
+  for (const f of ["light", "dark"]) {
+    const svg = readFileSync(new URL(`../.github/assets/freewheel-logo-${f}.svg`, import.meta.url), "utf8");
+    expect(svg).not.toMatch(/<text|font-family|<image/);
+  }
 });
 
 test("the README is for users: the simulator is a development aid, in docs/development.md", () => {
   expect(readme).not.toMatch(/simulat/i);
-  expect(readme).toContain("See [docs/development.md](docs/development.md).");
+  expect(readme).toContain("[docs/development.md](docs/development.md)");
   const dev = readFileSync(new URL("../docs/development.md", import.meta.url), "utf8");
   expect(dev).toContain("npx tauri dev -- -- --simulate");
   expect(dev).toContain("freewheel-simulate.cmd");
 });
 
 test("the README names the sections a user looks for", () => {
-  for (const h of ["What it does", "Download and run", "Updates", "Screens", "Back up and restore",
-    "Troubleshooting", "Building from source", "Releasing", "Privacy", "License and credits"])
-    expect(readme).toMatch(new RegExp(`^## ${h}$`, "m"));
+  const sections = [...readme.matchAll(/^## (.+)$/gm)].map((m) => m[1]);
+  expect(sections).toEqual(["What it does", "Download and run", "Screens", "Troubleshooting"]);
 });
 
-test("the README's privacy section names the update manifest URL the app uses", () => {
+test("the privacy section (docs/updates.md) names the update manifest URL the app uses", () => {
   const src = readFileSync(new URL("../src-tauri/src/selfupdate.rs", import.meta.url), "utf8");
   const url = src.match(/MANIFEST_URL: &str =\s*"([^"]+)"/)[1];
-  expect(readme.split(/^## /m).find((s) => s.startsWith("Privacy"))).toContain(url);
+  expect(updates.split(/^## /m).find((s) => s.startsWith("Privacy"))).toContain(url);
 });
 
 test("every screenshot docs/development.md shows is committed", () => {
