@@ -17,7 +17,7 @@ use windows_sys::Win32::Devices::Display::{
 };
 use windows_sys::Win32::Foundation::{HANDLE, LPARAM, RECT};
 use windows_sys::Win32::Graphics::Gdi::{EnumDisplayMonitors, HDC, HMONITOR};
-use wmi::{COMLibrary, WMIConnection};
+use wmi::WMIConnection;
 
 pub struct WindowsBrightness;
 
@@ -198,9 +198,9 @@ fn panels() -> Vec<Result<Box<dyn Screen>, ControlError>> {
 }
 
 fn wmi_panels() -> Result<Vec<Panel>, wmi::WMIError> {
-    // COM security can be set once per process; later calls reuse it.
-    let com = COMLibrary::new().or_else(|_| COMLibrary::without_security())?;
-    let wmi = Rc::new(WMIConnection::with_namespace_path(r"ROOT\WMI", com)?);
+    // wmi initialises COM (MTA) and its default security on a thread that
+    // has no COM yet, and reuses whatever this thread already set up.
+    let wmi = Rc::new(WMIConnection::with_namespace_path(r"ROOT\WMI")?);
     let levels: Vec<WmiMonitorBrightness> = wmi.raw_query("SELECT * FROM WmiMonitorBrightness")?;
     let methods: Vec<WmiMonitorBrightnessMethods> =
         wmi.raw_query("SELECT * FROM WmiMonitorBrightnessMethods")?;
