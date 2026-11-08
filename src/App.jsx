@@ -15,7 +15,7 @@ import KeysTab from "./KeysTab.jsx";
 import ResolveTab from "./ResolveTab.jsx";
 import WheelTab from "./WheelTab.jsx";
 import { NoticeBar, Toast, Toolbar } from "./SettingsWindow.jsx";
-import { TitleBar, isMac } from "./TitleBar.jsx";
+import { TitleBar, isLinux, isMac } from "./TitleBar.jsx";
 import {
   getConfig,
   getDesktopHints,
@@ -313,7 +313,7 @@ function Settings({ autoUpdate, storage }) {
       </>
     );
   return (
-    <div className={`app${isMac() ? " is-mac" : ""}`}>
+    <div className={`app${isMac() ? " is-mac" : ""}${isLinux() ? " is-linux" : ""}`}>
       {(firstRun || fixing) && <TitleBar />}
       {content}
       <Toast text={toast} />

@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, expect, test, vi } from "vitest";
 import { Toolbar } from "./SettingsWindow.jsx";
 import Simulator from "./Simulator.jsx";
-import { TitleBar, WindowControls, isMac } from "./TitleBar.jsx";
+import { TitleBar, WindowControls, isLinux, isMac } from "./TitleBar.jsx";
 
 afterEach(cleanup);
 
@@ -34,6 +34,9 @@ const ok = { enabled: true, permissionMissing: false, connected: true, bus: "Usb
 test("macOS is told apart from Windows and Linux", () => {
   expect(isMac({ platform: "MacIntel" })).toBe(true);
   expect(isMac({ platform: "Win32" })).toBe(false);
+  expect(isLinux({ platform: "Linux x86_64", userAgent: "X11; Linux x86_64" })).toBe(true);
+  expect(isLinux({ platform: "Linux armv8l", userAgent: "Linux; Android 14" })).toBe(false);
+  expect(isLinux({ platform: "Win32" })).toBe(false);
   expect(isMac({ platform: "", userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" })).toBe(false);
 });
 

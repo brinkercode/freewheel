@@ -216,11 +216,12 @@ input[type="range"] { accent-color: var(--accent); border: none; background: tra
   .toolbar-right { gap: 10px; margin-left: 4px; }
   .toolbar .window-controls { margin-left: 6px; }
 }
-/* At the 820px minimum, wider system fonts (DejaVu Sans, the default on many
-   Linux desktops) need a little less padding in each tab to keep every tab
-   and the status dot. */
-@media (max-width: 859px) {
-  .tab { padding: 0 7px; }
+/* Linux: the desktop's font is often wider than Segoe UI or SF (DejaVu
+   Sans, the default on many distributions), so the tabs take less padding
+   there and every tab and the status keep their room. */
+.app.is-linux .tab { padding: 0 8px; }
+@media (max-width: 899px) {
+  .app.is-linux .tab { padding: 0 6px; }
 }
 .status:hover:not(:disabled) { background: transparent; }
 .status.is-link { cursor: pointer; }
