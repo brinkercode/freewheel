@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import { checkWorkflow } from "./check-workflow.mjs";
 
@@ -130,5 +130,12 @@ test("ci.yml triggers exactly as written, and cancels superseded runs", () => {
     "  workflow_call:",
   ].join("\n"));
   expect(ci).not.toMatch(/pull_request_target|schedule:/);
-  expect(ci).toMatch(/^concurrency:\r?\n  group: ci-\$\{\{ github\.workflow \}\}-\$\{\{ github\.ref \}\}\r?\n  cancel-in-progress: true$/m);
+  expect(ci).toMatch(/^concurrency:\r?\n  group: ci-\$\{\{ github\.workflow \}\}-\$\{\{ github\.ref \}\}\r?\n  cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}$/m);
+});
+
+test("a push to main never cancels a run: only a pull request's newer push does", () => {
+  for (const f of readdirSync(new URL("../.github/workflows/", import.meta.url))) {
+    const wf = readFileSync(new URL(`../.github/workflows/${f}`, import.meta.url), "utf8");
+    expect(wf, f).not.toMatch(/cancel-in-progress: true/);
+  }
 });

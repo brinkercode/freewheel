@@ -1,7 +1,7 @@
 <p align="center">
   <picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/freewheel-logo-dark.svg"><img alt="freewheel: No telemetry, no accounts, no analytics, always portable" src=".github/assets/freewheel-logo-light.svg" width="800"></picture>
   <br><br>
-  <a href="https://github.com/brinkercode/freewheel/releases/latest"><img src="https://img.shields.io/github/v/release/brinkercode/freewheel?sort=semver" alt="Release"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License"></a> <a href="https://github.com/brinkercode/freewheel/actions/workflows/ci.yml"><img src="https://github.com/brinkercode/freewheel/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/brinkercode/freewheel/releases/latest"><img src="https://github.com/brinkercode/freewheel/actions/workflows/release.yml/badge.svg" alt="Release build"></a> <a href="LICENSE"><img src=".github/assets/license-mit.svg" alt="License: MIT"></a>
 </p>
 
 <picture>
