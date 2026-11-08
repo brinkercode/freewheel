@@ -202,10 +202,14 @@ export function IconPicker({ icon, color, onPick, open = openIconCatalogue, colu
     }
   };
   const onGridKey = (e, i) => {
-    const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: columns, ArrowUp: -columns, Home: -i, End: results.length - 1 - i }[e.key];
+    // Columns as drawn (the panel's width decides), else `columns`.
+    const tops = [...(grid.current?.querySelectorAll("[role=option]") ?? [])].map((o) => o.offsetTop);
+    const drawn = tops.filter((t) => t === tops[0]).length;
+    const cols = drawn > 1 && drawn < tops.length ? drawn : columns;
+    const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols, Home: -i, End: results.length - 1 - i }[e.key];
     if (step !== undefined) {
       e.preventDefault();
-      if (e.key === "ArrowUp" && i < columns) {
+      if (e.key === "ArrowUp" && i < cols) {
         e.currentTarget.closest(".icon-picker")?.querySelector("input")?.focus();
         return;
       }
