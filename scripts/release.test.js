@@ -54,7 +54,6 @@ test("release.yml uploads the portable packages, their signatures and latest.jso
   expect(release).toContain("run: npm run tauri -- build --no-bundle -- --locked");
   expect(release).toContain("run: npm run tauri -- build --target universal-apple-darwin --bundles app -- --locked");
   expect(release).toContain("run: npm run tauri -- build --bundles appimage -- --locked");
-  expect(release).toContain("for f in packages/*.zip packages/*.AppImage; do");
   expect(release).toContain("node scripts/portable-release.mjs package --os ${{ matrix.package }} --version \"$VERSION\" --out packages");
   expect(release).toContain('node node_modules/@tauri-apps/cli/tauri.js signer sign --app-version "$VERSION" "$f"');
   expect(release).toContain("node scripts/portable-release.mjs manifest --version \"$VERSION\" --notes-file \"$RUNNER_TEMP/notes.md\" --dir packages");
@@ -342,11 +341,11 @@ test("the Windows release file is the exe itself, byte for byte; the simulator .
   expect(read("../.github/workflows/release.yml")).not.toContain("freewheel-simulate.cmd");
 });
 
-test("no zip anywhere in a release: the exe, the .dmg, their signatures, latest.json", () => {
+test("no zip anywhere in a release: the exe, the .dmg, the AppImage, their signatures, latest.json", () => {
   const script = read("./portable-release.mjs");
   expect(script).not.toMatch(/tar\.exe|"-k"|\.zip/);
   expect(release).not.toMatch(/\.zip\b/);
-  expect(release).toContain("for f in packages/*.exe packages/*.dmg; do");
+  expect(release).toContain("for f in packages/*.exe packages/*.dmg packages/*.AppImage; do");
   expect(release).toContain("hdiutil verify packages/*.dmg");
   // The .dmg: freewheel.app and an Applications link, made with hdiutil.
   expect(DMG_CREATE).toEqual(["create", "-volname", "freewheel", "-fs", "HFS+", "-format", "UDZO", "-ov", "-srcfolder"]);
