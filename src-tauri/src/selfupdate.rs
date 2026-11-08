@@ -1701,7 +1701,7 @@ mod tests {
             (info.version.as_str(), info.current_version.as_str()),
             ("0.3.0", "0.1.0")
         );
-        assert!(info.body.contains("## [0.3.0]"));
+        assert!(info.body.contains("## 0.3.0 "));
         let mut events = Vec::new();
         tauri::async_runtime::block_on(u.download(|e| events.push(e))).unwrap();
         assert_eq!(

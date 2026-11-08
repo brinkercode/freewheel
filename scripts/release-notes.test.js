@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, expect, test } from "vitest";
 import {
   CONFIG,
@@ -86,7 +87,7 @@ test("GitHub's generated notes (a hand-pushed tag) are filtered by commit type a
 });
 
 test("a release with nothing a user notices still says something (latest.json needs notes)", () => {
-  const dev = "## [0.1.1](x) (2026-11-08)\n\n\n### Bug Fixes\n\n* **ci:** retry ([abc1234](https://github.com/o/r/commit/abc1234))\n";
+  const dev = "## [0.1.1](x) (2026-11-08)\n\n\n### Fixed\n\n* **ci:** retry ([abc1234](https://github.com/o/r/commit/abc1234))\n";
   expect(userNotes(dev)).toBe(`## [0.1.1](x) (2026-11-08)\n\n${NOTHING_VISIBLE_RELEASE}\n`);
   expect(appNotes(dev)).toBe(`## 0.1.1 (2026-11-08)\n\n${NOTHING_VISIBLE}\n`);
 });
@@ -301,8 +302,8 @@ test("GitHub's generated notes get the app's cut too", () => {
 });
 
 test("the CLI: `release` and `filter` give the two cuts, hand-written notes win for both", () => {
-  const script = new URL("./release-notes.mjs", import.meta.url).pathname;
-  const fixture = new URL("./fixtures/release-notes/release-please-0.1.1.md", import.meta.url).pathname;
+  const script = fileURLToPath(new URL("./release-notes.mjs", import.meta.url));
+  const fixture = fileURLToPath(new URL("./fixtures/release-notes/release-please-0.1.1.md", import.meta.url));
   const run = (...args) => execFileSync(process.execPath, [script, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
   expect(run("release", "--in", fixture)).toBe(userNotes(RP_011));
   expect(run("filter", "--in", fixture)).toBe(appNotes(RP_011));
