@@ -1669,10 +1669,12 @@ export async function main(platform, argv = process.argv.slice(2)) {
       if (typeof path !== "string" || path.startsWith("error")) throw new Error(`export_logs: ${path}`);
       const text = readFileSync(path, "utf8");
       writeFileSync(join(out, "log-bundle.txt"), text);
+      // The log bundle writes the home folder as "~" (paths stay private when shared).
+      const inBundle = (p) => p.split(homedir()).join("~");
       const want = [
         `simulated device: key CUT pressed on page "${basePage(await readConfig()).name}" -> Open app "fw-mark" (`,
-        `launched "fw-mark" ok: ${markCmd} "on"`,
-        `not done: Do actions for real is off (would run ${markCmd} "off")`,
+        `launched "fw-mark" ok: ${inBundle(markCmd)} "on"`,
+        `not done: Do actions for real is off (would run ${inBundle(markCmd)} "off")`,
         "simulator: Do actions for real is on: presses send keys, open apps and change the volume on this PC",
         `config saved: CUT: Open app "fw-mark" -> Open website 127.0.0.1`,
         "-> Open website 127.0.0.1",
