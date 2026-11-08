@@ -29,7 +29,6 @@ use tauri::image::Image;
 use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
-use tauri_plugin_autostart::ManagerExt;
 
 use freewheel_core::battery::{self, Battery, LowBatteryAlert};
 use freewheel_core::connection::ConnectionStatus;
@@ -92,7 +91,7 @@ pub(crate) fn autostart_enabled<R: Runtime>(app: &AppHandle<R>) -> bool {
     if let Some(sim) = app.try_state::<crate::simulate::SimHandle>() {
         return sim.start_at_login();
     }
-    app.autolaunch().is_enabled().unwrap_or_else(|e| {
+    crate::autostart::is_enabled(app).unwrap_or_else(|e| {
         tracing::warn!(error = %e, "cannot read the start-at-login state");
         false
     })
@@ -110,13 +109,7 @@ pub(crate) fn set_autostart<R: Runtime>(app: &AppHandle<R>, on: bool) -> Result<
         );
         return Ok(());
     }
-    let autolaunch = app.autolaunch();
-    let result = if on {
-        autolaunch.enable()
-    } else {
-        autolaunch.disable()
-    };
-    result.map_err(|e| e.to_string())
+    crate::autostart::set(app, on)
 }
 
 /// The tray icon's four states (screens-and-components 1).

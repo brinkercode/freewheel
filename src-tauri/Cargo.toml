@@ -18,6 +18,8 @@ e2e = []
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# Start at login (src/autostart.rs).
+auto-launch = "0.6"
 base64 = "0.23"
 directories = "6"
 enigo = "0.6"
@@ -35,7 +37,6 @@ png = "0.18"
 os_info = { version = "3", default-features = false }
 sysinfo = { version = "0.40", default-features = false, features = ["system"] }
 tauri = { version = "2", features = ["tray-icon"] }
-tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-opener = "2"
