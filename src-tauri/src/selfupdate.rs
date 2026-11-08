@@ -334,7 +334,6 @@ pub fn current_target() -> Result<PathBuf, UpdateError> {
     install_target(&dunce(exe), cfg!(target_os = "macos"))
 }
 
-
 /// `\\?\C:\x` -> `C:\x` (canonicalize on Windows), so the relaunched path
 /// and the start-at-login entry stay the plain path.
 fn dunce(path: PathBuf) -> PathBuf {
@@ -1888,7 +1887,11 @@ mod tests {
             appimage_target(Some(image.as_os_str())).unwrap(),
             std::fs::canonicalize(&image).unwrap()
         );
-        assert!(PackageKind::current().download_name("0.2.0").starts_with("freewheel-0.2.0."));
+        assert!(
+            PackageKind::current()
+                .download_name("0.2.0")
+                .starts_with("freewheel-0.2.0.")
+        );
     }
 
     #[test]
