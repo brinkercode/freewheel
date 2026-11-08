@@ -218,3 +218,28 @@ test("the quick keys light as the device does: the wheel button, then the page k
   await click(group("freewheel").getByText("Off"));
   expect(lit()).toEqual([]);
 });
+
+test("a tray reply read before a newer tray event does not undo it (Checking for updates… stays)", async () => {
+  const handlers = {};
+  window.__TAURI__.event = { listen: (name, cb) => ((handlers[name] = cb), Promise.resolve(() => {})) };
+  await mount();
+  const stale = await fake.invoke("sim_tray", { item: "State" });
+  const checking = { ...stale, update: "Checking for updates…", update_enabled: false };
+  let reply;
+  let now = stale;
+  const invoke = fake.invoke;
+  // The click's reply is held back; later State reads see the app as it is now.
+  window.__TAURI__.core.invoke = (cmd, args) =>
+    cmd !== "sim_tray" ? invoke(cmd, args) : args?.item === "update" ? new Promise((ok) => (reply = ok)) : Promise.resolve(now);
+  const item = () => document.querySelector('[data-tray="update"]');
+  await click(item());
+  now = checking;
+  await act(async () => handlers["sim-tray"]({ payload: checking }));
+  expect(item().textContent).toContain("Checking for updates…");
+  // The follow-up State read is held too, so this sees the stale reply's effect alone.
+  let state;
+  window.__TAURI__.core.invoke = (cmd, args) => (cmd === "sim_tray" ? new Promise((ok) => (state = ok)) : invoke(cmd, args));
+  await act(async () => reply({ ...stale, update: "Check for updates", update_enabled: true }));
+  expect(item().textContent).toContain("Checking for updates…");
+  await act(async () => state?.(checking));
+});

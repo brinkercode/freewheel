@@ -130,6 +130,15 @@ export default function Simulator({ initial = null }) {
   const down = useRef(new Set());
   // Each log line's number, counting up: a new line is told from an old one with the same words.
   const lineNo = useRef(0);
+  // SIM_TRAY_EVENTs so far: a sim_tray reply read before a newer event must not undo it.
+  const trayEvents = useRef(0);
+  const trayAsk = (item) => {
+    const seen = trayEvents.current;
+    return trayClick(item).then((m) => {
+      if (trayEvents.current === seen) setTrayMenu(m);
+      return m;
+    });
+  };
 
   const note = (lines, kind = "out") => {
     if (lines.length) setLog((l) => [...lines.map((t) => ({ t, kind, n: ++lineNo.current })).reverse(), ...l].slice(0, 40));
@@ -150,7 +159,7 @@ export default function Simulator({ initial = null }) {
         (s) => {
           setStatus(s);
           // The tray menu follows the device (its On/Off check, the permission line).
-          trayClick("State").then(setTrayMenu, () => {});
+          trayAsk("State").catch(() => {});
         },
         (e) => note([String(e)], "error"),
       );
@@ -162,8 +171,8 @@ export default function Simulator({ initial = null }) {
     );
 
   const tray = (item) =>
-    trayClick(item).then(
-      (m) => (setTrayMenu(m), item !== "State" && send({ type: "Status" })),
+    trayAsk(item).then(
+      () => item !== "State" && send({ type: "Status" }),
       (e) => note([String(e)], "error"),
     );
 
@@ -177,7 +186,11 @@ export default function Simulator({ initial = null }) {
     const unlisten = [
       tauri().event?.listen(SIM_LOG_EVENT, (e) => note(e.payload ?? [], "app")),
       // The tray menu changed by itself (the device, the settings window's update flow).
-      tauri().event?.listen(SIM_TRAY_EVENT, (e) => e.payload && setTrayMenu(e.payload)),
+      tauri().event?.listen(SIM_TRAY_EVENT, (e) => {
+        if (!e.payload) return;
+        trayEvents.current += 1;
+        setTrayMenu(e.payload);
+      }),
     ];
     return () => {
       clearInterval(turning.current);
