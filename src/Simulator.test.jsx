@@ -143,7 +143,7 @@ test("New version's notes: the next release's real notes, the sample or pasted o
   // A build with the next release's notes starts on them.
   await waitFor(() => expect(pressed("New version’s notes")).toEqual(["Next release (real notes)"]));
   expect(group("New version’s notes").getAllByRole("button").map((b) => b.textContent)).toEqual(NOTES_CHOICES.map(([, t]) => t));
-  expect(document.querySelector("[data-notes-preview]").textContent).toBe("1 change: keys: the next release's change");
+  expect(document.querySelector("[data-notes-preview]").textContent).toBe("1 change: The next release's change");
   expect((await notes()).notes).toBe(SIM_NEXT);
   await click(group("New version’s notes").getByText("Sample notes"));
   expect(pressed("New version’s notes")).toEqual(["Sample notes"]);
@@ -151,10 +151,10 @@ test("New version's notes: the next release's real notes, the sample or pasted o
   expect(log()).toContain("New version's notes: Sample notes");
   await click(group("New version’s notes").getByText("Paste notes…"));
   const box = screen.getByRole("textbox", { name: "Pasted notes" });
-  fireEvent.change(box, { target: { value: "### Bug Fixes\n\n* pasted fix\n* another" } });
+  fireEvent.change(box, { target: { value: "### Fixed\n\n* Pasted fix\n* Another" } });
   await click(screen.getByRole("button", { name: "Use these notes" }));
-  expect(await notes()).toEqual({ choice: "Paste", notes: "### Bug Fixes\n\n* pasted fix\n* another", next_available: true });
-  expect(document.querySelector("[data-notes-preview]").textContent).toBe("2 changes: pasted fix");
+  expect(await notes()).toEqual({ choice: "Paste", notes: "### Fixed\n\n* Pasted fix\n* Another", next_available: true });
+  expect(document.querySelector("[data-notes-preview]").textContent).toBe("2 changes: Pasted fix");
 });
 
 test("a build without the next release's notes can't pick them", async () => {
@@ -163,7 +163,7 @@ test("a build without the next release's notes can't pick them", async () => {
   await mount();
   await waitFor(() => expect(pressed("New version’s notes")).toEqual(["Sample notes"]));
   expect(group("New version’s notes").getByText("Next release (real notes)").disabled).toBe(true);
-  expect(document.querySelector("[data-notes-preview]").textContent).toMatch(/^This build has no next-release notes\. 1 change: wheel: smoother/);
+  expect(document.querySelector("[data-notes-preview]").textContent).toMatch(/^This build has no next-release notes\. 1 change: Smoother/);
 });
 
 test("the notes preview counts the bullets", () => {

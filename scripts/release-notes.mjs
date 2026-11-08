@@ -1,27 +1,31 @@
 #!/usr/bin/env node
 // freewheel's user-facing release notes, one script for the release and for
-// every preview of it, so they can't diverge:
+// every preview of it, so they can't diverge. Two cuts of release-please's
+// notes:
 //
-//   node scripts/release-notes.mjs filter [--in notes.md] [--version X.Y.Z]
-//     release-please's notes (the GitHub release body) -> the notes the app's
-//     What's new shows (release.yml writes them into latest.json):
+//   node scripts/release-notes.mjs release [--in notes.md] [--version X.Y.Z]
+//     the GitHub release body (release.yml replaces release-please's with it):
 //     developer-only bullets dropped (scripts/release-notes.json
 //     hidden_scopes; for GitHub's generated notes also the hidden commit
 //     types), commit hashes stripped, internal ticket scopes unlabelled,
-//     PR links kept, hidden and empty sections dropped.
-//   node scripts/release-notes.mjs preview [--dir .] [--version X.Y.Z] [--raw] [--out file]
-//     the notes the NEXT release will have: the commits since the last v*
+//     scope labels and PR links kept, hidden and empty sections dropped.
+//   node scripts/release-notes.mjs filter [--in notes.md] [--version X.Y.Z]
+//     the notes the app's What's new shows (release.yml writes them into
+//     latest.json): the release cut without the `**scope:**` labels and the
+//     PR links, each line starting with a capital, the version heading plain.
+//   node scripts/release-notes.mjs preview [--dir .] [--version X.Y.Z] [--raw | --release] [--out file]
+//     the app's notes for the NEXT release: the commits since the last v*
 //     tag (or the root) grouped as release-please groups them
 //     (release-please-config.json changelog-sections), then `filter`.
-//     --raw prints the release-please-style notes before the filter.
+//     --raw prints the release-please-style notes, --release the release cut.
 //   node scripts/release-notes.mjs curated --version X.Y.Z [--out file]
 //     the hand-written notes in release-notes/vX.Y.Z.md; exits 1 when there are none.
 //
-// Hand-written notes win: when release-notes/v<version>.md exists, `filter
-// --version` and `preview` give it as is (release.yml then also makes it the
-// GitHub release body), in place of the generated notes.
+// Hand-written notes win: when release-notes/v<version>.md exists, `release
+// --version`, `filter --version` and `preview` give it as is, in place of
+// the generated notes.
 //
-// CHANGELOG.md and the GitHub release keep release-please's full notes.
+// CHANGELOG.md keeps release-please's full notes.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -36,8 +40,10 @@ export const RELEASE_PLEASE = read("../release-please-config.json");
 export const SECTIONS = RELEASE_PLEASE["changelog-sections"];
 export const REPO_URL = "https://github.com/brinkercode/freewheel";
 
-/** What a version without any user-visible change says. */
+/** What a version without any user-visible change says in What's new. */
 export const NOTHING_VISIBLE = "This version has no changes you’ll notice. Everything that changed is listed on GitHub.";
+/** ... and on its GitHub release page. */
+export const NOTHING_VISIBLE_RELEASE = "This version has no changes you’ll notice. Everything that changed is in CHANGELOG.md.";
 
 /** Where hand-written notes live, one file per version: release-notes/v0.1.0.md. */
 export const CURATED_DIR = "release-notes";
@@ -142,8 +148,8 @@ export function userBullet(text, config = CONFIG) {
   return t || null;
 }
 
-/** Release-please's notes -> What's new's notes (see the header). */
-export function userNotes(markdown, config = CONFIG) {
+/** Release-please's notes -> the GitHub release's cleaned notes (see the header). */
+export function userNotes(markdown, config = CONFIG, { nothing = NOTHING_VISIBLE_RELEASE } = {}) {
   const blocks = [];
   let section = null;
   let lastBullet = null;
@@ -199,8 +205,32 @@ export function userNotes(markdown, config = CONFIG) {
     }
     if (inList) out.push("");
   }
-  if (!any) out.push(NOTHING_VISIBLE, "");
+  if (!any) out.push(nothing, "");
   return out.join("\n").replace(/\n{3,}/g, "\n\n").replace(/\n+$/, "\n");
+}
+
+const PR_LINK = /\s*\(\[#\d+\]\([^)\s]*\)\)|\s*\(#\d+\)|\s*\[#\d+\]\([^)\s]*\)/g;
+const SCOPE_LABEL = /^\*\*[^*:]+:\*\*\s*/;
+/** "## [0.1.1](…/compare/v0.1.0...v0.1.1) (2026-11-20)" -> "## 0.1.1 (2026-11-20)". */
+const VERSION_LINK = /^(#{1,6}\s+)\[(v?\d+\.\d+\.\d+[^\]]*)\]\([^)]*\)/;
+
+/** One bullet as What's new shows it: no scope label, no PR link, a capital first letter (freewheel stays lowercase). */
+export function appBullet(text) {
+  let t = String(text).replace(SCOPE_LABEL, "").replace(PR_LINK, "").trim();
+  if (!/^freewheel\b/.test(t)) t = t.replace(/^[a-z]/, (c) => c.toUpperCase());
+  return t;
+}
+
+/** Release-please's notes -> What's new's notes: the release cut, then the app's plainer form (see the header). */
+export function appNotes(markdown, config = CONFIG) {
+  return userNotes(markdown, config, { nothing: NOTHING_VISIBLE })
+    .split("\n")
+    .map((line) => {
+      if (VERSION_LINK.test(line)) return line.replace(VERSION_LINK, "$1$2");
+      const item = line.match(/^([*-]\s+)(.*)$/);
+      return item ? `${item[1]}${appBullet(item[2])}` : line;
+    })
+    .join("\n");
 }
 
 const git = (dir, args) => execFileSync("git", args, { cwd: dir, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
@@ -254,14 +284,22 @@ export function nextVersion(tag, commits, config = RELEASE_PLEASE) {
   return `${major}.${minor}.${patch + 1}`;
 }
 
-/** The next release's notes from the repo in `dir`: { version, raw, notes }. */
+/** The next release's notes from the repo in `dir`: { version, raw, release, notes } (notes: What's new's). */
 export function preview({ dir = ".", version, date = new Date().toISOString().slice(0, 10) } = {}) {
   const tag = lastTag(dir);
   const commits = commitsSince(dir, tag);
   const v = version ?? nextVersion(tag, commits);
   const raw = releasePleaseNotes(commits, { version: v, previous: tag, date });
   const curated = curatedNotes(v, dir);
-  return { version: v, tag, commits: commits.length, raw, notes: curated ?? userNotes(raw), curated: Boolean(curated) };
+  return {
+    version: v,
+    tag,
+    commits: commits.length,
+    raw,
+    release: curated ?? userNotes(raw),
+    notes: curated ?? appNotes(raw),
+    curated: Boolean(curated),
+  };
 }
 
 export function parseArgs(argv) {
@@ -270,7 +308,7 @@ export function parseArgs(argv) {
   for (let i = 0; i < rest.length; i++) {
     if (!rest[i].startsWith("--")) throw new Error(`unexpected ${rest[i]}`);
     const name = rest[i].slice(2);
-    if (name === "raw") opts.raw = true;
+    if (name === "raw" || name === "release") opts[name] = true;
     else opts[name] = rest[++i];
   }
   return opts;
@@ -279,19 +317,20 @@ export function parseArgs(argv) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const opts = parseArgs(process.argv.slice(2));
   let text;
-  if (opts.command === "filter") {
+  if (opts.command === "filter" || opts.command === "release") {
     const curated = curatedNotes(opts.version);
     if (curated) console.error(`release-notes: using ${CURATED_DIR}/v${opts.version.replace(/^v/, "")}.md`);
-    text = curated ?? userNotes(readFileSync(opts.in ?? 0, "utf8"));
+    const cut = opts.command === "release" ? userNotes : appNotes;
+    text = curated ?? cut(readFileSync(opts.in ?? 0, "utf8"));
   } else if (opts.command === "curated") {
     text = curatedNotes(opts.version);
     if (!text) process.exit(1);
   } else if (opts.command === "preview") {
     const p = preview({ dir: opts.dir ?? ".", version: opts.version });
     console.error(`release-notes: ${p.commits} commits since ${p.tag ?? "the root"}, next version ${p.version}${p.curated ? " (hand-written notes)" : ""}`);
-    text = opts.raw ? p.raw : p.notes;
+    text = opts.raw ? p.raw : opts.release ? p.release : p.notes;
   } else {
-    console.error("usage: release-notes.mjs filter [--in notes.md] [--version X.Y.Z] | curated --version X.Y.Z [--out file] | preview [--dir .] [--version X.Y.Z] [--raw] [--out file]");
+    console.error("usage: release-notes.mjs release|filter [--in notes.md] [--version X.Y.Z] | curated --version X.Y.Z [--out file] | preview [--dir .] [--version X.Y.Z] [--raw | --release] [--out file]");
     process.exit(1);
   }
   if (opts.out) writeFileSync(opts.out, text);

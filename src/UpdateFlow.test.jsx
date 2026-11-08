@@ -23,7 +23,7 @@ const publish = (version) => {
   updates.published = version;
   listeners[SIM_UPDATE_EVENT].forEach((f) => f({ payload: null }));
 };
-const SIM_NOTES = "## [0.2.0](https://github.com/brinkercode/freewheel/compare) (simulated)\n\n### Features\n\n* **wheel:** smoother scrolling when you turn the wheel fast\n";
+const SIM_NOTES = "## 0.2.0 (simulated)\n\n### New\n\n* Smoother scrolling when you turn the wheel fast\n";
 
 /** The Rust updater's commands, as selfupdate.rs answers them; `check` replaces update_check. */
 function fakeTauri({ simulate = false, check, autoUpdate = true, install = simulate ? "simulated" : "restarting", listenMs = 0, onReady } = {}) {
@@ -156,8 +156,8 @@ test("--simulate: New version, Download, progress, ready, Restart, then the new 
   fireEvent.click(screen.getByRole("button", { name: "What’s new in v0.2.0" }));
   // Exactly the notes the update carried, as markdown.
   expect([...document.querySelectorAll(".whats-new-notes h4, .whats-new-notes li")].map((e) => e.textContent)).toEqual([
-    "Features",
-    "wheel: smoother scrolling when you turn the wheel fast",
+    "New",
+    "Smoother scrolling when you turn the wheel fast",
   ]);
   // The same Rust commands; install answered "simulated", so the window drew the restart.
   expect(invoke.mock.calls.map(([cmd]) => cmd).filter((c) => c.startsWith("update_"))).toEqual(["update_check", "update_check", "update_check", "update_download", "update_install"]);

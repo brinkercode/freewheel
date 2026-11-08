@@ -375,7 +375,7 @@ export default function Simulator({ initial = null }) {
           <div className="fw-sim-paste">
             <textarea
               aria-label="Pasted notes"
-              placeholder={"### Features\n\n* **keys:** what changed"}
+              placeholder={"### New\n\n* What changed, for users"}
               value={pasted}
               onChange={(e) => setPasted(e.target.value)}
               rows={5}

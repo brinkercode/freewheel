@@ -756,17 +756,18 @@ const SIM_PACKAGE: &[u8] = include_bytes!("../fixtures/update/package.bin");
 const SIM_SIGNATURE: &str = include_str!("../fixtures/update/package.bin.sig");
 const SIM_PUBKEY: &str = include_str!("../fixtures/update/test.pub");
 
-/// The release notes the simulated update carries, release-please style.
-pub const SIM_NOTES: &str = "## [{v}](https://github.com/brinkercode/freewheel/compare) (simulated)
+/// The release notes the simulated update carries, as latest.json carries
+/// them (`scripts/release-notes.mjs filter`).
+pub const SIM_NOTES: &str = "## {v} (simulated)
 
-### Features
+### New
 
-* **wheel:** smoother scrolling when you turn the wheel fast
-* **keys:** a shortcut can now open a folder
+* Smoother scrolling when you turn the wheel fast
+* A shortcut can now open a folder
 
-### Bug Fixes
+### Fixed
 
-* the Speed Editor reconnects by itself after your computer wakes up
+* The Speed Editor reconnects by itself after your computer wakes up
 ";
 
 /// The next release's user-facing notes for this build's commit
@@ -1323,7 +1324,7 @@ mod tests {
         let json = include_str!("../../scripts/fixtures/portable-latest.json");
         let m: Manifest = serde_json::from_str(json).unwrap();
         assert_eq!(m.version, "0.1.1");
-        assert!(m.notes.contains("Features"));
+        assert!(m.notes.contains("### New"));
         for key in [
             "windows-x86_64",
             "darwin-aarch64",
@@ -1656,7 +1657,7 @@ mod tests {
         let sample = u.sim_notes(Some(NotesChoice::Sample), None).unwrap();
         assert_eq!(sample.notes, SIM_NOTES.replace("{v}", "0.2.0"));
         assert_eq!(check(&u), sample.notes);
-        let pasted = "### Features\n\n* **keys:** pasted\n";
+        let pasted = "### New\n\n* **Keys:** pasted\n";
         let p = u
             .sim_notes(Some(NotesChoice::Paste), Some(pasted.into()))
             .unwrap();

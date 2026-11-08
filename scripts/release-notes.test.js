@@ -11,7 +11,10 @@ import {
   CURATED_DIR,
   curatedNotes,
   NOTHING_VISIBLE,
+  NOTHING_VISIBLE_RELEASE,
   RELEASE_PLEASE,
+  appBullet,
+  appNotes,
   nextVersion,
   parseCommit,
   preview,
@@ -22,12 +25,12 @@ import {
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 
-test("release-please shows Features, Bug Fixes and Performance, and hides the developer sections", () => {
+test("release-please shows New, Fixed and Faster, and hides the developer sections", () => {
   const sections = RELEASE_PLEASE["changelog-sections"];
   expect(sections.filter((s) => !s.hidden).map((s) => [s.type, s.section])).toEqual([
-    ["feat", "Features"],
-    ["fix", "Bug Fixes"],
-    ["perf", "Performance Improvements"],
+    ["feat", "New"],
+    ["fix", "Fixed"],
+    ["perf", "Faster"],
   ]);
   expect(sections.filter((s) => s.hidden).map((s) => s.type).sort()).toEqual(
     ["build", "chore", "ci", "docs", "refactor", "revert", "style", "test"].sort(),
@@ -40,7 +43,7 @@ test("the developer-only scopes are a config file", () => {
   expect(CONFIG.hidden_scopes.sort()).toEqual(["ci", "deps-dev", "e2e", "footprint", "release", "scripts", "test", "workflow"]);
 });
 
-test("release-please's notes become What's new's: developer bullets, hashes and hidden sections go, PR links stay", () => {
+test("release-please's notes become the release's: developer bullets, hashes and hidden sections go, PR links stay", () => {
   const input = read("./fixtures/release-notes/release-please.md");
   const expected = read("./fixtures/release-notes/user.md");
   const out = userNotes(input);
@@ -84,7 +87,8 @@ test("GitHub's generated notes (a hand-pushed tag) are filtered by commit type a
 
 test("a release with nothing a user notices still says something (latest.json needs notes)", () => {
   const dev = "## [0.1.1](x) (2026-11-08)\n\n\n### Bug Fixes\n\n* **ci:** retry ([abc1234](https://github.com/o/r/commit/abc1234))\n";
-  expect(userNotes(dev)).toBe(`## [0.1.1](x) (2026-11-08)\n\n${NOTHING_VISIBLE}\n`);
+  expect(userNotes(dev)).toBe(`## [0.1.1](x) (2026-11-08)\n\n${NOTHING_VISIBLE_RELEASE}\n`);
+  expect(appNotes(dev)).toBe(`## 0.1.1 (2026-11-08)\n\n${NOTHING_VISIBLE}\n`);
 });
 
 test("commits group as release-please groups them", () => {
@@ -108,17 +112,17 @@ test("commits group as release-please groups them", () => {
       "",
       `* **config:** a new mappings format ([fffffff](${R}/commit/${"f".repeat(40)}))`,
       "",
-      "### Features",
+      "### New",
       "",
       `* **config:** a new mappings format ([fffffff](${R}/commit/${"f".repeat(40)}))`,
       `* **updates:** portable self-update ([#145](${R}/issues/145)) ([bbbbbbb](${R}/commit/${"b".repeat(40)}))`,
       "",
-      "### Bug Fixes",
+      "### Fixed",
       "",
       `* **scripts:** resolve the three CodeQL alerts ([#148](${R}/issues/148)) ([aaaaaaa](${R}/commit/${"a".repeat(40)}))`,
       `* the wheel wakes up ([eeeeeee](${R}/commit/${"e".repeat(40)}))`,
       "",
-      "### Performance Improvements",
+      "### Faster",
       "",
       `* smaller exe ([#144](${R}/issues/144)) ([ccccccc](${R}/commit/${"c".repeat(40)}))`,
       "",
@@ -168,32 +172,39 @@ test("the preview reads the commits after the last tag (all of them before the f
   commit("feat(keys): before the tag (#1)");
   let p = preview({ dir: repo, date: "2026-11-20" });
   expect(p.tag).toBeNull();
-  expect(p.notes).toContain("* **keys:** before the tag ([#1](");
+  expect(p.release).toContain("* **keys:** before the tag ([#1](");
+  expect(p.notes).toContain("* Before the tag\n");
   git("tag", "v0.1.0");
   commit("fix(ci): only CI (#2)");
   commit("fix(wheel): smoother (#3)");
   p = preview({ dir: repo, date: "2026-11-20" });
   expect(p).toMatchObject({ tag: "v0.1.0", version: "0.1.1", commits: 2 });
-  expect(p.notes).toBe(
+  expect(p.release).toBe(
     [
       "## [0.1.1](https://github.com/brinkercode/freewheel/compare/v0.1.0...v0.1.1) (2026-11-20)",
       "",
-      "### Bug Fixes",
+      "### Fixed",
       "",
       "* **wheel:** smoother ([#3](https://github.com/brinkercode/freewheel/issues/3))",
       "",
     ].join("\n"),
   );
+  expect(p.notes).toBe(["## 0.1.1 (2026-11-20)", "", "### Fixed", "", "* Smoother", ""].join("\n"));
   // One filter for the release and the preview: the preview is the release's notes filtered.
-  expect(p.notes).toBe(userNotes(p.raw));
+  expect(p.release).toBe(userNotes(p.raw));
+  expect(p.notes).toBe(appNotes(p.raw));
 });
 
-test("release.yml gives latest.json the filtered notes and keeps the release's own (unless hand-written notes replace both)", () => {
+test("release.yml puts the release cut on the GitHub release and the app's cut in latest.json (hand-written notes win for both)", () => {
   const release = read("../.github/workflows/release.yml");
-  expect(release).toContain('node scripts/release-notes.mjs filter --version "${GITHUB_REF_NAME#v}" --in "$RUNNER_TEMP/release-notes.md" --out "$RUNNER_TEMP/user-notes.md"');
+  expect(release).toContain('gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$RUNNER_TEMP/release-please.md"');
+  expect(release).toContain('node scripts/release-notes.mjs release --version "${GITHUB_REF_NAME#v}" --in "$RUNNER_TEMP/release-please.md" --out "$RUNNER_TEMP/release-notes.md"');
+  expect(release).toContain('node scripts/release-notes.mjs filter --version "${GITHUB_REF_NAME#v}" --in "$RUNNER_TEMP/release-please.md" --out "$RUNNER_TEMP/user-notes.md"');
   expect(release).toContain('cat "$RUNNER_TEMP/user-notes.md"');
-  // The release body is only ever replaced by hand-written notes.
-  expect(release.match(/gh release edit[^\n]*/g)).toEqual(['gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/curated.md"']);
+  // The release body is replaced by the cleaned notes only (never the app's cut).
+  expect(release.match(/gh release edit[^\n]*/g)).toEqual(['gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/release-notes.md"']);
+  // Both cuts come from release-please's body, read before it is replaced.
+  expect(release.indexOf("release-please.md")).toBeLessThan(release.indexOf("gh release edit"));
 });
 
 test("test builds embed the next release's notes and the e2e proves them in What's new", () => {
@@ -228,14 +239,81 @@ test("hand-written notes in release-notes/v<version>.md win over the generated o
 test("release-notes/v0.1.0.md is the first release's plain, user-facing notes", () => {
   const notes = curatedNotes("0.1.0");
   expect(notes).toMatch(/^## First release\n/);
-  for (const part of ["### Download", "### Updates", "portable", "--simulate"]) expect(notes).toContain(part);
-  expect(notes).not.toMatch(/freewheel-[a-z]*\d|\bscope\b|\bcard\b|commit|\bCI\b|e2e|handoff|prototype|owner/i);
+  for (const part of ["### What you can do", "### Download", "### Updates", "portable", "SCHEMA.md", "Device test"]) expect(notes).toContain(part);
+  for (const file of ["windows-x64.exe", "macos-universal.dmg", "linux-x86_64.AppImage"]) expect(notes).toContain(`freewheel-0.1.0-${file}`);
+  expect(notes).not.toMatch(/freewheel-[a-z]*\d(?!\.\d)|\bscope\b|\bcard\b|commit|\bCI\b|e2e|handoff|prototype|owner/i);
   expect(userNotes(notes)).toBe(notes);
+});
+
+const RP_011 = read("./fixtures/release-notes/release-please-0.1.1.md");
+
+test("v0.1.1: the GitHub release keeps scope labels and PR links, loses the developer fixes and the hashes", () => {
+  const out = userNotes(RP_011);
+  expect(out).toBe(read("./fixtures/release-notes/release-0.1.1.md"));
+  expect(out).toMatch(/^## \[0\.1\.1\]\(https:\/\/github\.com\/brinkercode\/freewheel\/compare\/v0\.1\.0\.\.\.v0\.1\.1\) \(2026-11-20\)\n/);
+  for (const h of ["### New", "### Fixed", "### Faster"]) expect(out).toContain(h);
+  expect(out).toContain("* **device:** the Speed Editor reconnects by itself after the computer wakes from sleep ([#188](https://github.com/brinkercode/freewheel/issues/188))");
+  expect(out).not.toMatch(/\*\*ci:\*\*|\*\*scripts:\*\*|#193|#194|\/commit\//);
+  expect(userNotes(out)).toBe(out);
+});
+
+test("v0.1.1: What's new has no scope labels or PR numbers, a capital on each line and a plain version heading", () => {
+  const out = appNotes(RP_011);
+  expect(out).toBe(read("./fixtures/release-notes/app-0.1.1.md"));
+  expect(out).toBe(
+    [
+      "## 0.1.1 (2026-11-20)",
+      "",
+      "### New",
+      "",
+      "* A key can open a folder",
+      "* Smoother scrolling when you turn the wheel fast",
+      "",
+      "### Fixed",
+      "",
+      "* The Speed Editor reconnects by itself after the computer wakes from sleep",
+      "* The tray icon no longer shows Off after Resolve closes",
+      "",
+      "### Faster",
+      "",
+      "* Use less memory while freewheel sits in the tray",
+      "",
+    ].join("\n"),
+  );
+  expect(out).not.toMatch(/\*\*|#\d|\]\(|github\.com/);
+  // The app's cut of the release's cut is the same.
+  expect(appNotes(userNotes(RP_011))).toBe(out);
+  expect(appNotes(out)).toBe(out);
+});
+
+test("an app bullet: label and PR links go, the first letter is a capital, freewheel stays lowercase", () => {
+  expect(appBullet("**keys:** a key can open a folder ([#190](https://github.com/o/r/issues/190))")).toBe("A key can open a folder");
+  expect(appBullet("the wheel wakes up ([#154](https://github.com/o/r/pull/154))")).toBe("The wheel wakes up");
+  expect(appBullet("the wheel wakes up (#154)")).toBe("The wheel wakes up");
+  expect(appBullet("freewheel starts at login")).toBe("freewheel starts at login");
+  expect(appBullet("`Shift` is released")).toBe("`Shift` is released");
+  expect(appBullet("a [link](https://github.com/o/r) stays")).toBe("A [link](https://github.com/o/r) stays");
+});
+
+test("GitHub's generated notes get the app's cut too", () => {
+  const generated = "## What's Changed\n* feat(keys): a key can open a folder by @someone in https://github.com/brinkercode/freewheel/pull/151\n";
+  expect(appNotes(generated)).toBe("## What's Changed\n\n* A key can open a folder\n");
+});
+
+test("the CLI: `release` and `filter` give the two cuts, hand-written notes win for both", () => {
+  const script = new URL("./release-notes.mjs", import.meta.url).pathname;
+  const fixture = new URL("./fixtures/release-notes/release-please-0.1.1.md", import.meta.url).pathname;
+  const run = (...args) => execFileSync(process.execPath, [script, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  expect(run("release", "--in", fixture)).toBe(userNotes(RP_011));
+  expect(run("filter", "--in", fixture)).toBe(appNotes(RP_011));
+  expect(run("release", "--version", "0.1.0", "--in", fixture)).toBe(curatedNotes("0.1.0"));
+  expect(run("filter", "--version", "0.1.0", "--in", fixture)).toBe(curatedNotes("0.1.0"));
 });
 
 test("release.yml makes the hand-written notes the release body and What's new", () => {
   const release = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
-  expect(release).toContain('node scripts/release-notes.mjs curated --version "${GITHUB_REF_NAME#v}" --out "$RUNNER_TEMP/curated.md"');
-  expect(release).toContain('gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/curated.md"');
+  // `release` and `filter` both give release-notes/v<version>.md when it exists.
+  expect(release).toContain('node scripts/release-notes.mjs release --version "${GITHUB_REF_NAME#v}" --in');
   expect(release).toContain('node scripts/release-notes.mjs filter --version "${GITHUB_REF_NAME#v}" --in');
+  expect(release).not.toContain("release-notes.mjs curated");
 });

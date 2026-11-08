@@ -14,8 +14,8 @@ const SAMPLE = { base: { Cut: "Ctrl+C", In: "I", Out: "O", Esc: "Ctrl+Z", Snap: 
 const MODES = { Jog: "Jog", Shtl: "Shuttle", Scrl: "Scroll" };
 
 /** The fake's update notes (selfupdate.rs SIM_NEXT_NOTES and SIM_NOTES). */
-export const SIM_NEXT = "## [0.1.0](https://github.com/brinkercode/freewheel/compare/v0.1.0...v0.1.0) (2026-11-07)\n\n### Features\n\n* **keys:** the next release's change\n";
-export const SIM_SAMPLE = "### Features\n\n* **wheel:** smoother scrolling when you turn the wheel fast\n";
+export const SIM_NEXT = "## 0.1.0 (2026-11-07)\n\n### New\n\n* The next release's change\n";
+export const SIM_SAMPLE = "### New\n\n* Smoother scrolling when you turn the wheel fast\n";
 
 /** A fresh fake session; `invoke(cmd, args)` answers like the Tauri bridge. */
 export function createSimFake({ next = SIM_NEXT } = {}) {
