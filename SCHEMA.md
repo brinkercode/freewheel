@@ -83,7 +83,8 @@ values like `"Dark"` or `"JOG"` may be in any case.
 <!-- end generated: fields -->
 
 `<page>` is any page name: pages are named by you, must be different from
-each other (ignoring case), and the first one is where the Speed Editor
+each other (ignoring case, accented letters too: `Ärger` and `ärger`
+are the same name), and the first one is where the Speed Editor
 starts. `<mode>` is one of these wheel modes:
 
 <!-- generated: wheel-modes -->
