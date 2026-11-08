@@ -217,8 +217,13 @@ export function communityProblems(dir = root) {
   return problems;
 }
 
+/**
+ * The licences npm packages may use: permissive, plus MPL-2.0 (weak file-level copyleft, allowed for the
+ * Rust crates in deny.toml too; the bundler's lightningcss uses it).
+ */
+export const NPM_ALLOWED = ["MIT", "MIT-0", "ISC", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "0BSD", "CC0-1.0", "CC-BY-4.0", "Unlicense", "BlueOak-1.0.0", "Python-2.0", "Zlib", "MPL-2.0"];
+
 /** The npm licences in package-lock.json that are not allowed (empty when all are). */
-export const NPM_ALLOWED = ["MIT", "MIT-0", "ISC", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "0BSD", "CC0-1.0", "CC-BY-4.0", "Unlicense", "BlueOak-1.0.0", "Python-2.0", "Zlib"];
 export function npmLicenseProblems(lock, allowed = NPM_ALLOWED) {
   const problems = [];
   const ok = (expr) => expr.replace(/[()]/g, " ").split(/\s+OR\s+/).some((alt) => alt.split(/\s+AND\s+/).every((l) => allowed.includes(l.trim())));
