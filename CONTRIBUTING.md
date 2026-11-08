@@ -33,8 +33,8 @@ Editor, so every screen can be tried without the hardware.
   `feat:`, `docs:` …); release-please writes the changelog from them.
 - `feat:`/`fix:`/`perf:` titles are the release notes: write them for users,
   e.g. `fix: the Speed Editor reconnects after sleep` (at least four words,
-  lowercase start, no closing period, no developer jargon such as CI, e2e,
-  test or workflow). Developer-only changes take a hidden scope
+  no closing period, no developer jargon such as CI, e2e, lint or
+  workflow). Developer-only changes take a hidden scope
   (`scripts/release-notes.json`, e.g. `fix(ci): …`). `oss-readiness` checks
   the title.
 - Sign off your commits (`git commit -s`): it certifies the

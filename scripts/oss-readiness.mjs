@@ -127,7 +127,8 @@ function scanRange(base, head) {
 /** Conventional commit types the history uses (release-please-config.json changelog-sections). */
 export const PR_TYPES = ["feat", "fix", "perf", "revert", "docs", "style", "chore", "refactor", "test", "build", "ci"];
 /** Words that mark a developer-facing change; user-visible titles (they are the release notes) avoid them. */
-export const PR_JARGON = ["CI", "e2e", "refactor", "lint", "clippy", "CodeQL", "test", "tests", "workflow", "workflows", "script", "scripts", "bump", "bumps"];
+// "test" is not here: "Device test" is a screen users see.
+export const PR_JARGON = ["CI", "e2e", "refactor", "lint", "clippy", "CodeQL", "workflow", "workflows", "script", "scripts", "bump", "bumps"];
 const JARGON_RE = new RegExp(`(?<![\\w-])(${PR_JARGON.join("|")})(?![\\w-])`, "i");
 const HIDDEN_SCOPES = () => JSON.parse(readFileSync(path.join(root, "scripts/release-notes.json"), "utf8")).hidden_scopes;
 
@@ -135,7 +136,8 @@ const HIDDEN_SCOPES = () => JSON.parse(readFileSync(path.join(root, "scripts/rel
  * The pr-title rule (empty when the title is fine): a conventional commit; a
  * feat/fix/perf title without a developer-only scope (scripts/release-notes.json
  * hidden_scopes) is a release note, so its description has at least 4 words,
- * starts lowercase, has no closing period and no developer jargon (PR_JARGON).
+ * has no closing period and no developer jargon (PR_JARGON). It may start with
+ * a capital ("Speed Editor…", "AppImage…"): the notes capitalise it anyway.
  */
 export function prTitleProblems(title, { hiddenScopes = HIDDEN_SCOPES() } = {}) {
   const t = String(title ?? "").trim();
@@ -148,7 +150,6 @@ export function prTitleProblems(title, { hiddenScopes = HIDDEN_SCOPES() } = {}) 
   const problems = [];
   const note = `(${type} titles are the release notes: write them for users, e.g. "fix: the Speed Editor reconnects after sleep"; developer-only changes take a hidden scope: ${hiddenScopes.join(", ")})`;
   if (description.split(/\s+/).filter(Boolean).length < 4) problems.push(`pr-title: "${description}" is under 4 words ${note}`);
-  if (/^[A-Z]/.test(description)) problems.push(`pr-title: "${description}" starts with a capital; start lowercase ${note}`);
   if (/\.$/.test(description)) problems.push(`pr-title: "${description}" ends with a period ${note}`);
   const jargon = description.match(JARGON_RE);
   if (jargon) problems.push(`pr-title: "${jargon[1]}" is developer jargon ${note}`);
