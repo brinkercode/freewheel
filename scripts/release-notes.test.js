@@ -203,7 +203,11 @@ test("release.yml puts the release cut on the GitHub release and the app's cut i
   expect(release).toContain('node scripts/release-notes.mjs filter --version "${GITHUB_REF_NAME#v}" --in "$RUNNER_TEMP/release-please.md" --out "$RUNNER_TEMP/user-notes.md"');
   expect(release).toContain('cat "$RUNNER_TEMP/user-notes.md"');
   // The release body is replaced by the cleaned notes only (never the app's cut).
-  expect(release.match(/gh release edit[^\n]*/g)).toEqual(['gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/release-notes.md"']);
+  // (the other edit only publishes the draft, its notes untouched).
+  expect(release.match(/gh release edit[^\n]*/g)).toEqual([
+    'gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/release-notes.md"',
+    'gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest',
+  ]);
   // Both cuts come from release-please's body, read before it is replaced.
   expect(release.indexOf("release-please.md")).toBeLessThan(release.indexOf("gh release edit"));
 });

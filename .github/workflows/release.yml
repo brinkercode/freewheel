@@ -1,8 +1,11 @@
 # Release for freewheel: on a version tag (started by release-please.yml
 # with workflow_dispatch on the tag it made, or by a pushed v* tag), runs
 # the full ci.yml test matrix, then builds the release files and uploads
-# them to the tag's PUBLISHED GitHub Release. Each is downloaded and run as
-# it is: no installer, no zip.
+# them to the tag's DRAFT GitHub Release. Each is downloaded and run as it
+# is: no installer, no zip. The release is published (and made the latest)
+# only as the last step, once every file and latest.json are on it and
+# checked: until then releases/latest stays on the previous release, so the
+# in-app updater never sees a release without its latest.json.
 #   freewheel-<ver>-windows-x64.exe      the portable exe itself
 #   freewheel-<ver>-macos-universal.dmg  freewheel.app (universal; signed and
 #                                         notarized once the APPLE_* secrets
@@ -19,7 +22,9 @@
 # The updater pubkey (a public variable) is baked into the binaries at
 # build; the build jobs hold no updater secret. The signing key lives only
 # in the protected 'release' environment and only in the sign step's env.
-# Then the published latest.json and every signature are verified, and
+# Then the draft's files and latest.json and every signature are verified,
+# the release is published and made the latest, the public
+# releases/latest/download/latest.json is checked to be this version, and
 # update-e2e updates the previous release to this one on Windows.
 name: release
 
@@ -36,8 +41,10 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     uses: ./.github/workflows/ci.yml
 
-  # The tag's release, published, and its notes: release-please made it; for
-  # a hand-pushed tag it is made here with GitHub's generated notes. Two cuts
+  # The tag's draft release and its notes: release-please made it (draft,
+  # with the tag: release-please-config.json "draft" and
+  # "force-tag-creation"); for a hand-pushed tag it is made here, a draft
+  # with GitHub's generated notes. Two cuts
   # of those notes (scripts/release-notes.mjs, the same script the
   # Simulator's "Next release" notes and the update e2e use):
   #   release  replaces the release body: developer-only bullets and commit
@@ -70,9 +77,10 @@ jobs:
         run: |
           if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag \
-              --title "freewheel $GITHUB_REF_NAME" --generate-notes
+              --title "freewheel $GITHUB_REF_NAME" --generate-notes --draft
           fi
-          test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = false
+          test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true \
+            || { echo "::error::$GITHUB_REF_NAME is already published: files go onto a draft, which is published last"; exit 1; }
           gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$RUNNER_TEMP/release-please.md"
           node scripts/release-notes.mjs release --version "${GITHUB_REF_NAME#v}" --in "$RUNNER_TEMP/release-please.md" --out "$RUNNER_TEMP/release-notes.md"
           node scripts/release-notes.mjs filter --version "${GITHUB_REF_NAME#v}" --in "$RUNNER_TEMP/release-please.md" --out "$RUNNER_TEMP/user-notes.md"
@@ -212,8 +220,8 @@ jobs:
           retention-days: 7
 
   # Signs each release file with the updater key, writes latest.json with the
-  # release's notes, verifies all of it locally, then uploads to the release.
-  publish:
+  # release's notes, verifies all of it locally, then uploads to the draft.
+  upload:
     needs: [build, notes]
     environment: release
     runs-on: ubuntu-latest
@@ -263,20 +271,24 @@ jobs:
           node scripts/verify-update-sig.mjs packages/latest.json --version "$GITHUB_REF_NAME" --dir packages
           ls -la packages
 
-      - name: Upload to the release
+      - name: Upload to the draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = false
+          test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
           gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber packages/*
 
-  # Checks the published latest.json lists every platform the updater serves,
-  # carries this version and the notes, and that every download verifies
+  # Checks the draft before anyone can see it: it holds every release file,
+  # each .sig and latest.json (nothing missing, empty or still uploading),
+  # latest.json is this version with every url pointing at this tag's files
+  # and every platform, and each file downloaded from the draft verifies
   # against the updater pubkey (what the running app checks).
   latest-json:
-    needs: publish
+    needs: upload
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: write # a draft release is visible only with write access
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -286,17 +298,60 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Check and verify the release's latest.json
+      - name: Check the draft's files and latest.json
         env:
           GH_TOKEN: ${{ github.token }}
           TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
         run: |
-          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern latest.json
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,assets > "$RUNNER_TEMP/release.json"
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --dir draft
+          node scripts/check-release-assets.mjs "$RUNNER_TEMP/release.json" draft/latest.json --repo "$GITHUB_REPOSITORY" --draft
+          node scripts/check-latest-json.mjs draft/latest.json
+          node scripts/verify-update-sig.mjs draft/latest.json --version "$GITHUB_REF_NAME" --dir draft
+
+  # The last step of a release: the checked draft is published and made the
+  # latest, then the public latest.json (what installed apps fetch) must be
+  # this version.
+  publish:
+    needs: latest-json
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+
+      - name: Publish the release as the latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,assets > "$RUNNER_TEMP/release.json"
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern latest.json --dir "$RUNNER_TEMP"
+          node scripts/check-release-assets.mjs "$RUNNER_TEMP/release.json" "$RUNNER_TEMP/latest.json" --repo "$GITHUB_REPOSITORY" --draft
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+
+      - name: The public latest.json is this release's
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
+        run: |
           test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = false
+          url="https://github.com/$GITHUB_REPOSITORY/releases/latest/download/latest.json"
+          for i in $(seq 1 30); do
+            if curl -fsSL "$url" -o latest.json && [ "$(node -p "require('./latest.json').version")" = "${GITHUB_REF_NAME#v}" ]; then break; fi
+            echo "attempt $i: $url is not ${GITHUB_REF_NAME#v} yet"; rm -f latest.json; sleep 10
+          done
+          test -s latest.json
           node scripts/check-latest-json.mjs latest.json
           node scripts/verify-update-sig.mjs latest.json --version "$GITHUB_REF_NAME"
 
   # The previous published release's exe, downloaded into a folder, updates itself to this one.
   update-e2e:
-    needs: latest-json
+    needs: publish
     uses: ./.github/workflows/update-e2e.yml

@@ -63,8 +63,13 @@ test package verified with a test key) and never installs.
    `e2e-windows.yml` and `e2e-linux.yml` on that PR's branch (a PR made with `GITHUB_TOKEN`
    starts no workflow by itself), so the required checks run.
 2. Squash-merge the release PR. On that push release-please tags `vX.Y.Z`,
-   publishes the GitHub release with the notes, and starts `release.yml` on the
-   tag.
+   makes the GitHub release with the notes **as a draft**, and starts
+   `release.yml` on the tag. `release-please-config.json` sets `"draft": true`
+   and `"force-tag-creation": true`: GitHub makes no tag for a draft until it
+   is published, so release-please makes the tag itself first. With the tag,
+   `release.yml` can run on it and release-please finds this release (it
+   reads drafts too, by their tag's commit) when it computes the next version
+   and changelog.
 3. `release.yml` runs the CI matrix, then:
    - `build` (Windows, macOS; `release` environment): `npm run tauri -- build`
      (`scripts/tauri-release.mjs` bakes `vars.TAURI_UPDATER_PUBKEY` in),
@@ -73,17 +78,32 @@ test package verified with a test key) and never installs.
      no e2e-only code), makes the release file (`scripts/portable-release.mjs
      package`: the exe copied under its release name; on macOS the `.dmg`
      made with `hdiutil create`, then `hdiutil verify`).
-   - `publish` (`release` environment): signs each file with the updater key
+   - `upload` (`release` environment): signs each file with the updater key
      (the only step that sees it), writes `latest.json` with the release's
      app notes (the `notes` job's `scripts/release-notes.mjs filter`),
-     verifies every signature locally, uploads all to the release.
-   - `latest-json` re-downloads the published `latest.json` and verifies every
-     package against `vars.TAURI_UPDATER_PUBKEY`.
+     verifies every signature locally, uploads all to the draft.
+   - `latest-json` checks the draft (`scripts/check-release-assets.mjs
+     --draft`): the exe, the dmg, the AppImage, each `.sig` and `latest.json`
+     are all there, uploaded and not empty, nothing else is, and `latest.json`
+     is this version with every platform's url pointing at this tag's files.
+     Then it downloads the draft's files and verifies each against
+     `vars.TAURI_UPDATER_PUBKEY`, as the app does.
+   - `publish`, the last step of the release: checks the draft once more,
+     publishes it and marks it the latest (`gh release edit --draft=false
+     --latest`), then waits until
+     `releases/latest/download/latest.json` serves this version and verifies
+     it.
    - `update-e2e` downloads the previous release's exe into a folder on
-     Windows and updates it to this one with that app's own updater.
+     Windows and updates it to this one with that app's own updater (it lists
+     published releases only, so it runs after `publish`).
 
-While a release builds (about 20 minutes) the release is already the latest
-one but has no `latest.json`: update checks find nothing and retry next start.
+Until `publish`, the release is a draft: only maintainers see it,
+`releases/latest` (the README's download link and the app's update check)
+stays on the previous release, and installed apps keep finding that
+release's `latest.json`. A failed test, build or check leaves the draft
+unpublished; fix it and re-run the failed jobs. `notes` and `upload` refuse
+an already published release, so files only ever go onto a draft. A
+hand-pushed `v*` tag with no release gets a draft made by `notes`.
 
 Every PR also runs `update e2e (windows-2025, local release server)` in
 `e2e-windows.yml`: two e2e builds (A = the repo's version, B = next minor)

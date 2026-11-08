@@ -1,9 +1,13 @@
 # Release-please for freewheel: on each push to main it keeps one release PR
 # open (the next version from the conventional commits, the CHANGELOG and
 # the version in package.json, tauri.conf.json and the Cargo files). Merging
-# that PR tags vX.Y.Z and publishes its GitHub release with the notes; this
-# workflow then starts release.yml on the tag, which builds and uploads the
-# signed installers and latest.json (with the same notes) to that release.
+# that PR tags vX.Y.Z and makes its GitHub release as a DRAFT with the notes
+# (release-please-config.json "draft"; "force-tag-creation" makes the tag at
+# once, which a draft alone would not, so release.yml can run on it and
+# release-please finds this release next time); this workflow then starts
+# release.yml on the tag, which builds and uploads the signed files and
+# latest.json (with the same notes) to the draft and publishes it, as the
+# latest release, only once all of them are there and checked.
 #
 # Tags, PRs and pushes made with GITHUB_TOKEN start no other workflow, so the
 # release PR's CI and the release build are started here by
