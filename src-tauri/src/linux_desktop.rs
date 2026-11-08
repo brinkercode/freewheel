@@ -325,24 +325,37 @@ pub fn find_icon(name: &str, themes: &[String], dirs: &[PathBuf]) -> Option<Path
 
 /// The icon file of the app `source` (a .desktop file) in this session.
 pub fn icon_file(source: &Path) -> Option<PathBuf> {
-    let entry = parse_entry(&std::fs::read_to_string(source).ok()?)?;
     let home = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf());
-    let var = |n: &str| std::env::var(n).ok();
-    let themes: Vec<String> = current_theme(home.as_deref()).into_iter().collect();
-    find_icon(&entry.icon?, &themes, &icon_dirs(var, home.as_deref()))
+    icon_file_in(source, |n: &str| std::env::var(n).ok(), home.as_deref())
+}
+
+/// [`icon_file`] with the session's env vars and home given (tests).
+pub fn icon_file_in(
+    source: &Path,
+    var: impl Fn(&str) -> Option<String>,
+    home: Option<&Path>,
+) -> Option<PathBuf> {
+    let entry = parse_entry(&std::fs::read_to_string(source).ok()?)?;
+    let themes: Vec<String> = current_theme(home).into_iter().collect();
+    find_icon(&entry.icon?, &themes, &icon_dirs(var, home))
 }
 
 /// The icon of the app `source` as PNG bytes at `px` (gdk-pixbuf draws SVG
-/// and XPM too), or the SVG itself when no SVG loader is installed.
+/// and XPM too), or the PNG or SVG file itself when gdk-pixbuf can't draw
+/// it (no loader installed): the window scales those.
 pub fn icon_bytes(source: &Path, px: u32) -> Option<Vec<u8>> {
-    let file = icon_file(source)?;
+    draw_icon(&icon_file(source)?, px)
+}
+
+/// Draws the icon `file` as PNG bytes at `px` (see [`icon_bytes`]).
+pub fn draw_icon(file: &Path, px: u32) -> Option<Vec<u8>> {
     let size = i32::try_from(px).ok()?;
-    match gdk_pixbuf::Pixbuf::from_file_at_scale(&file, size, size, true) {
+    match gdk_pixbuf::Pixbuf::from_file_at_scale(file, size, size, true) {
         Ok(pixbuf) => pixbuf.save_to_bufferv("png", &[]).ok(),
         Err(e) => {
             tracing::debug!(file = %file.display(), error = %e, "icon not drawn");
-            let bytes = std::fs::read(&file).ok()?;
-            crate::app_icons::is_svg(&bytes).then_some(bytes)
+            let bytes = std::fs::read(file).ok()?;
+            (crate::app_icons::is_svg(&bytes) || crate::app_icons::is_png(&bytes)).then_some(bytes)
         }
     }
 }
@@ -538,10 +551,47 @@ mod tests {
         assert_eq!(tray_hint(None), None);
     }
 
+    /// A tiny icon theme shipped with the tests (tests/fixtures/icon-theme:
+    /// hicolor with a PNG and an SVG app icon), found through XDG_DATA_DIRS
+    /// given to the lookup, so this runs the same on any machine.
     #[test]
     fn a_desktop_entrys_icon_draws_as_a_png() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/icon-theme");
+        let data_dirs = fixture.display().to_string();
+        let var = |n: &str| match n {
+            "XDG_DATA_DIRS" | "XDG_DATA_HOME" => Some(data_dirs.clone()),
+            _ => None,
+        };
         let root = tempfile::tempdir().unwrap();
-        // A 2x2 red PNG as the entry's absolute icon.
+        for (name, ext) in [
+            ("freewheel-fixture-png", "png"),
+            ("freewheel-fixture-svg", "svg"),
+        ] {
+            let desktop = write(
+                root.path(),
+                &format!("{name}.desktop"),
+                &format!("[Desktop Entry]\nType=Application\nName=F\nExec=f\nIcon={name}\n"),
+            );
+            let file = icon_file_in(&desktop, var, None).expect("the fixture theme's icon");
+            assert!(file.starts_with(&fixture), "{}", file.display());
+            assert_eq!(file.extension().unwrap(), ext);
+            let drawn = draw_icon(&file, 64).expect("an icon");
+            if crate::app_icons::is_png(&drawn) {
+                let decoded = png::Decoder::new(std::io::Cursor::new(&drawn))
+                    .read_info()
+                    .unwrap();
+                let size = (decoded.info().width, decoded.info().height);
+                // gdk-pixbuf drew it at 64 px, or (no loader) the PNG itself.
+                assert!(
+                    size == (64, 64) || drawn == std::fs::read(&file).unwrap(),
+                    "{size:?}"
+                );
+            } else {
+                assert_eq!(ext, "svg");
+                assert!(crate::app_icons::is_svg(&drawn));
+            }
+        }
+        // An absolute Icon= path needs no theme.
         let png = crate::app_icons::encode_png(2, 2, &[255, 0, 0, 255].repeat(4)).unwrap();
         let icon = root.path().join("red.png");
         std::fs::write(&icon, &png).unwrap();
@@ -553,11 +603,9 @@ mod tests {
                 icon.display()
             ),
         );
-        let drawn = icon_bytes(&desktop, 64).expect("an icon");
-        assert!(crate::app_icons::is_png(&drawn));
-        let decoded = png::Decoder::new(std::io::Cursor::new(drawn))
-            .read_info()
-            .unwrap();
-        assert_eq!((decoded.info().width, decoded.info().height), (64, 64));
+        assert_eq!(icon_file_in(&desktop, var, None), Some(icon.clone()));
+        assert!(crate::app_icons::is_png(
+            &draw_icon(&icon, 64).expect("an icon")
+        ));
     }
 }
