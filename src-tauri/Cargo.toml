@@ -63,8 +63,9 @@ zbus = { version = "5", default-features = false, features = ["blocking-api", "a
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10"
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWorkspace", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphicsContext", "NSGraphics"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSDictionary", "NSGeometry", "NSData"] }
+block2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "libc", "NSWorkspace", "NSRunningApplication", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphicsContext", "NSGraphics"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "NSString", "NSDictionary", "NSGeometry", "NSData", "NSNotification", "NSOperation", "NSURL", "NSBundle"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [
@@ -76,6 +77,9 @@ windows = { version = "0.62", features = [
     "Win32_System_Registry",
     "Win32_System_Variant",
     "Win32_Graphics_Gdi",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Threading",
+    "Win32_UI_Accessibility",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }

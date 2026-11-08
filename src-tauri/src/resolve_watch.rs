@@ -106,6 +106,7 @@ mod tests {
             Command::Quit(_) => panic!("unexpected Quit"),
             Command::Reload(_) => panic!("unexpected Reload"),
             Command::ExitOverride => panic!("unexpected ExitOverride"),
+            Command::FrontApp(_) => panic!("unexpected FrontApp"),
         }
     }
 

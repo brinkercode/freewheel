@@ -7,6 +7,8 @@ export const SIM_RECORD_KEY_EVENT = "sim-record-key";
 export const SIM_UPDATE_EVENT = "sim-update";
 /** To the Simulator window: lines for its log, from what the app did. */
 export const SIM_LOG_EVENT = "sim-log";
+/** To the Simulator window: its status after a change it did not ask for (the app in front). */
+export const SIM_STATUS_EVENT = "sim-status";
 /** To the Simulator window: the tray menu changed (src-tauri tray.rs TrayMenuState). */
 export const SIM_TRAY_EVENT = "sim-tray";
 

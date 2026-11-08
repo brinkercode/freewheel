@@ -22,6 +22,7 @@ use crate::hid::{FakeTransport, HidError, HidTransport};
 use crate::inject::{InjectError, KeyCombo, KeyInjector, Keystroke};
 use crate::launch::{LaunchError, Launcher};
 use crate::overrides::{DialOutput, NoDial};
+use crate::profiles::FrontApp;
 use crate::report::{DeviceEvent, Key};
 use crate::resolve::{FakeProcessLister, HandOff, ProcessLister, ResolveWatcher};
 
@@ -133,7 +134,7 @@ pub enum Control {
     },
     /// Binds [`sample_mappings`] through the same path as `SetBinding`.
     LoadSampleMappings,
-    /// The empty setup: every binding on every page cleared, extra pages removed.
+    /// The empty setup: every binding on every page cleared, extra pages and profiles removed.
     ClearMappings,
     /// Starts or quits the Resolve process the Resolve watcher polls for.
     Resolve {
@@ -149,6 +150,11 @@ pub enum Control {
     ResetFirstRun,
     /// The Wheel tab's 'Back to normal': leaves the dial override.
     ExitOverride,
+    /// Fakes the app in front, by its program name (`notepad.exe`); `None`
+    /// is freewheel's own window.
+    FrontApp {
+        name: Option<String>,
+    },
 }
 
 /// The macOS permissions (Accessibility, Input Monitoring) as the app sees them.
@@ -249,6 +255,8 @@ pub struct SimStatus {
     pub mapped_keys: usize,
     /// The dial override a key turned the wheel into, if any.
     pub wheel_override: Option<OverrideMode>,
+    /// The last app in front other than freewheel, real or faked.
+    pub front_app: Option<String>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -376,6 +384,8 @@ pub struct Simulator {
     permissions: Permissions,
     update: Option<UpdateState>,
     first_run: Box<dyn FirstRun>,
+    /// The last app in front other than freewheel itself.
+    front: Option<FrontApp>,
 }
 
 impl Simulator {
@@ -429,6 +439,7 @@ impl Simulator {
             battery: None,
             held: Vec::new(),
             toasts: Vec::new(),
+            front: None,
         };
         sim.tick();
         sim
@@ -526,6 +537,7 @@ impl Simulator {
             Control::ClearMappings => {
                 let base = self.config.base_layer.clone();
                 self.config.layers.retain(|l| l.id == base);
+                self.config.profiles.clear();
                 for layer in &mut self.config.layers {
                     layer.bindings.clear();
                 }
@@ -559,8 +571,35 @@ impl Simulator {
                     Ok(())
                 });
             }
+            Control::FrontApp { name } => {
+                let app = match name.as_deref().map(str::trim) {
+                    Some(n) if !n.is_empty() => FrontApp::new(&[n]),
+                    _ => FrontApp::own(),
+                };
+                info!("simulator: {} is in front", app.name);
+                self.front_app(app);
+            }
         }
         self.status()
+    }
+
+    /// Another app came to the front (the OS watcher in --simulate, or the
+    /// Simulator's picker): the engine switches profile as the device loop does.
+    pub fn front_app(&mut self, app: FrontApp) {
+        if !app.own {
+            self.front = Some(app.clone());
+        }
+        if self.engine.front_app(&app) {
+            self.toasts.extend(self.engine.take_outcomes());
+        }
+    }
+
+    /// A rebuilt engine hears the app in front again.
+    fn refront(&mut self) {
+        if let Some(app) = self.front.clone() {
+            self.engine.front_app(&app);
+            self.engine.take_outcomes();
+        }
     }
 
     fn set_enabled(&mut self, on: bool) {
@@ -617,6 +656,7 @@ impl Simulator {
             first_run: self.first_run.is_first_run(),
             mapped_keys: self.config.layers.iter().map(|l| l.bindings.len()).sum(),
             wheel_override: self.engine.active_override(),
+            front_app: self.front.as_ref().map(|f| f.name.clone()),
         }
     }
 
@@ -650,6 +690,7 @@ impl Simulator {
             self.send_for_real,
         );
         self.engine.take_reports();
+        self.refront();
         info!("simulator: running the saved config ({changes} changes)");
         true
     }
@@ -710,6 +751,7 @@ impl Simulator {
             self.send_for_real,
         );
         self.engine.take_reports();
+        self.refront();
     }
 
     /// Sends one input report from the device; false when none is connected.
@@ -1025,6 +1067,94 @@ mod tests {
             assert!(s.toasts.is_empty(), "{name}");
         }
         assert!(mock.calls().is_empty());
+    }
+
+    #[test]
+    fn the_faked_front_app_switches_profiles_and_default_comes_back_on_its_page() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = Config::default();
+        for (id, name) in [("music", "Music"), ("notes", "Notes")] {
+            config.layers.push(Layer {
+                id: id.into(),
+                name: name.into(),
+                bindings: BTreeMap::new(),
+            });
+        }
+        config.profiles.push(crate::config::Profile {
+            id: "writing".into(),
+            name: "Writing".into(),
+            apps: vec![crate::config::ProfileApp {
+                name: "Notepad".into(),
+                windows: Some("notepad.exe".into()),
+                macos: Some("notepad.exe".into()),
+                linux: Some("notepad.exe".into()),
+            }],
+            pages: vec!["notes".into()],
+            color: None,
+            icon: None,
+        });
+        config.layers[0].bindings.insert(
+            "Cam1".into(),
+            Action::LayerPush {
+                target: "music".into(),
+            },
+        );
+        ConfigStore::new(dir.path()).save(&config).unwrap();
+        let (mut sim, _) = sim_in(dir.path());
+        sim.apply(Control::Connect { bus: Bus::Usb });
+        // On Default, CAM 1 goes to Music.
+        sim.apply(Control::Key {
+            key: "Cam1".into(),
+            down: true,
+        });
+        sim.apply(Control::Key {
+            key: "Cam1".into(),
+            down: false,
+        });
+        assert_eq!(sim.apply(Control::Status).page, "music");
+        let front = |sim: &mut Simulator, name: Option<&str>| {
+            sim.apply(Control::FrontApp {
+                name: name.map(str::to_string),
+            })
+        };
+        let s = front(&mut sim, Some("notepad.exe"));
+        assert_eq!(
+            (s.page.as_str(), s.front_app.as_deref()),
+            ("notes", Some("notepad.exe"))
+        );
+        assert!(
+            !s.lit_leds.contains(&"Cam1".to_string()),
+            "{:?}",
+            s.lit_leds
+        );
+        assert_eq!(
+            s.toasts,
+            ["profile is now \"Writing\", page \"Notes\" (notepad.exe is in front)"]
+        );
+        // The Simulator window itself is freewheel: nothing changes.
+        let s = front(&mut sim, None);
+        assert_eq!(s.page, "notes");
+        // A saved config keeps the profile of the app in front.
+        let mut saved = sim.config().clone();
+        saved.layers[2].name = "Notepad keys".into();
+        sim.sync_config(saved);
+        assert_eq!(sim.apply(Control::Status).page, "notes");
+        // Another app: Default (a save starts it on its first page, as in 1.0.0).
+        let s = front(&mut sim, Some("explorer.exe"));
+        assert_eq!(s.page, "base");
+        // Without a save in between, Default comes back on the page it was on.
+        sim.apply(Control::Key {
+            key: "Cam1".into(),
+            down: true,
+        });
+        sim.apply(Control::Key {
+            key: "Cam1".into(),
+            down: false,
+        });
+        front(&mut sim, Some("notepad.exe"));
+        let s = front(&mut sim, Some("explorer.exe"));
+        assert_eq!(s.page, "music");
+        assert!(s.lit_leds.contains(&"Cam1".to_string()));
     }
 
     #[test]

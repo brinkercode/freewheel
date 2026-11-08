@@ -15,6 +15,7 @@ use freewheel_core::hid::{HidError, HidTransport};
 use freewheel_core::inject::KeyInjector;
 use freewheel_core::launch::Launcher;
 use freewheel_core::overrides::OverrideWorker;
+use freewheel_core::profiles::FrontApp;
 use freewheel_core::report::DeviceEvent;
 use freewheel_core::status::KeyPressed;
 use tracing::warn;
@@ -40,6 +41,8 @@ pub enum Command {
     Quit(Sender<()>),
     /// The Wheel tab's 'Back to normal': leave the dial override.
     ExitOverride,
+    /// Another app came to the front (front_app.rs): its profile, or Default.
+    FrontApp(FrontApp),
 }
 
 /// What the tray icon shows.
@@ -115,6 +118,8 @@ pub fn run<T, O, C, F>(
     } = outputs;
     let mut diagnostics_at: Option<std::time::Instant> = None;
     let mut device = DeviceOutput::default();
+    // The last app in front other than freewheel: a new config hears it again.
+    let mut front: Option<FrontApp> = None;
     loop {
         // While connected the read itself waits; otherwise the command wait does.
         let wait = if manager.status() == Some(ConnectionStatus::Connected) {
@@ -130,6 +135,16 @@ pub fn run<T, O, C, F>(
                     device.clear(&mut manager);
                 }
                 manager.set_enabled(on)
+            }
+            Ok(Command::FrontApp(app)) => {
+                if !app.own {
+                    front = Some(app.clone());
+                }
+                if engine.front_app(&app) {
+                    on_update(Update::Layer(engine.current_layer().to_string()));
+                }
+                engine.take_outcomes();
+                Vec::new()
             }
             Ok(Command::ExitOverride) => {
                 let dial = engine.active_override();
@@ -150,6 +165,9 @@ pub fn run<T, O, C, F>(
                 let mode = engine.jog_mode();
                 engine = Engine::new(&config);
                 engine.set_jog_mode(mode);
+                if let Some(app) = &front {
+                    engine.front_app(app);
+                }
                 device.resend();
                 on_update(Update::Layer(engine.current_layer().to_string()));
                 Vec::new()
@@ -946,7 +964,8 @@ mod tests {
     const SCRL_LIT: [u8; 2] = [0x04, 0x04];
 
     /// The config the LED tests run: SNAP latches Ctrl, CAM 1 goes to page
-    /// "edit" (SHTL, JOG, SCRL unbound: their printed modes).
+    /// "edit"; the profile Notes (page "notes") is for notepad.exe (SHTL,
+    /// JOG, SCRL unbound: their printed modes).
     fn led_config() -> Config {
         use freewheel_core::config::{Layer, Modifier};
         let mut config = with_binding(
@@ -968,6 +987,24 @@ mod tests {
             id: "edit".into(),
             name: "Edit".into(),
             bindings: Default::default(),
+        });
+        config.layers.push(Layer {
+            id: "notes".into(),
+            name: "Notes".into(),
+            bindings: Default::default(),
+        });
+        config.profiles.push(freewheel_core::config::Profile {
+            id: "notes".into(),
+            name: "Notes".into(),
+            apps: vec![freewheel_core::config::ProfileApp {
+                name: "Notepad".into(),
+                windows: Some("notepad.exe".into()),
+                macos: Some("notepad.exe".into()),
+                linux: Some("notepad.exe".into()),
+            }],
+            pages: vec!["notes".into()],
+            color: None,
+            icon: None,
         });
         config
     }
@@ -1070,6 +1107,36 @@ mod tests {
             assert!(dev.closed());
         });
         assert_eq!(heard, [vec!["Scrl".to_string()], vec![]]);
+    }
+
+    #[test]
+    fn the_app_in_front_is_heard_and_stepping_aside_keeps_priority() {
+        let clock = test_clock();
+        let (first, second) = (Dev::authenticating(), Dev::authenticating());
+        let manager = manager_of(&[&first, &second], clock.clone());
+        let front = |name: &str| Command::FrontApp(FrontApp::new(&[name]));
+        with_loop(manager, |tx, lit| {
+            lit(&["Scrl"]);
+            // Notepad in front: its profile's page (nothing of Default lit).
+            tx.send(front("notepad.exe")).unwrap();
+            tx.send(Command::FrontApp(FrontApp::own())).unwrap();
+            tx.send(front("code.exe")).unwrap();
+            lit(&["Scrl"]);
+            // Stepped aside for Resolve (Off): Notepad coming to the front
+            // turns nothing back on and lights nothing.
+            tx.send(Command::SetEnabled(false)).unwrap();
+            lit(&[]);
+            tx.send(front("notepad.exe")).unwrap();
+            thread::sleep(Duration::from_millis(100));
+            assert!(first.closed());
+            assert!(second.outputs().is_empty());
+            tx.send(Command::SetEnabled(true)).unwrap();
+            *clock.0.lock().unwrap() += freewheel_core::connection::RETRY_INTERVAL;
+            lit(&["Scrl"]);
+            tx.send(Command::Reload(Box::new(led_config()))).unwrap();
+            thread::sleep(Duration::from_millis(100));
+            lit(&["Scrl"]);
+        });
     }
 
     #[test]

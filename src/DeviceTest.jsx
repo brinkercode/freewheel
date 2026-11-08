@@ -22,8 +22,8 @@ const hex4 = (n) => `0x${Number(n ?? 0).toString(16).padStart(4, "0")}`;
 /** "USB", "Bluetooth" or "—". */
 export const busText = (bus) => (bus === "Usb" ? "USB" : bus === "Bluetooth" ? "Bluetooth" : "—");
 
-/** The status dot class, as the toolbar uses them. */
-export const dotClass = (status) => (status === "Connected" ? "dot-green" : status === "AuthFailed" ? "dot-orange" : "dot-gray");
+/** The status' tone, as the toolbar's (text only; orange is drawn in the warning colour). */
+export const statusTone = (status) => (status === "Connected" ? "green" : status === "AuthFailed" ? "orange" : "gray");
 
 /** Seconds as "9 min 50 s" / "42 s". */
 export function secondsText(s) {
@@ -146,8 +146,7 @@ export default function DeviceTest({
             <section className="card card-stack" aria-label="Connection">
               <div className="card-title">Connection</div>
               <Row label="Status">
-                <span className="row diag-status">
-                  <span className={`status-dot ${dotClass(d.status)}`} />
+                <span className="row diag-status" data-tone={statusTone(d.status)}>
                   {STATUS_TEXT[d.status] ?? "Starting…"}
                 </span>
               </Row>

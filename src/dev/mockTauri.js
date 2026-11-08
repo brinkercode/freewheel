@@ -11,6 +11,8 @@
 //   ?perm=missing          a macOS permission is missing
 //   ?appearance=Light|Dark|System  the Appearance setting (default System)
 //   ?empty=1               an empty setup: one page, nothing set
+//   ?layer=spotify-player  the Speed Editor on that page (here: the Spotify profile's)
+//   ?wayland=1             Linux on Wayland: the app in front is not seen
 //   ?simulate=1            as in --simulate: the Simulator harness drives it (__fwEmit)
 //   ?updated=0.1.1         just updated (from 0.0.0) to that version: What's new shows
 //   &notes=<markdown>      ... with these notes instead of the sample
@@ -22,7 +24,7 @@ const sleep = (ms) => new Promise((r) => globalThis.setTimeout(r, ms));
 
 const hotkey = (key, ...modifiers) => ({ Hotkey: { combo: { modifiers, key } } });
 
-/** The prototype's sample setup: two pages, Main and Music, several keys set. */
+/** The sample setup: two pages, Main and Music, several keys set, and a profile for Spotify with two pages of its own. */
 export function sampleConfig() {
   const empty = params.get("empty") === "1";
   const binding = (left, right) => ({ left, right, threshold: 3, shuttle_max_rate_hz: null });
@@ -75,7 +77,32 @@ export function sampleConfig() {
               AudioLevel: { OverrideToggle: { mode: "AppVolume" } },
             },
           },
+          {
+            id: "spotify-player",
+            name: "Player",
+            bindings: {
+              StopPlay: hotkey("Space"),
+              Cam1: hotkey("Left", "Ctrl"),
+              Cam2: hotkey("Right", "Ctrl"),
+              Esc: { LayerPush: { target: "spotify-library" } },
+            },
+          },
+          { id: "spotify-library", name: "Library", bindings: { Cut: hotkey("L", "Alt", "Shift") } },
         ],
+    ...(empty
+      ? {}
+      : {
+          profiles: [
+            {
+              id: "spotify",
+              name: "Spotify",
+              color: "green",
+              icon: "headphones",
+              apps: [{ name: "Spotify", windows: "Spotify.exe", macos: "com.spotify.client", linux: "spotify" }],
+              pages: ["spotify-player", "spotify-library"],
+            },
+          ],
+        }),
     jog: {
       default_mode: "Jog",
       // An empty setup scrolls on every wheel button, as the default config (config.rs).
@@ -100,7 +127,7 @@ export function sampleStatus() {
     enabled: params.get("off") !== "1",
     connection: params.get("off") === "1" ? "Off" : conn === "none" ? "Absent" : "Connected",
     battery: conn === "bt" ? { level: 64, charging: false } : conn === "btlow" ? { level: 12, charging: false } : null,
-    layer: "main",
+    layer: params.get("layer") ?? "main",
     override_errors: [],
     permissions: params.get("perm") === "missing" ? { Accessibility: "Missing", InputMonitoring: "Granted" } : {},
     bus: BUS[conn] ?? null,
@@ -183,6 +210,14 @@ export function installMockTauri(win = window) {
       { name: "Spotify", path: "explorer.exe", args: ["C:\\Users\\you\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Spotify.lnk"] },
     ],
     choose_app: () => ({ name: "Budget 2026", path: "C:\\Tools\\Budget 2026.exe", args: [] }),
+    // As front_app.rs on Windows: a shortcut's program, else the file itself.
+    profile_app: ({ choice }) => {
+      const file = (choice.args[0] ?? choice.path).split(/[\\/]/).pop();
+      const ua = globalThis.navigator?.userAgent ?? "";
+      const os = /Mac/.test(ua) ? "macos" : /Linux/.test(ua) ? "linux" : "windows";
+      return { name: choice.name, [os]: /\.lnk$/i.test(file) ? `${choice.name}.exe` : file };
+    },
+    front_app_support: () => params.get("wayland") !== "1",
     // A 1×1 blue PNG for Calculator; the others keep their letter avatars.
     app_icons: ({ paths }) =>
       Object.fromEntries(

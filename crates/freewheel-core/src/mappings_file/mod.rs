@@ -26,8 +26,9 @@ pub mod schema;
 use std::collections::BTreeMap;
 
 use crate::config::{
-    Action, Appearance, CONFIG_VERSION, Config, JogBinding, JogMode, JogSettings, KeyCombo, Layer,
-    OverrideMode, OverrideSettings, SaveError,
+    Action, Appearance, CONFIG_VERSION, Config, DEFAULT_PROFILE_NAME, JogBinding, JogMode,
+    JogSettings, KeyCombo, Layer, OverrideMode, OverrideSettings, PROFILE_COLORS, Profile,
+    ProfileApp, SaveError,
 };
 use json::{Member, Node, Pos, Value};
 use names::{closest, device_key, format_combo, key_id, parse_combo, printed_name};
@@ -81,6 +82,48 @@ pub const FIELDS: &[Field] = &[
         default: "{}",
         range: "key name to action",
         about: "Key name (see Key names) to what the key does (see Actions). Keys left out are not set.",
+    },
+    Field {
+        path: "profiles",
+        kind: "list",
+        default: "[] (none)",
+        range: "profiles, each with a name, apps and pages",
+        about: "App profiles: each has its own pages and is used while one of its apps is in front. The pages above are the Default profile, used while no profile's app is.",
+    },
+    Field {
+        path: "profiles[].name",
+        kind: "text",
+        default: "(required)",
+        range: "unique, not Default",
+        about: "The profile's name.",
+    },
+    Field {
+        path: "profiles[].color",
+        kind: "text",
+        default: "(none: the app's accent)",
+        range: "rose, orange, amber, green, teal, blue, indigo, violet",
+        about: "The profile's colour in the Keys tab.",
+    },
+    Field {
+        path: "profiles[].icon",
+        kind: "text",
+        default: "(none: a plain profile icon)",
+        range: "a Material Symbols Rounded icon name, like :edit: or :sports_esports: (see Profile icons)",
+        about: "The profile's icon in the Keys tab, by its name in Google's icon catalogue (https://fonts.google.com/icons?icon.style=Rounded). Written :name: or name.",
+    },
+    Field {
+        path: "profiles[].apps",
+        kind: "list",
+        default: "[] (switched to by no app)",
+        range: "app names, or { \"name\", \"windows\", \"macos\", \"linux\" } objects",
+        about: "The apps the profile is for (see App profiles).",
+    },
+    Field {
+        path: "profiles[].pages",
+        kind: "object",
+        default: "(required)",
+        range: "1 or more pages",
+        about: "The profile's pages, written as pages is. The first page is where the profile starts. A page key goes to a page of the same profile.",
     },
     Field {
         path: "wheel",
@@ -541,15 +584,26 @@ impl<'a> Reader<'a> {
             ..Config::default()
         };
         if let Some(pages) = get("pages") {
-            let (layers, base) = self.pages(pages, current)?;
+            let layers = self.pages(
+                pages,
+                "pages",
+                &current.pages_of(None),
+                &[],
+                Some("base"),
+                "",
+            )?;
+            config.base_layer = layers[0].id.clone();
             config.layers = layers;
-            config.base_layer = base;
         }
+        // The wheel's page actions go to the Default profile's pages.
         let ids: BTreeMap<String, String> = config
             .layers
             .iter()
             .map(|l| (l.name.to_lowercase(), l.id.clone()))
             .collect();
+        if let Some(profiles) = get("profiles") {
+            config.profiles = self.profiles(profiles, current, &mut config.layers)?;
+        }
         if let Some(wheel) = get("wheel") {
             config.jog = self.wheel(wheel, &ids)?;
         }
@@ -574,13 +628,25 @@ impl<'a> Reader<'a> {
         Ok(Imported { config, notes })
     }
 
-    fn pages(&mut self, node: &Node, current: &Config) -> Result<(Vec<Layer>, String), SaveError> {
-        let pages = object(node, "pages")?;
+    /// One set of pages (`pages`, or a profile's): `current` are the pages
+    /// whose ids a page of the same name keeps, `taken` the ids already
+    /// used, `first` the id of the first page (Default's is "base"), and
+    /// new ids start with `prefix`.
+    fn pages(
+        &mut self,
+        node: &Node,
+        at_pages: &str,
+        current: &[&Layer],
+        taken: &[Layer],
+        first: Option<&str>,
+        prefix: &str,
+    ) -> Result<Vec<Layer>, SaveError> {
+        let pages = object(node, at_pages)?;
         if pages.is_empty() {
             return Err(invalid(
                 node.pos,
-                "pages",
-                "pages is empty: write at least one page, like \"Main\": {}",
+                at_pages,
+                format!("{at_pages} is empty: write at least one page, like \"Main\": {{}}"),
             ));
         }
         // Ids: the current page of the same name keeps its id (so a restore
@@ -589,27 +655,26 @@ impl<'a> Reader<'a> {
         for (i, page) in pages.iter().enumerate() {
             let name = page.key.trim();
             if name.is_empty() {
-                return Err(invalid(page.key_pos, "pages", "a page needs a name"));
+                return Err(invalid(page.key_pos, at_pages, "a page needs a name"));
             }
             if let Some(other) = layers.iter().find(|l| l.name.eq_ignore_ascii_case(name)) {
                 return Err(invalid(
                     page.key_pos,
-                    "pages",
+                    at_pages,
                     format!(
                         "the page \"{name}\" is in the file twice (\"{}\" before it; names ignore case)",
                         other.name
                     ),
                 ));
             }
-            let used = |id: &str| layers.iter().any(|l| l.id == id);
+            let used = |id: &str| layers.iter().chain(taken).any(|l| l.id == id);
             let id = current
-                .layers
                 .iter()
                 .find(|l| l.name.eq_ignore_ascii_case(name) && !used(&l.id))
                 .map(|l| l.id.clone())
-                .or_else(|| (i == 0 && !used("base")).then(|| "base".to_string()))
+                .or_else(|| first.filter(|f| i == 0 && !used(f)).map(str::to_string))
                 .unwrap_or_else(|| {
-                    let slug = slug(name);
+                    let slug = format!("{prefix}{}", slug(name));
                     let mut id = slug.clone();
                     let mut n = 2;
                     while used(&id) || id == "base" {
@@ -692,8 +757,106 @@ impl<'a> Reader<'a> {
                 ));
             }
         }
-        let base = layers[0].id.clone();
-        Ok((layers, base))
+        Ok(layers)
+    }
+
+    /// `profiles`: each with its name, apps and pages; their pages join `layers`.
+    fn profiles(
+        &mut self,
+        node: &Node,
+        current: &Config,
+        layers: &mut Vec<Layer>,
+    ) -> Result<Vec<Profile>, SaveError> {
+        let Value::Array(items) = &node.value else {
+            return Err(invalid(
+                node.pos,
+                "profiles",
+                format!(
+                    "profiles must be a list [ ... ] of profiles, not {}",
+                    node.value.kind()
+                ),
+            ));
+        };
+        let mut out: Vec<Profile> = Vec::new();
+        for (i, item) in items.iter().enumerate() {
+            let at = format!("profile {}", i + 1);
+            let members = object(item, &at)?;
+            check_fields(members, &fields_of("profiles[]."), &at)?;
+            let get = |n: &str| members.iter().find(|m| m.key == n).map(|m| &m.node);
+            let Some(name_node) = get("name") else {
+                return Err(invalid(item.pos, &at, "a profile needs a \"name\""));
+            };
+            let name = text(name_node, &format!("{at} name"))?.trim().to_string();
+            if name.is_empty() {
+                return Err(invalid(name_node.pos, &at, "a profile needs a name"));
+            }
+            if name.eq_ignore_ascii_case(DEFAULT_PROFILE_NAME)
+                || out.iter().any(|p| p.name.eq_ignore_ascii_case(&name))
+            {
+                return Err(invalid(
+                    name_node.pos,
+                    &at,
+                    format!(
+                        "the profile name \"{name}\" is taken (names ignore case; Default is the pages above)"
+                    ),
+                ));
+            }
+            let at = format!("the profile {name}");
+            let id = current
+                .profiles
+                .iter()
+                .find(|p| p.name.eq_ignore_ascii_case(&name) && !out.iter().any(|o| o.id == p.id))
+                .map(|p| p.id.clone())
+                .unwrap_or_else(|| {
+                    let base = format!("profile-{}", slug(&name));
+                    let mut id = base.clone();
+                    let mut n = 2;
+                    while out.iter().any(|o| o.id == id) {
+                        id = format!("{base}-{n}");
+                        n += 1;
+                    }
+                    id
+                });
+            let apps = match get("apps") {
+                None => Vec::new(),
+                Some(n) => profile_apps(n, &at)?,
+            };
+            let Some(pages_node) = get("pages") else {
+                return Err(invalid(
+                    item.pos,
+                    &at,
+                    "a profile needs \"pages\", like \"pages\": { \"Main\": {} }",
+                ));
+            };
+            let before = current.pages_of(Some(&id));
+            let before: Vec<&Layer> = if current.profiles.iter().any(|p| p.id == id) {
+                before
+            } else {
+                Vec::new()
+            };
+            let pages = self.pages(
+                pages_node,
+                &format!("{at}: pages"),
+                &before,
+                layers,
+                None,
+                &format!("{id}-"),
+            )?;
+            out.push(Profile {
+                id,
+                name,
+                apps,
+                pages: pages.iter().map(|l| l.id.clone()).collect(),
+                color: get("color")
+                    .map(|n| pick(n, &format!("{at} color"), PROFILE_COLORS))
+                    .transpose()?,
+                icon: get("icon")
+                    .map(|n| icon(n, &format!("{at} icon")))
+                    .transpose()?,
+            });
+            layers.extend(pages);
+        }
+        Ok(out)
     }
 
     fn open(&mut self, spec: &OpenSpec, at: &str) -> Action {
@@ -918,6 +1081,95 @@ fn page_id(
                 format!("there is no page \"{name}\" in the file{hint}"),
             )
         })
+}
+
+/// One of `names`, in any case.
+fn pick(node: &Node, at: &str, names: &[&'static str]) -> Result<String, SaveError> {
+    let table: Vec<(&'static str, &'static str)> = names.iter().map(|n| (*n, *n)).collect();
+    one_of(node, at, &table).map(str::to_string)
+}
+
+/// A profile's `icon`: a bundled Material Symbols name, `:edit:` or `edit`.
+fn icon(node: &Node, at: &str) -> Result<String, SaveError> {
+    let word = text(node, at)?;
+    if let Some(name) = crate::icons::icon_name(word) {
+        return Ok(name.to_string());
+    }
+    let bare = crate::icons::bare(word).to_ascii_lowercase();
+    let hint = closest(&bare, crate::icons::names())
+        .map(|k| format!(" (did you mean \"{}\"?)", crate::icons::written(k)))
+        .unwrap_or_default();
+    Err(invalid(
+        node.pos,
+        at,
+        format!(
+            "there is no icon called \"{word}\"{hint}. Use a Material Symbols Rounded name, like \":edit:\" (every name: {})",
+            crate::icons::ICON_CATALOGUE
+        ),
+    ))
+}
+
+/// A profile's `apps`: names (matched on every OS) or per-OS objects.
+fn profile_apps(node: &Node, at: &str) -> Result<Vec<ProfileApp>, SaveError> {
+    let Value::Array(items) = &node.value else {
+        return Err(invalid(
+            node.pos,
+            at,
+            format!("apps must be a list [ ... ], not {}", node.value.kind()),
+        ));
+    };
+    let mut apps = Vec::new();
+    for item in items {
+        let app = match &item.value {
+            Value::String(s) if !s.trim().is_empty() => {
+                let s = s.trim().to_string();
+                ProfileApp {
+                    name: s.clone(),
+                    windows: Some(s.clone()),
+                    macos: Some(s.clone()),
+                    linux: Some(s),
+                }
+            }
+            Value::Object(members) => {
+                check_fields(members, &["name", "windows", "macos", "linux"], at)?;
+                let get = |n: &str| -> Result<Option<String>, SaveError> {
+                    match members.iter().find(|m| m.key == n) {
+                        None => Ok(None),
+                        Some(m) => Ok(Some(
+                            text(&m.node, &format!("{at} app {n}"))?.trim().to_string(),
+                        )
+                        .filter(|s| !s.is_empty())),
+                    }
+                };
+                let (windows, macos, linux) = (get("windows")?, get("macos")?, get("linux")?);
+                let Some(first) = windows.clone().or(macos.clone()).or(linux.clone()) else {
+                    return Err(invalid(
+                        item.pos,
+                        at,
+                        "an app needs \"windows\", \"macos\" or \"linux\": the program name on that OS",
+                    ));
+                };
+                ProfileApp {
+                    name: get("name")?.unwrap_or(first),
+                    windows,
+                    macos,
+                    linux,
+                }
+            }
+            other => {
+                return Err(invalid(
+                    item.pos,
+                    at,
+                    format!(
+                        "an app is its program name in double quotes or an object, not {}",
+                        other.kind()
+                    ),
+                ));
+            }
+        };
+        apps.push(app);
+    }
+    Ok(apps)
 }
 
 fn slug(name: &str) -> String {
@@ -1170,6 +1422,24 @@ impl Out {
             Out::Str(s) => out.push_str(&serde_json::to_string(s).expect("a string serializes")),
             Out::Num(n) => out.push_str(n),
             Out::List(items) if items.is_empty() => out.push_str("[]"),
+            Out::List(items)
+                if items
+                    .iter()
+                    .any(|i| matches!(i, Out::Obj(m) if !m.is_empty())) =>
+            {
+                // A list of objects (profiles): one per line block.
+                out.push_str("[\n");
+                for (i, item) in items.iter().enumerate() {
+                    out.push_str(&pad(indent + 1));
+                    item.write(out, indent + 1);
+                    if i + 1 < items.len() {
+                        out.push(',');
+                    }
+                    out.push('\n');
+                }
+                out.push_str(&pad(indent));
+                out.push(']');
+            }
             Out::List(items) => {
                 // Short lists of text stay on one line: "args": ["--x", "y"].
                 out.push('[');
@@ -1214,13 +1484,92 @@ fn num(n: f64) -> Out {
 /// `host`, an app is written by its installed name when that name opens
 /// the same thing again.
 pub fn export(config: &Config, host: &dyn Host) -> Vec<u8> {
+    // The Default profile's pages, its first page first.
     let mut layers: Vec<&Layer> = config
         .layers
         .iter()
         .filter(|l| l.id == config.base_layer)
         .collect();
-    layers.extend(config.layers.iter().filter(|l| l.id != config.base_layer));
-    // Each page's written name: its own, unique ignoring case.
+    layers.extend(
+        config
+            .pages_of(None)
+            .into_iter()
+            .filter(|l| l.id != config.base_layer),
+    );
+    let pages = pages_out(&layers, host);
+    let profiles: Vec<Out> = config
+        .profiles
+        .iter()
+        .map(|p| {
+            let mut members = vec![("name".to_string(), Out::Str(p.name.clone()))];
+            if let Some(c) = &p.color {
+                members.push(("color".into(), Out::Str(c.clone())));
+            }
+            if let Some(i) = &p.icon {
+                members.push(("icon".into(), Out::Str(crate::icons::written(i))));
+            }
+            let apps: Vec<Out> = p.apps.iter().map(app_out).collect();
+            if !apps.is_empty() {
+                members.push(("apps".into(), Out::List(apps)));
+            }
+            members.push((
+                "pages".into(),
+                pages_out(&config.pages_of(Some(&p.id)), host),
+            ));
+            Out::Obj(members)
+        })
+        .collect();
+    let default_names = page_names(&layers);
+    let default_name = |id: &str| {
+        default_names
+            .iter()
+            .find(|(i, _)| i == id)
+            .map(|(_, n)| n.clone())
+    };
+    let wheel_writer = Writer {
+        host,
+        name_of: &default_name,
+    };
+    let mut top = vec![
+        ("$schema".to_string(), Out::Str(SCHEMA_URL.into())),
+        (
+            "version".to_string(),
+            Out::Num(MAPPINGS_VERSION.to_string()),
+        ),
+        ("pages".to_string(), pages),
+    ];
+    if !profiles.is_empty() {
+        top.push(("profiles".to_string(), Out::List(profiles)));
+    }
+    top.push(("wheel".to_string(), wheel_writer.wheel(&config.jog)));
+    let dial = &config.overrides;
+    if *dial != OverrideSettings::default() {
+        top.push((
+            "dial".into(),
+            Out::Obj(vec![
+                (
+                    "volume_step".into(),
+                    num(f64::from(dial.system_volume_step) * 100.0),
+                ),
+                (
+                    "app_volume_step".into(),
+                    num(f64::from(dial.app_volume_step) * 100.0),
+                ),
+                (
+                    "brightness_step".into(),
+                    Out::Num(dial.brightness_step.to_string()),
+                ),
+            ]),
+        ));
+    }
+    let mut text = String::new();
+    Out::Obj(top).write(&mut text, 0);
+    text.push('\n');
+    text.into_bytes()
+}
+
+/// Each page's written name: its own, unique ignoring case.
+fn page_names(layers: &[&Layer]) -> Vec<(String, String)> {
     let mut names: Vec<(String, String)> = Vec::new();
     for (i, layer) in layers.iter().enumerate() {
         let base = if layer.name.trim().is_empty() {
@@ -1236,6 +1585,12 @@ pub fn export(config: &Config, host: &dyn Host) -> Vec<u8> {
         }
         names.push((layer.id.clone(), name));
     }
+    names
+}
+
+/// One set of pages (Default's, or a profile's), as `pages` is written.
+fn pages_out(layers: &[&Layer], host: &dyn Host) -> Out {
+    let names = page_names(layers);
     let name_of = |id: &str| names.iter().find(|(i, _)| i == id).map(|(_, n)| n.clone());
     let writer = Writer {
         host,
@@ -1264,39 +1619,29 @@ pub fn export(config: &Config, host: &dyn Host) -> Vec<u8> {
         }
         pages.push((name.clone(), Out::Obj(keys)));
     }
-    let mut top = vec![
-        ("$schema".to_string(), Out::Str(SCHEMA_URL.into())),
-        (
-            "version".to_string(),
-            Out::Num(MAPPINGS_VERSION.to_string()),
-        ),
-        ("pages".to_string(), Out::Obj(pages)),
-        ("wheel".to_string(), writer.wheel(&config.jog)),
-    ];
-    let dial = &config.overrides;
-    if *dial != OverrideSettings::default() {
-        top.push((
-            "dial".into(),
-            Out::Obj(vec![
-                (
-                    "volume_step".into(),
-                    num(f64::from(dial.system_volume_step) * 100.0),
-                ),
-                (
-                    "app_volume_step".into(),
-                    num(f64::from(dial.app_volume_step) * 100.0),
-                ),
-                (
-                    "brightness_step".into(),
-                    Out::Num(dial.brightness_step.to_string()),
-                ),
-            ]),
-        ));
+    Out::Obj(pages)
+}
+
+/// A profile app: its name when that is its program on every OS, else an object.
+fn app_out(app: &ProfileApp) -> Out {
+    let every = [&app.windows, &app.macos, &app.linux];
+    if every
+        .iter()
+        .all(|o| o.as_deref() == Some(app.name.as_str()))
+    {
+        return Out::Str(app.name.clone());
     }
-    let mut text = String::new();
-    Out::Obj(top).write(&mut text, 0);
-    text.push('\n');
-    text.into_bytes()
+    let mut members = vec![("name".to_string(), Out::Str(app.name.clone()))];
+    for (os, v) in [
+        ("windows", &app.windows),
+        ("macos", &app.macos),
+        ("linux", &app.linux),
+    ] {
+        if let Some(v) = v {
+            members.push((os.to_string(), Out::Str(v.clone())));
+        }
+    }
+    Out::Obj(members)
 }
 
 struct Writer<'a> {

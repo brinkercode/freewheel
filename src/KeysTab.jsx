@@ -1,10 +1,31 @@
 import { useEffect, useRef, useState } from "react";
 import ActionEditor, { KeyPanel } from "./ActionEditor.jsx";
-import Icon from "./Icon.jsx";
+import Icon, { SymbolIcon } from "./Icon.jsx";
+import ProfileApps from "./ProfileApps.jsx";
 import drawing from "./assets/speed-editor.svg?raw";
-import { DRAWING, KEYS, LABELS, PRESS_CHIP_MS, addPage, backTarget, deletePage, longLabel, renamePage, shortLabel } from "./keys.js";
+import {
+  DEFAULT_PROFILE,
+  profileLook,
+  DRAWING,
+  KEYS,
+  LABELS,
+  PRESS_CHIP_MS,
+  addPage,
+  addProfile,
+  backTarget,
+  deletePage,
+  deleteProfile,
+  firstPage,
+  longLabel,
+  pagesOf,
+  profileNameError,
+  profileOf,
+  renamePage,
+  renameProfile,
+  shortLabel,
+} from "./keys.js";
 import { buttonDoes, liveButton } from "./WheelTab.jsx";
-import { getConfig, onKeyPressed, saveConfig, saveErrorText } from "./settingsApi.js";
+import { frontAppSupport, getConfig, onKeyPressed, saveConfig, saveErrorText } from "./settingsApi.js";
 import { showToast } from "./shell.js";
 
 export { KIND_ROWS, KIND_TEXT, saveKey } from "./ActionEditor.jsx";
@@ -20,18 +41,116 @@ export function handlePress(press, { select, setChip, timer, timers = globalThis
 }
 
 /**
- * Page pills (shown once a 2nd page exists): the active pill renames inline
- * (double-click or its pencil) and deletes after an inline confirm.
+ * App profiles above the pages: Default (the pages no profile has) and each
+ * profile, '+ New profile'; the profile shown renames inline, opens its
+ * apps, colour and icon, and deletes after an inline confirm. Each pill has
+ * its profile's icon and colour; the one your Speed Editor uses is filled.
  */
-export function PageSelector({ config, page, livePage = null, onPage, onAdd, onRename, onDelete, error }) {
+export function ProfilePicker({ config, profile, liveProfile = undefined, onProfile, onAdd, onRename, onDelete, onApps, error }) {
+  const [renaming, setRenaming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [name, setName] = useState("");
+  const rename = useRef(null);
+  useEffect(() => {
+    if (renaming) rename.current?.select();
+  }, [renaming]);
+  const profiles = config.profiles ?? [];
+  const current = profiles.find((p) => p.id === profile);
+  const forApps = (p) => (p.apps?.length ? `For ${p.apps.map((a) => a.name).join(", ")}` : "No apps yet");
+  const finish = () => {
+    setRenaming(false);
+    if (current && name.trim() && name.trim() !== current.name) onRename(name.trim());
+  };
+  if (deleting && current)
+    return (
+      <div className="profile-picker">
+        <div className="confirm-inline">
+          <span>{`Delete the profile “${current.name}” and its pages?`}</span>
+          <button className="btn-sm btn-danger" onClick={() => (setDeleting(false), onDelete())}>
+            Delete
+          </button>
+          <button className="btn-sm" onClick={() => setDeleting(false)}>
+            Keep it
+          </button>
+        </div>
+      </div>
+    );
+  return (
+    <div className="profile-picker">
+      <span className="profile-label">Profile</span>
+      <div className="profile-pills" role="tablist" aria-label="Profiles">
+        {[{ id: null, name: DEFAULT_PROFILE }, ...profiles].map((p) => {
+          const active = p.id === profile;
+          if (active && renaming && p.id)
+            return (
+              <div key={p.id} className="profile-pill is-active is-renaming">
+                <input
+                  ref={rename}
+                  className="profile-rename"
+                  aria-label="Profile name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  onBlur={finish}
+                  onKeyDown={(e) => (e.key === "Enter" ? finish() : e.key === "Escape" && setRenaming(false))}
+                />
+              </div>
+            );
+          return (
+            <div
+              key={p.id ?? "default"}
+              className={`profile-pill${active ? " is-active" : ""}${liveProfile !== undefined && p.id === liveProfile ? " is-using" : ""}`}
+              data-color={profileLook(config, p.id).color}
+            >
+              <button
+                role="tab"
+                aria-selected={active}
+                title={[p.id ? forApps(p) : "Every app no profile is for", liveProfile !== undefined && p.id === liveProfile ? "Your Speed Editor uses it now" : null].filter(Boolean).join(" · ")}
+                onClick={() => !active && onProfile(p.id)}
+                onDoubleClick={() => active && p.id && (setName(p.name), setRenaming(true))}
+              >
+                <SymbolIcon name={profileLook(config, p.id).icon} />
+                {p.name}
+              </button>
+              {active && p.id && (
+                <>
+                  <button className="profile-icon" title="Apps for this profile" aria-label="Apps for this profile" onClick={onApps}>
+                    <Icon name="apps" />
+                  </button>
+                  <button className="profile-icon" title="Rename profile" aria-label="Rename profile" onClick={() => (setName(p.name), setRenaming(true))}>
+                    <Icon name="edit" />
+                  </button>
+                  <button className="profile-icon" title="Delete profile" aria-label="Delete profile" onClick={() => setDeleting(true)}>
+                    <Icon name="close" />
+                  </button>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <button className="profile-add" onClick={onAdd}>
+        <Icon name="add" />
+        New profile
+      </button>
+      {error && <p role="alert">{error}</p>}
+    </div>
+  );
+}
+
+/**
+ * Page pills of the profile shown (once it has a 2nd page): the active pill
+ * renames inline (double-click or its pencil) and deletes after an inline
+ * confirm.
+ */
+export function PageSelector({ config, pages = config.layers, page, livePage = null, color = "accent", onPage, onAdd, onRename, onDelete, error }) {
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const rename = useRef(null);
   useEffect(() => {
     if (renaming) rename.current?.select();
   }, [renaming]);
-  const current = config.layers.find((l) => l.id === page);
-  const many = config.layers.length > 1;
+  const current = pages.find((l) => l.id === page);
+  const many = pages.length > 1;
   if (deleting)
     return (
       <div className="page-selector">
@@ -46,17 +165,20 @@ export function PageSelector({ config, page, livePage = null, onPage, onAdd, onR
         </div>
       </div>
     );
-  const live = (id) => id === livePage && <span className="live-dot" aria-label="Your Speed Editor is on this page" />;
+  // The page your Speed Editor is on is filled in its profile's colour.
+  const using = (id) => (id === livePage ? " is-using" : "");
+  const usingTitle = (id) => (id === livePage ? " · Your Speed Editor is on it" : "");
   return (
     <div className="page-selector">
       {!many && <span className="keys-title">What each key does</span>}
       {many && (
+        <>
+        <span className="profile-label">Pages</span>
         <div className="pills" role="tablist" aria-label="Pages">
-          {config.layers.map((l, i) =>
+          {pages.map((l, i) =>
             l.id === page ? (
-              <div key={l.id} className={`pill is-active${renaming ? " is-renaming" : ""}`}>
-                <button role="tab" aria-selected="true" title="Double-click to rename" onDoubleClick={() => setRenaming(true)}>
-                  {live(l.id)}
+              <div key={l.id} className={`pill is-active${using(l.id)}${renaming ? " is-renaming" : ""}`} data-color={color}>
+                <button role="tab" aria-selected="true" title={`Double-click to rename${usingTitle(l.id)}`} onDoubleClick={() => setRenaming(true)}>
                   {l.name}
                 </button>
                 <input
@@ -79,26 +201,20 @@ export function PageSelector({ config, page, livePage = null, onPage, onAdd, onR
                 )}
               </div>
             ) : (
-              <div key={l.id} className="pill">
-                <button role="tab" aria-selected="false" title="Show this page" onClick={() => onPage(l.id)}>
-                  {live(l.id)}
+              <div key={l.id} className={`pill${using(l.id)}`} data-color={color}>
+                <button role="tab" aria-selected="false" title={`Show this page${usingTitle(l.id)}`} onClick={() => onPage(l.id)}>
                   {l.name}
                 </button>
               </div>
             ),
           )}
         </div>
+        </>
       )}
       <button className="pill-add" onClick={onAdd}>
         <Icon name="add" />
         Add page
       </button>
-      {many && livePage && (
-        <span className="live-legend">
-          <span className="live-legend-dot" />
-          Your Speed Editor is here
-        </span>
-      )}
       {error && <p role="alert">{error}</p>}
     </div>
   );
@@ -299,9 +415,19 @@ export default function KeysTab({
   onWheel,
   onToast,
   record = null,
+  initialFrontApps = null,
 }) {
   const [config, setConfig] = useState(initial);
+  // Whether the app in front can be seen here (not on Wayland).
+  const [frontApps, setFrontApps] = useState(initialFrontApps ?? true);
+  useEffect(() => {
+    if (initialFrontApps !== null || !globalThis.window?.__TAURI__) return;
+    frontAppSupport().then(setFrontApps, () => {});
+  }, [initialFrontApps]);
   const [page, setPage] = useState(initial?.base_layer ?? null);
+  // The profile's apps panel, shown in place of the key panel.
+  const [appsOpen, setAppsOpen] = useState(false);
+  const [profileError, setProfileError] = useState(null);
   const [selected, setSelected] = useState(initialSelected);
   const [view, setView] = useState(initialView);
   const [chip, setChip] = useState(initialChip);
@@ -321,8 +447,8 @@ export default function KeysTab({
   useEffect(() => {
     if (record) (setSelected(record.key), setRec(record));
   }, [record]);
-  const pickKey = (k) => (setRec(null), setSelected(k));
-  // A page key on the Speed Editor switches its page: the Keys tab follows.
+  const pickKey = (k) => (setRec(null), setAppsOpen(false), setSelected(k));
+  // A page key, or the app in front (its profile), switches the page: the Keys tab follows.
   const deviceLayer = useRef(null);
   useEffect(() => {
     const layer = status?.layer;
@@ -331,7 +457,7 @@ export default function KeysTab({
     // switch: it keeps the key the tab opened on (the Simulator's Record a key).
     const switched = deviceLayer.current !== null;
     deviceLayer.current = layer;
-    if (config.layers.some((l) => l.id === layer)) (setPage(layer), switched && setSelected(null), setPageError(null));
+    if (config.layers.some((l) => l.id === layer)) (setPage(layer), switched && (setSelected(null), setAppsOpen(false)), setPageError(null));
   }, [status?.layer, config]);
   if (!config) return null;
 
@@ -344,31 +470,69 @@ export default function KeysTab({
       (e) => (setConfig(before), setPageError(saveErrorText(e))),
     );
   };
+  // The profile shown: the one the page shown belongs to (null: Default).
+  const profile = profileOf(config, page);
+  const pages = pagesOf(config, profile);
   const onDelete = () => {
     const r = deletePage(config, page);
     if (r.error) return setPageError(r.error);
-    return commit(r.config).then(() => setPage(config.base_layer));
+    return commit(r.config).then(() => setPage(firstPage(config, profile)));
   };
   const onAdd = () => {
-    const r = addPage(config);
+    const r = addPage(config, profile);
     return commit(r.config).then(() => {
       setPage(r.id);
       setSelected(null);
       onToast?.("To reach this page, pick a key on another page and choose “Switch to another set of keys”.");
     });
   };
+  const showProfile = (id) => (setPage(firstPage(config, id)), setSelected(null), setAppsOpen(false), setPageError(null), setProfileError(null));
+  const onAddProfile = () => {
+    const r = addProfile(config);
+    return commit(r.config).then(() => {
+      setPage(r.page);
+      setSelected(null);
+      setAppsOpen(true);
+      onToast?.("Add the apps this profile is for: it switches on by itself while one of them is in front.");
+    });
+  };
+  const onRenameProfile = (name) => {
+    const why = profileNameError(config, profile, name);
+    if (why) return setProfileError(why);
+    setProfileError(null);
+    return commit(renameProfile(config, profile, name));
+  };
+  const onDeleteProfile = () => {
+    const r = deleteProfile(config, profile);
+    if (r.error) return setProfileError(r.error);
+    return commit(r.config).then(() => showProfile(null));
+  };
   // The drawing dims only while no Speed Editor is found (Off and Paused still have it).
   const found = status ? status.connection !== "Absent" || status.paused : true;
   const livePage = status && found ? (config.layers.some((l) => l.id === status.layer) ? status.layer : config.base_layer) : null;
+  const liveProfile = livePage ? profileOf(config, livePage) : undefined;
   const back = selected ? backTarget(config, page, selected) : null;
   return (
     <section className="keys-tab">
       <div className="keys-main" data-screen-label="What each key does">
+        <ProfilePicker
+          config={config}
+          profile={profile}
+          liveProfile={liveProfile}
+          onProfile={showProfile}
+          onAdd={onAddProfile}
+          onRename={onRenameProfile}
+          onDelete={onDeleteProfile}
+          onApps={() => (setSelected(null), setRec(null), setAppsOpen(true))}
+          error={profileError}
+        />
         <div className="keys-bar">
           <PageSelector
             config={config}
+            pages={pages}
             page={page}
-            livePage={livePage}
+            livePage={pages.some((l) => l.id === livePage) ? livePage : null}
+            color={profileLook(config, profile).color}
             onPage={(p) => (setPage(p), setSelected(null), setPageError(null))}
             onAdd={onAdd}
             onRename={(name) => commit(renamePage(config, page, name))}
@@ -412,6 +576,9 @@ export default function KeysTab({
         )}
       </div>
       <aside className="side-panel" data-screen-label="What should this key do">
+        {appsOpen && profile && !selected ? (
+          <ProfileApps key={profile} config={config} profileId={profile} save={save} onSaved={setConfig} supported={frontApps} />
+        ) : (
         <ActionEditor
           key={`${page}-${selected}-${rec?.key === selected ? rec.n : 0}`}
           keyName={selected}
@@ -425,6 +592,7 @@ export default function KeysTab({
           onWheel={onWheel}
           onShowPage={(id) => (setPage(id), setSelected(null))}
         />
+        )}
       </aside>
     </section>
   );

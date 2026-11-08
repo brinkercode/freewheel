@@ -32,7 +32,9 @@ test("the toolbar has the five tabs and the On/Off switch", () => {
   for (const tab of ["Keys", "Wheel", "DaVinci Resolve", "General", "Help &amp; backup"]) expect(html).toContain(`>${tab}</button>`);
   expect(html).toMatch(/aria-pressed="true"[^>]*>Keys</);
   expect(html).toContain('role="switch" aria-label="Turn freewheel on or off" aria-checked="true"');
-  expect(html).toContain("status-dot");
+  // Text only: no dot next to "Connected · USB".
+  expect(html).not.toMatch(/dot/);
+  expect(html).toMatch(/<button class="status"[^>]*data-tone="green"><span class="status-text">Connected · USB<\/span><\/button>/);
   expect(toolbar({ ...ok, enabled: false })).toContain('aria-checked="false"');
 });
 
@@ -44,8 +46,9 @@ test("the status reads the prototype's first match: Off, Needs permission, Looki
   expect(toolbar({ ...ok, paused: true })).toContain("Paused: DaVinci Resolve is open");
   expect(toolbar(ok)).toContain("Connected by USB");
   expect(toolbar({ ...ok, bus: "Bluetooth", battery: 64 })).toContain("Connected by Bluetooth · 64%");
-  // low battery turns the dot amber
-  expect(toolbar({ ...ok, bus: "Bluetooth", battery: 12 })).toContain("dot-orange");
+  // low battery turns the status text the warning colour
+  expect(toolbar({ ...ok, bus: "Bluetooth", battery: 12 })).toContain('data-tone="orange"');
+  expect(read("./styles/base.css")).toContain('.status[data-tone="orange"] { color: var(--warn); }');
 });
 
 test("the header says each status short (the full sentence is its tooltip): it fits the default 1000px window whole", () => {
@@ -158,7 +161,7 @@ test("a toast shows bottom-centre and clears after 2.8 s", () => {
 
 test("the header status can never overlap the tabs, the switch or the window controls: it shrinks into its own slot", () => {
   const html = toolbar({ ...ok, connected: false });
-  // The dot and the text sit in the status slot, between the tabs and the switch; the full text is the tooltip.
+  // The text sits in the status slot, between the tabs and the switch; the full text is the tooltip.
   expect(html).toMatch(/<div class="toolbar-right"><div class="status-slot"><button class="status"[^>]*title="Looking for your Speed Editor…"[^>]*aria-label="Looking for your Speed Editor…"/);
   expect(html).toContain('<span class="status-text">Looking for device</span>');
   const css = read("./styles/base.css");
@@ -175,7 +178,8 @@ test("the header status can never overlap the tabs, the switch or the window con
   expect(rule(".status-slot")).toMatch(/flex: 1 1 0; min-width: 0;.*overflow: hidden; container-type: inline-size/);
   expect(rule(".status")).toMatch(/min-width: 0; max-width: 100%/);
   expect(rule(".status-text")).toMatch(/min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis/);
-  expect(css).toMatch(/@container \(max-width: 96px\) \{\s*\.status \{ padding: 6px 2px; \}\s*\.status-text \{ display: none; \}/);
+  // No dot to fall back on: the text never hides, it ends in an ellipsis.
+  expect(css).not.toMatch(/status-dot|dot-green|\.status-text \{ display: none/);
   // Nothing in the header row is positioned out of the flow.
   for (const s of [".toolbar", ".tabs", ".toolbar-right", ".status-slot", ".status", ".status-text", ".window-controls"]) expect(rule(s)).not.toMatch(/position: (absolute|fixed)/);
 });

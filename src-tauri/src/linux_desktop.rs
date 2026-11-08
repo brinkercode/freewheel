@@ -17,6 +17,8 @@ pub struct DesktopEntry {
     pub no_display: bool,
     pub hidden: bool,
     pub try_exec: Option<String>,
+    /// The window class its windows have (profiles match it).
+    pub startup_wm_class: Option<String>,
 }
 
 /// A value's escapes (`\s \n \t \r \\`).
@@ -71,6 +73,7 @@ pub fn parse_entry(text: &str) -> Option<DesktopEntry> {
             "NoDisplay" => entry.no_display = value == "true",
             "Hidden" => entry.hidden = value == "true",
             "TryExec" => entry.try_exec = Some(value).filter(|v| !v.is_empty()),
+            "StartupWMClass" => entry.startup_wm_class = Some(value).filter(|v| !v.is_empty()),
             _ => {}
         }
     }

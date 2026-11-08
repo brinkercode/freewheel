@@ -118,6 +118,10 @@ pub enum Mirror {
     Log(Vec<String>),
     /// The Device test view's data for the simulated Speed Editor changed.
     Diagnostics(Box<DeviceDiagnostics>),
+    /// The profile, the lights or the app in front changed without the
+    /// Simulator window asking (the app in front, a device command): its
+    /// status line follows ([`SIM_STATUS_EVENT`]).
+    Status(Box<SimStatus>),
 }
 
 /// The device loop updates between two statuses, in the order the real
@@ -223,6 +227,10 @@ pub fn session(mut sim: Simulator, rx: Receiver<Msg>, mut sink: impl FnMut(Mirro
             Msg::Ui(control, reply) => (sim.apply(control), Some(reply)),
             Msg::Device(Command::SetEnabled(on)) => (sim.apply(Control::SetEnabled { on }), None),
             Msg::Device(Command::ExitOverride) => (sim.apply(Control::ExitOverride), None),
+            Msg::Device(Command::FrontApp(app)) => {
+                sim.front_app(app);
+                (sim.apply(Control::Status), None)
+            }
             Msg::Device(Command::Reload(config)) => {
                 sim.sync_config(*config);
                 (sim.apply(Control::Status), None)
@@ -252,8 +260,16 @@ pub fn session(mut sim: Simulator, rx: Receiver<Msg>, mut sink: impl FnMut(Mirro
                 answer.toasts = toasts;
                 let _ = reply.send(answer);
             }
-            None if !toasts.is_empty() => sink(Mirror::Log(toasts)),
-            None => {}
+            None => {
+                if !toasts.is_empty() {
+                    sink(Mirror::Log(toasts));
+                }
+                let shown =
+                    |s: &SimStatus| (s.page.clone(), s.lit_leds.clone(), s.front_app.clone());
+                if last.as_ref().map(shown) != Some(shown(&status)) {
+                    sink(Mirror::Status(Box::new(status.clone())));
+                }
+            }
         }
         last = Some(status);
     }
@@ -376,6 +392,10 @@ pub fn attach(
                 }
                 Mirror::Log(lines) => {
                     let _ = app.emit_to(SIMULATOR_WINDOW, SIM_LOG_EVENT, lines);
+                    None
+                }
+                Mirror::Status(status) => {
+                    let _ = app.emit_to(SIMULATOR_WINDOW, SIM_STATUS_EVENT, &status);
                     None
                 }
                 Mirror::Diagnostics(d) => {
@@ -594,6 +614,9 @@ pub const SIM_UPDATE_EVENT: &str = "sim-update";
 /// what the settings window, the tray or a device command did
 /// (src/Simulator.jsx).
 pub const SIM_LOG_EVENT: &str = "sim-log";
+/// Simulate-only event to the Simulator window: its status after a change
+/// it did not ask for, like the app in front (src/Simulator.jsx).
+pub const SIM_STATUS_EVENT: &str = "sim-status";
 /// The Simulator window's label.
 pub const SIMULATOR_WINDOW: &str = "simulator";
 
@@ -913,6 +936,69 @@ mod tests {
     }
 
     #[test]
+    fn the_app_in_front_reaches_the_simulator_window_status() {
+        let (_dir, sim, commands, seen) = running();
+        sim.apply(Control::Connect { bus: Bus::Usb }).unwrap();
+        let mut config = Config::default();
+        config.layers.push(freewheel_core::config::Layer {
+            id: "notes".into(),
+            name: "Notes".into(),
+            bindings: Default::default(),
+        });
+        config.profiles.push(freewheel_core::config::Profile {
+            id: "writing".into(),
+            name: "Writing".into(),
+            apps: vec![freewheel_core::config::ProfileApp {
+                name: "Notepad".into(),
+                windows: Some("notepad.exe".into()),
+                // The same name on every OS, so this test runs anywhere.
+                macos: Some("notepad.exe".into()),
+                linux: Some("notepad.exe".into()),
+            }],
+            pages: vec!["notes".into()],
+            color: None,
+            icon: None,
+        });
+        commands.send(Command::Reload(Box::new(config))).unwrap();
+        std::thread::sleep(Duration::from_millis(50));
+        take(&seen);
+        // As the OS watcher sends it: the window did not ask, yet its
+        // status line, the settings window's profile and the log follow.
+        let front = |n: &str| Command::FrontApp(freewheel_core::profiles::FrontApp::new(&[n]));
+        commands.send(front("notepad.exe")).unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        let now = take(&seen);
+        let pushed = |now: &[Mirror]| {
+            now.iter().find_map(|m| match m {
+                Mirror::Status(s) => Some((s.page.clone(), s.front_app.clone())),
+                _ => None,
+            })
+        };
+        assert_eq!(
+            pushed(&now),
+            Some(("notes".into(), Some("notepad.exe".into()))),
+            "{now:?}"
+        );
+        assert!(all_updates(&now).contains(&Update::Layer("notes".into())));
+        assert!(
+            now.iter()
+                .any(|m| matches!(m, Mirror::Log(l) if l.iter().any(|l| l.contains("Notes")))),
+            "{now:?}"
+        );
+        // freewheel's own window: nothing changes, nothing is pushed.
+        commands
+            .send(Command::FrontApp(freewheel_core::profiles::FrontApp::own()))
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(pushed(&take(&seen)), None);
+        commands.send(front("other.exe")).unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        let base = sim.apply(Control::Status).unwrap();
+        assert_eq!(base.front_app.as_deref(), Some("other.exe"));
+        assert_ne!(base.page, "notes");
+    }
+
+    #[test]
     fn quit_releases_and_stops_the_session() {
         let (_dir, sim, commands, _) = running();
         sim.apply(Control::Status).unwrap();
@@ -1023,6 +1109,7 @@ mod tests {
             SIM_RECORD_KEY_EVENT,
             SIM_UPDATE_EVENT,
             SIM_LOG_EVENT,
+            SIM_STATUS_EVENT,
             "__FREEWHEEL_SIMULATE__",
         ] {
             assert!(js.contains(name), "{name}");

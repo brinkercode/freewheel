@@ -1,0 +1,46 @@
+{
+  "version": 2,
+  "pages": {
+    "Main": {
+      "CUT": "Ctrl+Z",
+      "ESC": "page Music"
+    },
+    "Music": {
+      "ESC": "back"
+    }
+  },
+  "profiles": [
+    {
+      "name": "Writing",
+      "apps": [
+        "notepad.exe",
+        {
+          "name": "Word",
+          "windows": "WINWORD.EXE",
+          "macos": "com.microsoft.Word"
+        },
+        {
+          "linux": "org.gnome.TextEditor"
+        }
+      ],
+      "pages": {
+        "Draft": {
+          "CUT": "Ctrl+Shift+X",
+          "ESC": "page Review"
+        },
+        "Review": {
+          "ESC": "back"
+        }
+      },
+      "color": "teal",
+      "icon": ":edit:"
+    },
+    {
+      "name": "Games",
+      "icon": "sports_esports",
+      "pages": {
+        "Play": {}
+      }
+    }
+  ]
+}

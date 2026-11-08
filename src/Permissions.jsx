@@ -83,7 +83,6 @@ export default function Permissions({ initial = null, poll = 2000, onToast }) {
       <h2 className="section-title">Permissions</h2>
       {Object.values(permissions).includes("Missing") && (
         <p className="permissions-status">
-          <span className="status-dot dot-orange" aria-hidden="true" />
           Needs permission
         </p>
       )}

@@ -161,6 +161,31 @@ export const PLATFORMS = {
     iconShare: 0.5,
     chosen: "E2E Example App.exe",
     resolve: "Resolve.exe",
+    // Profiles per app: Notepad for real, then a PowerShell window as another
+    // app (a console window belongs to conhost, not to its own process).
+    frontApp: {
+      id: "notepad.exe",
+      start: () => background(spawn("notepad.exe", [], { detached: true, stdio: "ignore" })),
+      startOther: () =>
+        background(
+          spawn(
+            "powershell.exe",
+            ["-NoProfile", "-STA", "-Command", "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.Form; $f.Text = 'fw-e2e-other'; [void]$f.ShowDialog()"],
+            // Not detached: PowerShell started with no console exits at once.
+            { stdio: "ignore" },
+          ),
+        ),
+      // Notepad may hand its window to another process: find it by name.
+      bring: (_child, which) => frontWindows(which === "app" ? ["-Name", "notepad"] : ["-Title", "fw-e2e-other"]),
+      stop: (children) => {
+        for (const c of children) c?.kill();
+        try {
+          execFileSync("taskkill", ["/F", "/IM", "notepad.exe"], { stdio: "ignore", timeout: 10000 });
+        } catch {
+          // already gone
+        }
+      },
+    },
   },
   linux: {
     name: "Linux",
@@ -185,6 +210,15 @@ export const PLATFORMS = {
     chosen: "E2E Example App.AppImage",
     jsSelectAll: true,
     resolve: "resolve",
+    // Profiles per app on X11 (openbox sets _NET_ACTIVE_WINDOW): xmessage
+    // stands in for an app, xev's window is another app (x11-utils).
+    frontApp: {
+      id: "xmessage",
+      start: () => background(spawn("xmessage", ["-title", "fw-e2e-app", "freewheel e2e"], { detached: true, stdio: "ignore" })),
+      startOther: () => background(spawn("xev", ["-name", "fw-e2e-other"], { detached: true, stdio: "ignore" })),
+      bring: (_child, which) => frontX11(which === "app" ? "fw-e2e-app" : "fw-e2e-other"),
+      stop: (children) => children.forEach((c) => c?.kill()),
+    },
     prepare: (say) => {
       const desktop = installLinuxApp(homedir(), fileURLToPath(new URL("../src-tauri/icons/32x32.png", import.meta.url)));
       say(`installed the e2e desktop entry ${desktop}`);
@@ -192,6 +226,59 @@ export const PLATFORMS = {
     },
   },
 };
+
+/** A stand-in app the script must not wait for: closed when the run ends, even after a failed step. */
+const stray = new Set();
+function background(child) {
+  child.on("error", () => {});
+  child.unref();
+  stray.add(child);
+  return child;
+}
+process.on("exit", () => {
+  for (const c of stray) {
+    try {
+      c.kill();
+    } catch {
+      // already gone
+    }
+  }
+});
+
+/** Windows: brings a window to the front for real (scripts/front-window.ps1); resolves once it is. */
+async function frontWindows(args) {
+  const script = fileURLToPath(new URL("./front-window.ps1", import.meta.url));
+  let last = "";
+  for (let i = 0; i < 3; i++) {
+    try {
+      last = execFileSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, ...args], { encoding: "utf8", timeout: 40000 }).trim();
+      if (last.endsWith("ok")) return last;
+    } catch (e) {
+      last = `${e.stdout ?? ""}${e.message}`;
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  throw new Error(`could not bring the window to the front: ${last}`);
+}
+
+/** Linux (X11): activates the window titled `title` with wmctrl once it exists. */
+async function frontX11(title) {
+  let last = "";
+  for (let i = 0; i < 40; i++) {
+    try {
+      execFileSync("wmctrl", ["-F", "-a", title], { stdio: "ignore", timeout: 5000 });
+      const active = execFileSync("xprop", ["-root", "_NET_ACTIVE_WINDOW"], { encoding: "utf8", timeout: 5000 });
+      const list = execFileSync("wmctrl", ["-l"], { encoding: "utf8", timeout: 5000 });
+      const id = list.split("\n").find((l) => l.endsWith(` ${title}`))?.split(" ")[0];
+      if (id && Number.parseInt(id, 16) === Number.parseInt(active.split("#")[1] ?? "0", 16)) return "ok";
+      last = `${active.trim()} / ${list.trim()}`;
+    } catch (e) {
+      last = e.message;
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error(`could not bring ${title} to the front: ${last}`);
+}
 
 /** A safe, ordered file name for a step's screenshot. */
 export const shotName = (n, window, step) =>
@@ -294,7 +381,7 @@ export const HEADER_JS = `const box = (e) => e.getBoundingClientRect();
   const text = status.querySelector(".status-text");
   const t = box(text);
   if (t.width > 0 && (t.left < s.left - 0.5 || t.right > s.right + 0.5)) bad.push("text outside the status");
-  if (s.width < 8) bad.push("no room for the status dot");
+  if (s.width < 8) bad.push("no room for the status");
   const tabs = q(".toolbar .tabs");
   if (tabs.scrollWidth > tabs.clientWidth + 1) bad.push("tabs clipped (" + tabs.scrollWidth + " > " + tabs.clientWidth + ")");
   const row = q("nav.toolbar");
@@ -378,7 +465,17 @@ export async function main(platform, argv = process.argv.slice(2)) {
     throw new Error(`${name}: waited ${ms} ms for ${what} (last: ${JSON.stringify(last)})`);
   };
   /** Clicks the element matching css (+ text) in window `name`, with a real WebDriver click. */
-  const click = async (name, css, text = "") => {
+  const click = async (name, css, text = "", tries = 3) => {
+    try {
+      return await clickOnce(name, css, text);
+    } catch (e) {
+      // A save that lands meanwhile redraws the drawing: find the key again.
+      if (tries <= 1 || !/stale element/.test(e.message)) throw e;
+      say(`  ${css} "${text}" was redrawn while clicking: finding it again`);
+      return click(name, css, text, tries - 1);
+    }
+  };
+  const clickOnce = async (name, css, text) => {
     const el = await waitFor(name, `${css} "${text}"`, FIND_JS, [css, text]);
     // Below the fold of a scrolling panel (the Simulator's Jump to) WebDriver may not scroll it in itself.
     await d.exec("arguments[0].scrollIntoView({ block: 'center' })", [el]);
@@ -1023,7 +1120,7 @@ export async function main(platform, argv = process.argv.slice(2)) {
       await click("settings", "#device-test button", "Open device test");
       await waitFor("settings", "the Device test view", `return document.querySelector('[data-screen-label="Device test"]')`);
       await shows("settings", "Simulated Speed Editor: these reports come from the Simulator window.");
-      await waitFor("settings", "Connected", `return document.querySelector(".diag-status .status-dot.dot-green")`);
+      await waitFor("settings", "Connected", `return document.querySelector('.diag-status[data-tone="green"]') && !document.querySelector(".diag-status [class*=dot]")`);
       await waitFor("settings", "no switches or inputs", `return !document.querySelector('[data-screen-label="Device test"] input, [data-screen-label="Device test"] [role=switch]')`);
     }, ["settings"]);
     await step("Device test: a key press arrives live as its raw report", async () => {
@@ -1783,6 +1880,125 @@ export async function main(platform, argv = process.argv.slice(2)) {
       await press("CUT");
       await lineWith("would run", "Round Trip.exe");
     }, ["settings", "simulator"]);
+    // ---- App profiles: a real app in front picks its profile ------------
+    const F = P.frontApp;
+    const fronts = [];
+    /** The simulated Speed Editor on page `want` (the Simulator's status line). */
+    const metaIs = (what, want) =>
+      waitFor("simulator", what, `const m = document.querySelector(".fw-sim-meta")?.textContent ?? "";
+        if (m.includes("Page " + arguments[0] + " ")) return true;
+        throw new Error(m + " / " + (document.querySelector("[data-front-app]")?.textContent ?? ""));`, [want], 20000);
+    /** In use: profile `profile` and page `page` (when the profile has several pages) are filled, the profile also shown; no dots. */
+    const liveOn = (profile, page) => waitFor("settings", `${profile} / ${page} in use`, `const [profile, page] = arguments;
+      const p = document.querySelector(".profile-pill.is-using [role=tab]")?.textContent ?? "";
+      const g = document.querySelector(".pill.is-using [role=tab]")?.textContent ?? null;
+      const shown = document.querySelector(".profile-pill.is-active [role=tab]")?.textContent ?? "";
+      if (document.querySelector(".live-dot")) throw new Error("a dot is back");
+      if (p === profile && shown === profile && (page === null || g === page)) return true;
+      throw new Error("in use " + p + " / " + g + ", showing " + shown);`, [profile, page]);
+    const writing = (c) => (c.profiles ?? []).find((p) => p.name === "Writing");
+    await step(`profiles: New profile Writing, for ${F.id}`, async () => {
+      await click("settings", "button.profile-add", "New profile");
+      await waitFor("settings", "the new profile's apps panel", `return document.querySelector(".side-panel .profile-panel")?.textContent.includes("used?")`);
+      await shows("settings", "Any other app: back to Default");
+      await typeInto("settings", '.side-panel input[aria-label="Program name"]', `${F.id}\uE007`);
+      await configShows(`a profile for ${F.id}`, (c) => c.profiles?.at(-1)?.apps?.some((a) => a[platform] === F.id));
+      await waitFor("settings", "the app listed", `return document.querySelector('.side-panel [role=list]')?.textContent.includes(arguments[0])`, [F.id]);
+      await click("settings", '.profile-pill.is-active button[aria-label="Rename profile"]');
+      await typeInto("settings", ".profile-pill.is-active input.profile-rename", `${SELECT_ALL}Writing\uE007`);
+      await configShows("the profile renamed Writing", (c) => writing(c)?.pages.length === 1);
+      await click("settings", '.side-panel [role=radiogroup][aria-label="Colour"] button[aria-label="teal"]');
+      await configShows("Writing in teal", (c) => writing(c)?.color === "teal");
+    });
+    await step("profiles: the icon search lists :edit: among every bundled icon", async () => {
+      await typeInto("settings", '.side-panel input[aria-label="Search icons"]', ":edit:");
+      await waitFor("settings", "the search results, :edit: first", `const o = [...document.querySelectorAll('.side-panel [role=listbox][aria-label="Icons found"] [role=option]')];
+        if (o[0]?.dataset.name === "edit" && o.length > 1) return true;
+        throw new Error("results: " + o.map((e) => e.dataset.name).join(" "));`);
+      // Drawn from the bundled font: the glyph is a private-use character, and the font loaded.
+      await waitFor("settings", "the icon font loaded", `const g = document.querySelector('.side-panel [role=option][data-name="edit"] .symbol-glyph');
+        const ch = g?.dataset.glyph ?? "";
+        if (ch.codePointAt(0) >= 0xe000 && [...document.fonts].some((f) => f.family.includes("freewheel symbols") && f.status === "loaded")) return true;
+        throw new Error("glyph " + ch.codePointAt(0) + ", fonts " + [...document.fonts].map((f) => f.family + ":" + f.status).join(" "));`);
+    });
+    await step("profiles: picking :edit: from the search sets Writing's icon", async () => {
+      await click("settings", '.side-panel [role=listbox] [role=option][data-name="edit"]');
+      await configShows("Writing in teal with the edit icon", (c) => writing(c)?.color === "teal" && writing(c)?.icon === "edit");
+      await waitFor("settings", "the pill in teal with its icon", `const p = document.querySelector('.profile-pill.is-active'); return p?.dataset.color === "teal" && p.querySelector('[data-icon="edit"]');`);
+      await click("settings", '.profile-pill.is-active button[aria-label="Apps for this profile"]');
+      await waitFor("settings", "Writing's apps panel", `return document.querySelector(".side-panel .profile-panel")?.textContent.includes("When is Writing used?")`);
+      await waitFor("settings", "Writing's own page Main", `return [...document.querySelectorAll(".keys-title")].length === 1 && document.querySelector(".profile-pill.is-active")?.textContent.includes("Writing")`);
+    });
+    await step("profiles: a page key on Writing makes a page of Writing", async () => {
+      // CUT is not set on the new page: its panel opens on the choices.
+      await keyIn("Cut");
+      await choice("Switch to another set of keys");
+      await click("settings", ".side-panel button.suggestion", "");
+      const c = await configShows("Writing's second page, CUT goes to it", (c) => {
+        const w = writing(c);
+        const main = c.layers.find((l) => l.id === w?.pages[0]);
+        return w?.pages.length === 2 && main?.bindings.Cut?.LayerPush?.target === w.pages[1];
+      });
+      await waitFor("settings", "Writing's two page pills", `return document.querySelectorAll(".pills .pill").length === 2`);
+      // Default's pages are untouched.
+      if (c.layers.filter((l) => !c.profiles.some((p) => p.pages.includes(l.id))).length !== 2) throw new Error("a Default page was added");
+    });
+    let defaultPage = null;
+    await step(`profiles: ${F.id} in front for real: Writing in use on its first page`, async () => {
+      // Default on its second page first: it comes back there.
+      await click("settings", ".profile-pill button[role=tab]", "Default");
+      await pressKey("Cam5");
+      defaultPage = (await readConfig()).layers.find((l) => l.name === "Edit Bay").id;
+      await metaIs("the Speed Editor on Edit Bay", defaultPage);
+      const c = await readConfig();
+      fronts.push(F.start());
+      say(`  ${await F.bring(fronts.at(-1), "app")}`);
+      await metaIs("the Speed Editor on Writing's first page", writing(c).pages[0]);
+      await waitFor("simulator", `${F.id} in front`, `return document.querySelector("[data-front-app]")?.textContent.toLowerCase().includes(arguments[0])`, [F.id]);
+      await logged('profile is now "Writing", page "Main"');
+      await liveOn("Writing", "Main");
+    }, ["settings", "simulator"]);
+    await step("profiles: another app in front for real: Default, on the page it was on", async () => {
+      fronts.push(F.startOther());
+      say(`  ${await F.bring(fronts.at(-1), "other")}`);
+      await metaIs("the Speed Editor back on Edit Bay", defaultPage);
+      await logged('profile is now "Default", page "Edit Bay"');
+      await liveOn("Default", "Edit Bay");
+      await waitFor("settings", "CAM 5 lit (the way back to Main)", `return document.querySelector('.device [data-binding="Cam5"]')?.classList.contains("is-lit")`);
+      F.stop(fronts);
+      await pressKey("Cam5");
+      await metaIs("the Speed Editor on Main", (await readConfig()).base_layer);
+    }, ["settings", "simulator"]);
+    await step("simulator: App in front fakes the app in front", async () => {
+      const c = await readConfig();
+      await typeInto("simulator", 'input[aria-label="App in front"]', `${SELECT_ALL}${F.id}`);
+      await click("simulator", ".fw-sim-front button.fw-sim-primary", "Bring to front");
+      await metaIs("the faked app on Writing", writing(c).pages[0]);
+      await liveOn("Writing", "Main");
+      await click("simulator", '[role=group][aria-label="Other apps in front"] button', "Another app");
+      await metaIs("another faked app on Default", c.base_layer);
+      await liveOn("Default", basePage(c).name);
+    }, ["simulator", "settings"]);
+    await step("profiles: Back up writes the profile with its apps and pages", async () => {
+      // The steps after restore the earlier backup: keep it.
+      const file0 = join(dialogs, "freewheel-mappings.json");
+      const earlier = existsSync(file0) ? readFileSync(file0) : null;
+      await click("settings", "nav.toolbar button.tab", "Help & backup");
+      await click("settings", "#backup button", "Back up");
+      await shows("settings", "Your keys are backed up.");
+      const text = readFileSync(join(dialogs, "freewheel-mappings.json"), "utf8");
+      const file = JSON.parse(text);
+      const w = file.profiles?.find((p) => p.name === "Writing");
+      if (!file.pages?.["Edit Bay"] || !w || w.color !== "teal" || w.icon !== ":edit:" || !text.includes('"icon": ":edit:"') || Object.keys(w.pages ?? {}).length !== 2 || !JSON.stringify(w.apps).includes(F.id) || !Object.values(w.pages)[0].CUT?.startsWith("page "))
+        throw new Error(`the backup lacks the profile: ${text.slice(0, 900)}`);
+      if (earlier) writeFileSync(file0, earlier);
+      // Back to the Keys tab without the profile for the steps after.
+      await click("settings", "nav.toolbar button.tab", "Keys");
+      await click("settings", ".profile-pill button[role=tab]", "Writing");
+      await click("settings", '.profile-pill.is-active button[aria-label="Delete profile"]');
+      await click("settings", ".confirm-inline button", "Delete");
+      await configShows("Writing deleted with its pages", (c) => !c.profiles?.length && c.layers.length === 2);
+    }, ["settings"]);
     await step("data: someone else's file, apps not allowed: its app key comes in off", async () => {
       const theirs = join(dialogs, "someone-else.json");
       writeFileSync(theirs, JSON.stringify({

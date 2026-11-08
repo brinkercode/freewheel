@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import Backup from "./Backup.jsx";
-import DeviceTest, { busText, copyText, diagnosticsText, dotClass, secondsText } from "./DeviceTest.jsx";
+import DeviceTest, { busText, copyText, diagnosticsText, secondsText, statusTone } from "./DeviceTest.jsx";
 
 afterEach(() => {
   cleanup();
@@ -66,7 +66,8 @@ test("the view shows connection, auth, battery, keys, wheel and the raw reports"
     expect(screen.getAllByText(text, { exact: true }).length, text).toBeGreaterThan(0);
   }
   expect(screen.queryByText(/Simulated Speed Editor/)).toBeNull();
-  expect(document.querySelector(".status-dot").className).toContain("dot-green");
+  expect(document.querySelector(".diag-status").dataset.tone).toBe("green");
+  expect(document.querySelector("[class*=dot]")).toBeNull();
   // Read-only: no switches, inputs or selects.
   expect(document.querySelectorAll("input, select, textarea, [role=switch]").length).toBe(0);
 });
@@ -104,7 +105,7 @@ test("it updates live from the device-diagnostics event", async () => {
   await act(async () => push(diag({ held: ["STOP/PLAY"], status: "AuthFailed" })));
   expect(screen.getByText("STOP/PLAY")).toBeTruthy();
   expect(screen.getByText("Found, but it did not unlock (auth failed)")).toBeTruthy();
-  expect(document.querySelector(".status-dot").className).toContain("dot-orange");
+  expect(document.querySelector(".diag-status").dataset.tone).toBe("orange");
   unmount();
   await act(async () => {});
   expect(stop).toHaveBeenCalledOnce();
@@ -153,7 +154,7 @@ test("copyText uses the clipboard, else a selected textarea", async () => {
 
 test("helpers", () => {
   expect([busText("Usb"), busText("Bluetooth"), busText(null)]).toEqual(["USB", "Bluetooth", "—"]);
-  expect([dotClass("Connected"), dotClass("AuthFailed"), dotClass("Absent")]).toEqual(["dot-green", "dot-orange", "dot-gray"]);
+  expect([statusTone("Connected"), statusTone("AuthFailed"), statusTone("Absent")]).toEqual(["green", "orange", "gray"]);
   expect([secondsText(null), secondsText(42), secondsText(590)]).toEqual(["—", "42 s", "9 min 50 s"]);
   expect(diagnosticsText(null, { version: "1" })).toBe("freewheel 1 device test: no data yet");
   expect(diagnosticsText(diag({ simulated: true }))).toContain("SIMULATED device (--simulate)");

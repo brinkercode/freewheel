@@ -95,7 +95,8 @@ html:has(.fw-sim) body { overflow-y: auto; }
 
 .fw-sim-line { display: flex; gap: var(--sp-2); }
 .fw-sim-line > button { flex: 1; font-size: var(--fs-small); touch-action: none; user-select: none; }
-.fw-sim-line > select {
+.fw-sim-line > select,
+.fw-sim-line > input {
   flex: 1;
   min-width: 0;
   height: var(--h-chip);
@@ -138,6 +139,7 @@ html:has(.fw-sim) body { overflow-y: auto; }
 .fw-sim-log li.is-error { color: #ff8a80; }
 .fw-sim-log li.is-app { color: #b5e3c0; }
 .fw-sim-meta { color: #6c6c72; font-size: var(--fs-micro); }
+.fw-sim-front { display: flex; flex-direction: column; gap: var(--sp-2); }
 .fw-sim-seg button:disabled { color: #5c5c62; cursor: default; }
 /* "Paste notes…": the markdown to publish with the next New version */
 .fw-sim-paste { display: flex; flex-direction: column; gap: var(--sp-2); }
