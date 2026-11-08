@@ -59,6 +59,34 @@ export function inlineText(nodes) {
   return nodes.map((n) => n.text ?? n.code ?? n.link ?? inlineText(n.bold)).join("");
 }
 
+/**
+ * The text with every HTML comment cut out, scanning left to right, so no
+ * "<!--" can survive (an unclosed one drops the rest, as a browser would).
+ * The notes are drawn as text, never as HTML; this keeps comments out of view.
+ */
+export function withoutComments(text) {
+  // Cutting can join pieces into a new "<!--" (as in "<!<!---->--"), so cut
+  // again until nothing changes; each pass only shortens the text.
+  for (;;) {
+    const cut = cutCommentsOnce(text);
+    if (cut === text) return cut;
+    text = cut;
+  }
+}
+
+function cutCommentsOnce(text) {
+  let out = "";
+  let at = 0;
+  for (;;) {
+    const open = text.indexOf("<!--", at);
+    if (open < 0) return out + text.slice(at);
+    out += text.slice(at, open);
+    const close = text.indexOf("-->", open + 4);
+    if (close < 0) return out;
+    at = close + 3;
+  }
+}
+
 const VERSION_HEADING = /^#{1,2}\s+\[?v?\d+\.\d+\.\d+/;
 
 /**
@@ -70,9 +98,7 @@ export function parseNotes(markdown) {
   let list = null;
   let para = null;
   let item = null;
-  const src = String(markdown ?? "")
-    .replace(/\r\n?/g, "\n")
-    .replace(/<!--[\s\S]*?-->/g, "");
+  const src = withoutComments(String(markdown ?? "").replace(/\r\n?/g, "\n"));
   const flush = () => {
     if (para) blocks.push({ type: "p", inline: parseInline(para.join(" ")) });
     para = null;
