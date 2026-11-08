@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.1.0](https://github.com/brinkercode/freewheel/compare/v1.0.0...v1.1.0) (2026-11-08)
+
+
+### New
+
+* profiles that switch automatically for each app ([#185](https://github.com/brinkercode/freewheel/issues/185)) ([dc7acf6](https://github.com/brinkercode/freewheel/commit/dc7acf6b5e6f8734768d3cea667ea124262f513e))
+
+
+### Fixed
+
+* What's new only ever fetches notes over HTTPS ([#190](https://github.com/brinkercode/freewheel/issues/190)) ([ec6f520](https://github.com/brinkercode/freewheel/commit/ec6f52062bb509c59ad236b3cbae54fc0f871a80))
+* What's new shows the release notes from GitHub ([#188](https://github.com/brinkercode/freewheel/issues/188)) ([6feac26](https://github.com/brinkercode/freewheel/commit/6feac26a8952cfb1101b4959e9532d46856ebc1f))
+
 ## [1.0.0](https://github.com/brinkercode/freewheel/compare/v0.1.0...v1.0.0) (2026-11-08)
 
 
