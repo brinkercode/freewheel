@@ -599,7 +599,7 @@ impl<'a> Reader<'a> {
         let ids: BTreeMap<String, String> = config
             .layers
             .iter()
-            .map(|l| (l.name.to_lowercase(), l.id.clone()))
+            .map(|l| (name_key(&l.name), l.id.clone()))
             .collect();
         if let Some(profiles) = get("profiles") {
             config.profiles = self.profiles(profiles, current, &mut config.layers)?;
@@ -657,7 +657,7 @@ impl<'a> Reader<'a> {
             if name.is_empty() {
                 return Err(invalid(page.key_pos, at_pages, "a page needs a name"));
             }
-            if let Some(other) = layers.iter().find(|l| l.name.eq_ignore_ascii_case(name)) {
+            if let Some(other) = layers.iter().find(|l| same_name(&l.name, name)) {
                 return Err(invalid(
                     page.key_pos,
                     at_pages,
@@ -670,7 +670,7 @@ impl<'a> Reader<'a> {
             let used = |id: &str| layers.iter().chain(taken).any(|l| l.id == id);
             let id = current
                 .iter()
-                .find(|l| l.name.eq_ignore_ascii_case(name) && !used(&l.id))
+                .find(|l| same_name(&l.name, name) && !used(&l.id))
                 .map(|l| l.id.clone())
                 .or_else(|| first.filter(|f| i == 0 && !used(f)).map(str::to_string))
                 .unwrap_or_else(|| {
@@ -691,7 +691,7 @@ impl<'a> Reader<'a> {
         }
         let ids: BTreeMap<String, String> = layers
             .iter()
-            .map(|l| (l.name.to_lowercase(), l.id.clone()))
+            .map(|l| (name_key(&l.name), l.id.clone()))
             .collect();
         let mut backs: Vec<(usize, String, Pos, String)> = Vec::new();
         for (i, page) in pages.iter().enumerate() {
@@ -1062,25 +1062,34 @@ impl<'a> Reader<'a> {
     }
 }
 
+/// How page names compare: ignoring case with Unicode's rules, so `Ärger`
+/// and `ärger` are one name in the duplicate checks, in Back up's unique
+/// names and in the `page <name>` lookup alike.
+fn name_key(name: &str) -> String {
+    name.trim().to_lowercase()
+}
+
+fn same_name(a: &str, b: &str) -> bool {
+    name_key(a) == name_key(b)
+}
+
 fn page_id(
     ids: &BTreeMap<String, String>,
     name: &str,
     pos: Pos,
     at: &str,
 ) -> Result<String, SaveError> {
-    ids.get(&name.trim().to_lowercase())
-        .cloned()
-        .ok_or_else(|| {
-            let names: Vec<&str> = ids.keys().map(String::as_str).collect();
-            let hint = closest(&name.to_lowercase(), names.iter().copied())
-                .map(|k| format!(" (did you mean \"page {k}\"?)"))
-                .unwrap_or_default();
-            invalid(
-                pos,
-                at,
-                format!("there is no page \"{name}\" in the file{hint}"),
-            )
-        })
+    ids.get(&name_key(name)).cloned().ok_or_else(|| {
+        let names: Vec<&str> = ids.keys().map(String::as_str).collect();
+        let hint = closest(&name.to_lowercase(), names.iter().copied())
+            .map(|k| format!(" (did you mean \"page {k}\"?)"))
+            .unwrap_or_default();
+        invalid(
+            pos,
+            at,
+            format!("there is no page \"{name}\" in the file{hint}"),
+        )
+    })
 }
 
 /// One of `names`, in any case.
@@ -1579,7 +1588,7 @@ fn page_names(layers: &[&Layer]) -> Vec<(String, String)> {
         };
         let mut name = base.clone();
         let mut n = 2;
-        while names.iter().any(|(_, w)| w.eq_ignore_ascii_case(&name)) {
+        while names.iter().any(|(_, w)| same_name(w, &name)) {
             name = format!("{base} ({n})");
             n += 1;
         }

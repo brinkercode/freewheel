@@ -476,6 +476,10 @@ fn errors_name_the_line_column_and_key_and_suggest_a_fix() {
             "line 1, column 24, pages: the page \"main\" is in the file twice (\"Main\" before it; names ignore case)",
         ),
         (
+            r#"{"pages": {"Main": {}, "Ärger": {}, "ärger": {}}}"#,
+            "line 1, column 37, pages: the page \"ärger\" is in the file twice (\"Ärger\" before it; names ignore case)",
+        ),
+        (
             r#"{"pages": {}}"#,
             "line 1, column 11, pages: pages is empty: write at least one page, like \"Main\": {}",
         ),
@@ -1152,4 +1156,53 @@ fn a_sharp_s_shortcut_stays_one_key_and_its_backup_restores() {
     assert!(out.contains(r#""CUT": "Ctrl+ß""#), "{out}");
     let again = import(&c, out.as_bytes(), true, &win()).unwrap_or_else(|e| panic!("{e}\n{out}"));
     assert_eq!(again.config, c);
+}
+
+/// Page names compare ignoring case by Unicode's rules everywhere: Back up
+/// gives `Ärger` and `ärger` distinct names, and the restore sends each
+/// page key to the page it went to before.
+#[test]
+fn backup_and_restore_keeps_where_a_page_key_goes_with_accented_capitals() {
+    let mut c = Config::default();
+    c.layers[0].name = "Main".into();
+    for (id, name) in [("page-2", "Ärger"), ("page-3", "ärger")] {
+        c.layers.push(Layer {
+            id: id.into(),
+            name: name.into(),
+            bindings: BTreeMap::new(),
+        });
+    }
+    c.layers[0].bindings.insert(
+        "Cam1".into(),
+        Action::LayerPush {
+            target: "page-2".into(),
+        },
+    );
+    c.layers[0].bindings.insert(
+        "Cam2".into(),
+        Action::LayerPush {
+            target: "page-3".into(),
+        },
+    );
+    let file = export(&c, &win());
+    let text = String::from_utf8_lossy(&file).to_string();
+    assert!(text.contains("\"ärger (2)\""), "{text}");
+    let restored = import(&c, &file, true, &win())
+        .unwrap_or_else(|e| panic!("{e}\n{text}"))
+        .config;
+    let target = |key: &str| match restored.layers[0].bindings.get(key) {
+        Some(Action::LayerPush { target }) => target.clone(),
+        other => panic!("{key}: {other:?}"),
+    };
+    let name = |id: String| {
+        restored
+            .layers
+            .iter()
+            .find(|l| l.id == id)
+            .unwrap()
+            .name
+            .clone()
+    };
+    assert_eq!(name(target("Cam1")), "Ärger");
+    assert_eq!(name(target("Cam2")), "ärger (2)");
 }
