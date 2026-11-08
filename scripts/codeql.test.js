@@ -4,12 +4,13 @@ import { expect, test } from "vitest";
 const wf = readFileSync(new URL("../.github/workflows/codeql.yml", import.meta.url), "utf8");
 const code = wf.split(/\r?\n/).map((l) => l.replace(/(^|\s)#.*$/, "")).join("\n");
 
-test("codeql runs only on push to main and a weekly schedule, never on pull requests", () => {
+test("codeql runs on every pull request, on push to main and weekly", () => {
   const on = code.match(/^on:\r?\n((?:[ \t]+.*\r?\n|\r?\n)*)/m)[1];
   expect(on.trimEnd()).toBe(
-    ["  push:", "    branches: [main]", "  schedule:", '    - cron: "17 4 * * 1"'].join("\n"),
+    ["  pull_request:", "  push:", "    branches: [main]", "  schedule:", '    - cron: "17 4 * * 1"'].join("\n"),
   );
-  expect(code).not.toMatch(/pull_request|workflow_call|workflow_dispatch/);
+  // pull_request (not pull_request_target): a fork's PR never gets write access.
+  expect(code).not.toMatch(/pull_request_target|workflow_call|workflow_dispatch/);
 });
 
 test("codeql analyzes rust and javascript-typescript", () => {
