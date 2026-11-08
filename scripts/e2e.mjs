@@ -1901,8 +1901,8 @@ export async function main(platform, argv = process.argv.slice(2)) {
       await waitFor("settings", "Writing's own page Main", `return [...document.querySelectorAll(".keys-title")].length === 1 && document.querySelector(".profile-pill.is-active")?.textContent.includes("Writing")`);
     });
     await step("profiles: a page key on Writing makes a page of Writing", async () => {
+      // CUT is not set on the new page: its panel opens on the choices.
       await keyIn("Cut");
-      await allChoices();
       await choice("Switch to another set of keys");
       await click("settings", ".side-panel button.suggestion", "");
       const c = await configShows("Writing's second page, CUT goes to it", (c) => {
