@@ -1,0 +1,40 @@
+{
+  "_comment": "Linux (PR feat/linux-e2e, measured under Xvfb + openbox on ubuntu, release build, 20-60 s idle): binary 24 MB; normal open 555 MB RSS / 171 MB private (freewheel + WebKitWebProcess + WebKitNetworkProcess); tray 243 MB RSS / 49 MB private, the WebKitNetworkProcess stays (8.6 MB private), the web process goes; simulate open 865 / 305; idle CPU 0.8-1.7 % of one core; disk < 0.1 MB. RSS counts the shared GTK/WebKit libraries, so it is not comparable to Windows' working set. Budgets are those plus a margin; MB = MiB.",
+  "exeMB": 32,
+  "idleCpuPercentOfOneCore": 3,
+  "modes": {
+    "normal": {
+      "diskMB": 10,
+      "open": {
+        "workingSetMB": 720,
+        "privateMB": 240
+      },
+      "tray": {
+        "workingSetMB": 320,
+        "privateMB": 72,
+        "webviewProcesses": 1
+      },
+      "reopened": {
+        "workingSetMB": 720,
+        "privateMB": 240
+      },
+      "tray again": {
+        "workingSetMB": 320,
+        "privateMB": 72,
+        "webviewProcesses": 1
+      }
+    },
+    "simulate": {
+      "diskMB": 10,
+      "open": {
+        "workingSetMB": 1100,
+        "privateMB": 400
+      },
+      "tray": {
+        "workingSetMB": 320,
+        "privateMB": 72,
+        "webviewProcesses": 1
+      }
+    }
+  }
+}

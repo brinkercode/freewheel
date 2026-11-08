@@ -1,12 +1,14 @@
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import { checkWorkflow } from "./check-workflow.mjs";
 import { DEVTOOLS_PORT_ENV, DIALOG_DIR_ENV, RESPONSIVE_MS, appLog, flowLines, parseArgs, sessionBody, shotName, traceLines } from "./e2e-windows.mjs";
+import { LINUX_APP, PLATFORMS, installLinuxApp } from "./e2e.mjs";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const wf = read("../.github/workflows/e2e-windows.yml");
-const script = read("./e2e-windows.mjs");
+const script = read("./e2e.mjs");
 
 test("the e2e session starts the real exe with --simulate through tauri-driver", () => {
   expect(sessionBody("C:/a/freewheel.exe")).toEqual({
@@ -16,7 +18,7 @@ test("the e2e session starts the real exe with --simulate through tauri-driver",
     browserName: "webview2",
     "ms:edgeOptions": { debuggerAddress: "127.0.0.1:9222" },
   });
-  expect(parseArgs(["--app", "x.exe", "--out", "o"])).toEqual({ driver: "http://127.0.0.1:4444", app: "x.exe", out: "o", port: null, "next-notes": null });
+  expect(parseArgs(["--app", "x.exe", "--out", "o"])).toEqual({ driver: "http://127.0.0.1:4444", app: "x.exe", out: "o", port: null, "tauri-driver": null, "native-driver": null, "next-notes": null });
   expect(parseArgs(["--port", "9222", "--app", "x.exe"]).port).toBe("9222");
   expect(() => parseArgs([])).toThrow(/--app/);
   expect(() => parseArgs(["--nope", "1"])).toThrow(/unknown/);
@@ -76,6 +78,30 @@ test("the e2e workflow is a Windows PR check that builds the embedded UI and upl
   expect(wf).toMatch(/- name: Upload freewheel-simulate\.cmd\n(.*\n)\s+uses: actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7\.0\.2\n\s+with:\n\s+path: src-tauri\/windows\/freewheel-simulate\.cmd\n\s+archive: false\n/);
 });
 
+test("one click-through for both OSes: only how the app starts and what is OS-specific differ", () => {
+  expect(Object.keys(PLATFORMS)).toEqual(["windows", "linux"]);
+  expect(PLATFORMS.windows.installedApp({ path: "explorer.exe", args: ["C:/x/Spotify.lnk"] })).toBe(true);
+  expect(PLATFORMS.linux.installedApp({ path: "/usr/share/applications/org.gnome.Calculator.desktop", args: [] })).toBe(true);
+  expect(PLATFORMS.linux.installedApp({ path: "explorer.exe", args: ["x.lnk"] })).toBe(false);
+  expect([PLATFORMS.windows.resolve, PLATFORMS.linux.resolve]).toEqual(["Resolve.exe", "resolve"]);
+  // The stubbed 'Choose file…' answers with these (src-tauri/src/e2e.rs).
+  const stub = read("../src-tauri/src/e2e.rs");
+  for (const p of Object.values(PLATFORMS)) expect(stub).toContain(`"${p.chosen}"`);
+  expect(read("./e2e-linux.mjs")).toContain('main("linux")');
+  expect(read("./e2e-windows.mjs")).toContain('main("windows")');
+});
+
+test("the Linux e2e installs its own desktop entry with a themed icon", async () => {
+  const { mkdtempSync, readFileSync: rf, existsSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const home = mkdtempSync(join(tmpdir(), "fw-e2e-"));
+  const desktop = installLinuxApp(home, fileURLToPath(new URL("../src-tauri/icons/32x32.png", import.meta.url)), "");
+  expect(desktop).toBe(join(home, ".local/share/applications", `${LINUX_APP.id}.desktop`));
+  expect(rf(desktop, "utf8")).toContain(`Name=${LINUX_APP.name}\nExec=/usr/bin/true %F\nIcon=${LINUX_APP.id}`);
+  expect(existsSync(join(home, ".local/share/icons/hicolor/32x32/apps", `${LINUX_APP.id}.png`))).toBe(true);
+});
+
 test("the e2e checks the header never overlaps at 820px and that the tray and the window share one On/Off", async () => {
   const { HEADER_JS } = await import("./e2e-windows.mjs");
   for (const part of [".toolbar .tab", ".toolbar .switch", ".toolbar .window-control", "tabs clipped", "header overflows", "text.scrollWidth > text.clientWidth"]) expect(HEADER_JS).toContain(part);
@@ -119,7 +145,7 @@ test("a failed step dumps the update flow: the settings page's trace and the app
   expect(flowLines(log, 1)).toEqual([log.split("\r\n")[4]]);
   expect(traceLines([{ at: "A", what: "update", status: "ready" }])).toEqual(['A update {"status":"ready"}']);
   expect(traceLines(undefined)).toEqual([]);
-  const script = read("./e2e-windows.mjs");
+  const script = read("./e2e.mjs");
   expect(script).toContain('ask("settings", "return window.__freewheelTrace ?? []")');
   // The names the dump keys on are the ones the app logs.
   expect(read("../src-tauri/src/simulate.rs")).toContain('"main thread blocked: no answer"');
