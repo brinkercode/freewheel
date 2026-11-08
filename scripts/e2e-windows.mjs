@@ -1705,6 +1705,58 @@ async function main() {
         return true;
       });
     }, ["settings", "simulator"]);
+    // A file shared by several computers: one app per OS. This computer
+    // runs its own entry, and a Back up writes every OS's entry again.
+    await step("data: a 3-OS file restores, and Back up keeps all three OSes", async () => {
+      const original = readFileSync(join(dialogs, "freewheel-mappings.json"));
+      const perOs = join(dialogs, "three-os.json");
+      const cam1 = { open: { windows: roundTrip, macos: "com.spotify.client", linux: "spotify.desktop" }, args: ["--fw"] };
+      const cam2 = { open: { macos: "com.apple.Safari", linux: "firefox" } };
+      writeFileSync(perOs, JSON.stringify({ version: 2, pages: { Main: { CAM1: cam1, CAM2: cam2 } } }, null, 2));
+      await restoreFrom(perOs, true);
+      await restoredWith("CAM2 on Main: the file has no \"windows\" app to open on this computer.");
+      await configShows("CAM1 runs the Windows entry and keeps the others", (c) => {
+        const b = basePage(c).bindings;
+        const ok = b.Cam1?.LaunchApp?.path === roundTrip && b.Cam1.LaunchApp.enabled === true && b.Cam1.LaunchApp.args.join() === "--fw"
+          && JSON.stringify(b.Cam1.LaunchApp.per_os) === JSON.stringify(cam1.open)
+          && b.Cam2?.LaunchApp?.enabled === false && JSON.stringify(b.Cam2.LaunchApp.per_os) === JSON.stringify(cam2.open);
+        if (!ok) throw new Error(JSON.stringify(b));
+        return true;
+      });
+      const backUp = async () => {
+        await click("settings", "nav.toolbar button.tab", "Help & backup");
+        await click("settings", "#backup button", "Back up");
+        await shows("settings", "Your keys are backed up.");
+        return readFileSync(join(dialogs, "freewheel-mappings.json"), "utf8");
+      };
+      const text = await backUp();
+      const main = JSON.parse(text).pages?.Main;
+      if (JSON.stringify(main?.CAM1) !== JSON.stringify(cam1) || JSON.stringify(main?.CAM2) !== JSON.stringify(cam2))
+        throw new Error(`the backup lost an OS's app:\n${text}`);
+      say(`  exported: CAM1 ${JSON.stringify(main.CAM1)}, CAM2 ${JSON.stringify(main.CAM2)}`);
+      // The key panel shows this computer's app and says the others are set.
+      await click("settings", "nav.toolbar button.tab", "Keys");
+      await drawingShows({ Cam1: "Opens Round Trip" });
+      await keyIn("Cam1");
+      await toChoices();
+      await choice("Open an app or website");
+      await waitFor("settings", "the other OSes' note", `const t = [...document.querySelectorAll(".side-panel [role=note]")].map((n) => n.textContent).join(" | ");
+        if (t.includes("Also set for macOS and Linux.")) return true;
+        throw new Error("notes: " + t);`);
+      // Picking another app here changes only the Windows entry.
+      const first = await waitFor("settings", "the installed apps", `return document.querySelector(".side-panel .app-row .grow")?.textContent.trim()`, [], 20000);
+      await click("settings", ".side-panel .app-row", first);
+      await configShows("CAM1 picked again, the other OSes kept", (c) => {
+        const a = basePage(c).bindings.Cam1?.LaunchApp;
+        if (!a || a.path === roundTrip || JSON.stringify(a.per_os) !== JSON.stringify(cam1.open)) throw new Error(JSON.stringify(a));
+        return true;
+      });
+      const again = JSON.parse(await backUp()).pages?.Main?.CAM1;
+      if (again?.open?.macos !== cam1.open.macos || again?.open?.linux !== cam1.open.linux || !again?.open?.windows || again.open.windows === roundTrip)
+        throw new Error(`after a new pick the backup is ${JSON.stringify(again)}`);
+      say(`  after picking ${first}: ${JSON.stringify(again)}`);
+      writeFileSync(join(dialogs, "freewheel-mappings.json"), original);
+    }, ["settings", "simulator"]);
     await step("data: a mistake in a hand-written file names the line, column and key; nothing changes", async () => {
       const before = JSON.stringify(await readConfig());
       const typo = join(dialogs, "typo.json");

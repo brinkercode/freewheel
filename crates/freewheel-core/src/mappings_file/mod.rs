@@ -310,7 +310,7 @@ pub const ACTIONS: &[ActionForm] = &[
     ActionForm {
         form: "{ \"open\": ..., \"args\": [...], \"cwd\": ... }",
         example: "{ \"open\": \"C:\\\\Tools\\\\run.cmd\", \"args\": [\"--fast\", \"file.txt\"], \"cwd\": \"%USERPROFILE%\" }",
-        does: "open with arguments and a start folder. open may also be { \"windows\": ..., \"macos\": ..., \"linux\": ... } for one file shared by several computers.",
+        does: "open with arguments and a start folder. open may also be { \"windows\": ..., \"macos\": ..., \"linux\": ... } for one file shared by several computers; a backup writes every OS back.",
     },
 ];
 
@@ -767,11 +767,11 @@ impl<'a> Reader<'a> {
                         })
                         .transpose()
                 };
-                Target::PerOs {
+                Target::PerOs(crate::config::PerOsTargets {
                     windows: pick("windows")?,
                     macos: pick("macos")?,
                     linux: pick("linux")?,
-                }
+                })
             }
             Value::String(_) => {
                 return Err(invalid(
@@ -1337,6 +1337,13 @@ impl Writer<'_> {
                     .map_or("volume", |(_, n)| n)
             ),
             Action::LaunchApp {
+                path,
+                args,
+                cwd,
+                per_os: Some(targets),
+                ..
+            } => return Some(self.open_per_os(path, args, cwd, targets)),
+            Action::LaunchApp {
                 path, args, cwd, ..
             } => return Some(self.open(path, args, cwd)),
         }))
@@ -1352,6 +1359,35 @@ impl Writer<'_> {
             return Out::Str(format!("open {target}"));
         }
         let mut members = vec![("open".to_string(), Out::Str(target))];
+        if !own.is_empty() {
+            members.push((
+                "args".into(),
+                Out::List(own.into_iter().map(Out::Str).collect()),
+            ));
+        }
+        if let Some(cwd) = cwd {
+            members.push(("cwd".into(), Out::Str(cwd.clone())));
+        }
+        Out::Obj(members)
+    }
+
+    /// A per-OS `open` from a restored file: the object form, every OS.
+    fn open_per_os(
+        &self,
+        path: &str,
+        args: &[String],
+        cwd: &Option<String>,
+        targets: &crate::config::PerOsTargets,
+    ) -> Out {
+        let (targets, own) = open::written_per_os(path, args, cwd, targets, self.host);
+        let per_os = [Os::Windows, Os::MacOs, Os::Linux]
+            .into_iter()
+            .filter_map(|os| {
+                open::select(&targets, os)
+                    .map(|t| (os.field().to_string(), Out::Str(t.to_string())))
+            })
+            .collect();
+        let mut members = vec![("open".to_string(), Out::Obj(per_os))];
         if !own.is_empty() {
             members.push((
                 "args".into(),

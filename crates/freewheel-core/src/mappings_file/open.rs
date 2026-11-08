@@ -7,7 +7,7 @@
 //! app's name; a program on PATH. Anything else stays as a key that is off,
 //! with a note saying why, never dropped.
 
-use crate::config::Action;
+use crate::config::{Action, PerOsTargets};
 
 /// The OS a file is read or written on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -165,11 +165,39 @@ impl<F: Fn() -> Vec<InstalledApp>> Host for RealHost<F> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Target {
     One(String),
-    PerOs {
-        windows: Option<String>,
-        macos: Option<String>,
-        linux: Option<String>,
-    },
+    PerOs(PerOsTargets),
+}
+
+/// The entry of a per-OS `open` that `os` runs (a pure function: tests pick
+/// every OS on any computer).
+pub fn select(targets: &PerOsTargets, os: Os) -> Option<&str> {
+    match os {
+        Os::Windows => targets.windows.as_deref(),
+        Os::MacOs => targets.macos.as_deref(),
+        Os::Linux => targets.linux.as_deref(),
+    }
+}
+
+/// `targets` with `os`'s entry replaced (`None` removes it).
+pub fn with_entry(targets: &PerOsTargets, os: Os, entry: Option<String>) -> PerOsTargets {
+    let mut out = targets.clone();
+    *match os {
+        Os::Windows => &mut out.windows,
+        Os::MacOs => &mut out.macos,
+        Os::Linux => &mut out.linux,
+    } = entry;
+    out
+}
+
+/// The target an off key keeps when the file has no entry for `os`: the
+/// first other OS's, so the key still says what it was.
+pub fn fallback(targets: &PerOsTargets) -> String {
+    [&targets.windows, &targets.macos, &targets.linux]
+        .into_iter()
+        .flatten()
+        .next()
+        .cloned()
+        .unwrap_or_default()
 }
 
 /// `open` with its arguments and start folder.
@@ -286,18 +314,24 @@ fn launch(path: impl Into<String>, args: Vec<String>, cwd: &Option<String>) -> A
         args,
         enabled: true,
         cwd: cwd.clone(),
+        per_os: None,
     }
 }
 
 fn off(action: Action, note: String) -> Resolved {
     let action = match action {
         Action::LaunchApp {
-            path, args, cwd, ..
+            path,
+            args,
+            cwd,
+            per_os,
+            ..
         } => Action::LaunchApp {
             path,
             args,
             enabled: false,
             cwd,
+            per_os,
         },
         other => other,
     };
@@ -388,42 +422,34 @@ fn strip_app_ext(name: &str) -> &str {
     name
 }
 
-/// Resolves an `open` on `host` (see the module docs for the order).
+/// Resolves an `open` on `host` (see the module docs for the order). A
+/// per-OS `open` runs this OS's entry and keeps every entry in `per_os`.
 pub fn resolve(spec: &OpenSpec, host: &dyn Host) -> Resolved {
     let os = host.os();
     let cwd = spec.cwd.as_ref().map(|c| expand(c, host));
-    let target = match &spec.target {
-        Target::One(t) => t.trim().to_string(),
-        Target::PerOs {
-            windows,
-            macos,
-            linux,
-        } => {
-            let mine = match os {
-                Os::Windows => windows,
-                Os::MacOs => macos,
-                Os::Linux => linux,
-            };
-            match mine {
-                Some(t) => t.trim().to_string(),
-                None => {
-                    let other = [windows, macos, linux]
-                        .into_iter()
-                        .flatten()
-                        .next()
-                        .cloned()
-                        .unwrap_or_default();
-                    return off(
-                        launch(other, spec.args.clone(), &cwd),
-                        format!(
-                            "the file has no \"{}\" app to open on this computer. The key is off",
-                            os.field()
-                        ),
-                    );
-                }
-            }
-        }
+    let targets = match &spec.target {
+        Target::One(t) => return resolve_one(t.trim().to_string(), spec, &cwd, host),
+        Target::PerOs(targets) => targets,
     };
+    let mut resolved = match select(targets, os) {
+        Some(t) => resolve_one(t.trim().to_string(), spec, &cwd, host),
+        None => off(
+            launch(fallback(targets), spec.args.clone(), &cwd),
+            format!(
+                "the file has no \"{}\" app to open on this computer. The key is off",
+                os.field()
+            ),
+        ),
+    };
+    if let Action::LaunchApp { per_os, .. } = &mut resolved.action {
+        *per_os = Some(targets.clone());
+    }
+    resolved
+}
+
+fn resolve_one(target: String, spec: &OpenSpec, cwd: &Option<String>, host: &dyn Host) -> Resolved {
+    let os = host.os();
+    let cwd = cwd.clone();
     let args = spec.args.clone();
     if is_url(&target) {
         return on(launch(os.opener(), vec![target], &None));
@@ -569,6 +595,39 @@ pub fn written_target(
     (target, own)
 }
 
+/// What a per-OS `open` writes for a LaunchApp that came from one: every
+/// entry as the file had it, with this OS's entry kept when it still
+/// resolves to exactly this LaunchApp, else the key's current app (it was
+/// picked again here). An OS the file had no entry for stays without one
+/// while the key still holds the stand-in a restore gave it.
+pub fn written_per_os(
+    path: &str,
+    args: &[String],
+    cwd: &Option<String>,
+    targets: &PerOsTargets,
+    host: &dyn Host,
+) -> (PerOsTargets, Vec<String>) {
+    let os = host.os();
+    let (target, own) = written_target(path, args, cwd, host);
+    let entry = match select(targets, os) {
+        None if path == fallback(targets) => {
+            return (targets.clone(), args.to_vec());
+        }
+        Some(raw) => {
+            let spec = OpenSpec {
+                target: Target::One(raw.to_string()),
+                args: own.clone(),
+                cwd: cwd.clone(),
+            };
+            let same = matches!(resolve(&spec, host).action,
+                Action::LaunchApp { path: p, args: a, .. } if p == path && a == args);
+            if same { raw.to_string() } else { target }
+        }
+        None => target,
+    };
+    (with_entry(targets, os, Some(entry)), own)
+}
+
 fn rest_args(extra: &[String]) -> Vec<String> {
     match extra.split_first() {
         Some((first, more)) if first == "--args" => more.to_vec(),
@@ -669,6 +728,7 @@ pub(crate) mod tests {
             args: args.iter().map(|a| a.to_string()).collect(),
             enabled,
             cwd: cwd.map(str::to_string),
+            per_os: None,
         }
     }
 
@@ -857,25 +917,113 @@ pub(crate) mod tests {
         ));
     }
 
+    fn three() -> PerOsTargets {
+        PerOsTargets {
+            windows: Some("W".into()),
+            macos: Some("M".into()),
+            linux: Some("L".into()),
+        }
+    }
+
+    #[test]
+    fn select_picks_windows_entry() {
+        assert_eq!(select(&three(), Os::Windows), Some("W"));
+        let none = PerOsTargets {
+            windows: None,
+            ..three()
+        };
+        assert_eq!(select(&none, Os::Windows), None);
+    }
+
+    #[test]
+    fn select_picks_macos_entry() {
+        assert_eq!(select(&three(), Os::MacOs), Some("M"));
+        let none = PerOsTargets {
+            macos: None,
+            ..three()
+        };
+        assert_eq!(select(&none, Os::MacOs), None);
+    }
+
+    #[test]
+    fn select_picks_linux_entry() {
+        assert_eq!(select(&three(), Os::Linux), Some("L"));
+        let none = PerOsTargets {
+            linux: None,
+            ..three()
+        };
+        assert_eq!(select(&none, Os::Linux), None);
+    }
+
+    #[test]
+    fn with_entry_changes_only_that_os() {
+        let all = three();
+        for os in [Os::Windows, Os::MacOs, Os::Linux] {
+            let changed = with_entry(&all, os, Some("X".into()));
+            for other in [Os::Windows, Os::MacOs, Os::Linux] {
+                let want = if other == os {
+                    Some("X")
+                } else {
+                    select(&all, other)
+                };
+                assert_eq!(select(&changed, other), want);
+            }
+            assert_eq!(select(&with_entry(&all, os, None), os), None);
+        }
+        assert_eq!(
+            fallback(&PerOsTargets {
+                windows: None,
+                ..three()
+            }),
+            "M"
+        );
+        assert_eq!(fallback(&PerOsTargets::default()), "");
+    }
+
+    fn with_per_os(action: Action, targets: &PerOsTargets) -> Action {
+        match action {
+            Action::LaunchApp {
+                path,
+                args,
+                enabled,
+                cwd,
+                ..
+            } => Action::LaunchApp {
+                path,
+                args,
+                enabled,
+                cwd,
+                per_os: Some(targets.clone()),
+            },
+            other => other,
+        }
+    }
+
     #[test]
     fn per_os_variants_pick_this_computers_one() {
-        let target = Target::PerOs {
+        let targets = PerOsTargets {
             windows: Some(r"C:\Program Files\Spotify\Spotify.exe".into()),
             macos: Some("com.spotify.client".into()),
             linux: None,
         };
         let s = OpenSpec {
-            target,
+            target: Target::PerOs(targets.clone()),
             args: vec![],
             cwd: None,
         };
         assert_eq!(
             resolve(&s, &windows()).action,
-            la(r"C:\Program Files\Spotify\Spotify.exe", &[], true, None)
+            with_per_os(
+                la(r"C:\Program Files\Spotify\Spotify.exe", &[], true, None),
+                &targets
+            )
         );
         assert_eq!(
             resolve(&s, &FakeHost::new(Os::MacOs)).action,
-            la("/usr/bin/open", &["-b", "com.spotify.client"], true, None)
+            with_per_os(
+                la("/usr/bin/open", &["-b", "com.spotify.client"], true, None),
+                &targets
+            )
         );
         let linux = resolve(&s, &FakeHost::new(Os::Linux));
         assert!(matches!(
@@ -883,6 +1031,84 @@ pub(crate) mod tests {
             Action::LaunchApp { enabled: false, .. }
         ));
         assert!(linux.note.unwrap().contains("no \"linux\" app"));
+        assert_eq!(
+            linux.action,
+            with_per_os(
+                la(r"C:\Program Files\Spotify\Spotify.exe", &[], false, None),
+                &targets
+            )
+        );
+    }
+
+    #[test]
+    fn a_per_os_export_keeps_every_entry_on_every_os() {
+        let targets = PerOsTargets {
+            windows: Some(r"%LOCALAPPDATA%\Tools\run.cmd".into()),
+            macos: Some("com.spotify.client".into()),
+            linux: Some("spotify.desktop".into()),
+        };
+        let args = vec!["--x".to_string()];
+        let s = OpenSpec {
+            target: Target::PerOs(targets.clone()),
+            args: args.clone(),
+            cwd: None,
+        };
+        let mut linux = FakeHost::new(Os::Linux);
+        linux.desktop.insert(
+            "spotify.desktop".into(),
+            "/usr/share/applications/spotify.desktop".into(),
+        );
+        for host in [&windows() as &dyn Host, &FakeHost::new(Os::MacOs), &linux] {
+            let Action::LaunchApp {
+                path,
+                args: a,
+                cwd,
+                per_os,
+                enabled,
+            } = resolve(&s, host).action
+            else {
+                unreachable!()
+            };
+            assert!(enabled, "{:?}", host.os());
+            assert_eq!(per_os.as_ref(), Some(&targets));
+            assert_eq!(
+                written_per_os(&path, &a, &cwd, &targets, host),
+                (targets.clone(), args.clone()),
+                "{:?}",
+                host.os()
+            );
+        }
+        // Picked again here: this OS's entry follows, the others stay.
+        let (out, own) =
+            written_per_os(r"C:\Windows\notepad.exe", &[], &None, &targets, &windows());
+        assert_eq!(
+            out,
+            PerOsTargets {
+                windows: Some("Notepad".into()),
+                ..targets.clone()
+            }
+        );
+        assert!(own.is_empty());
+        // No entry for this OS: the stand-in is not written as one.
+        let partial = PerOsTargets {
+            linux: None,
+            ..targets.clone()
+        };
+        let s = OpenSpec {
+            target: Target::PerOs(partial.clone()),
+            args: vec![],
+            cwd: None,
+        };
+        let Action::LaunchApp {
+            path, args, cwd, ..
+        } = resolve(&s, &linux).action
+        else {
+            unreachable!()
+        };
+        assert_eq!(
+            written_per_os(&path, &args, &cwd, &partial, &linux).0,
+            partial
+        );
     }
 
     #[test]

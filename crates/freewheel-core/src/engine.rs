@@ -635,6 +635,7 @@ impl Engine {
                 args,
                 enabled: true,
                 cwd,
+                ..
             }) => {
                 let name = describe::launch_name(&path, &args);
                 let full = self.detail() == Detail::Full;
@@ -1396,6 +1397,7 @@ mod tests {
             args: args.iter().map(|a| a.to_string()).collect(),
             enabled,
             cwd: None,
+            per_os: None,
         }
     }
 
@@ -2033,6 +2035,7 @@ mod tests {
             args: vec![r"C:\Start Menu\Spotify.lnk".into()],
             enabled: true,
             cwd: None,
+            per_os: None,
         }
     }
 
@@ -2053,6 +2056,7 @@ mod tests {
                 args: vec!["https://example.com/private?q=1".into()],
                 enabled: true,
                 cwd: None,
+                per_os: None,
             },
         );
         b.insert(
