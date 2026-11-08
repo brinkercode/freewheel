@@ -234,6 +234,14 @@ export default function Simulator({ initial = null }) {
     turning.current = setInterval(() => send({ type: "Wheel", value }), 120);
   };
   const turnStop = () => clearInterval(turning.current);
+  // Enter or Space on a focused button arrives as a click with no pointer
+  // (detail 0): a quick key presses and releases, a wheel button turns one step.
+  const fromKeyboard = (e) => e.detail === 0;
+  const tap = (key) => keyDown(key).then(() => keyUp(key));
+  const turnOnce = (value) => {
+    note([value < 0 ? "You turned the wheel left" : "You turned the wheel right"], "you");
+    send({ type: "Wheel", value });
+  };
 
   const keys = status?.keys ?? Object.keys(LABELS);
   const held = status?.held_keys ?? [];
@@ -279,6 +287,7 @@ export default function Simulator({ initial = null }) {
               onPointerDown={() => keyDown(key)}
               onPointerUp={() => keyUp(key)}
               onPointerLeave={() => keyUp(key)}
+              onClick={(e) => fromKeyboard(e) && tap(key)}
             >
               {label(key)}
               {lit.includes(key) && <span className="fw-sim-led" aria-hidden="true" />}
@@ -298,10 +307,10 @@ export default function Simulator({ initial = null }) {
           </button>
         </div>
         <div className="fw-sim-line">
-          <button onPointerDown={() => turnStart(-1)} onPointerUp={turnStop} onPointerLeave={turnStop}>
+          <button onPointerDown={() => turnStart(-1)} onPointerUp={turnStop} onPointerLeave={turnStop} onClick={(e) => fromKeyboard(e) && turnOnce(-1)}>
             ↺ Turn wheel left
           </button>
-          <button onPointerDown={() => turnStart(1)} onPointerUp={turnStop} onPointerLeave={turnStop}>
+          <button onPointerDown={() => turnStart(1)} onPointerUp={turnStop} onPointerLeave={turnStop} onClick={(e) => fromKeyboard(e) && turnOnce(1)}>
             Turn right ↻
           </button>
         </div>

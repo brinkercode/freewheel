@@ -83,8 +83,8 @@ test("the list groups the keys in three titled cards, as the prototype's listGro
   expect(keysIn(cards[1]).at(-1)).toBe("STOP/PLAY");
   expect(keysIn(cards[2])).toEqual(["SOURCE", "TIMELINE", "SHTL", "JOG", "SCRL"]);
   // set rows read in --ink, unset ones get is-unset (--ink3)
-  expect(html).toMatch(/<tr aria-selected="false"><td>CUT<\/td>/);
-  expect(html).toMatch(/<tr aria-selected="false" class="is-unset"><td>STOP\/PLAY<\/td>/);
+  expect(html).toMatch(/<tr tabindex="0" aria-selected="false"><td>CUT<\/td>/);
+  expect(html).toMatch(/<tr tabindex="0" aria-selected="false" class="is-unset"><td>STOP\/PLAY<\/td>/);
   const css = readFileSync(new URL("./styles/base.css", import.meta.url), "utf8");
   expect(css).toMatch(/\.list-group-title \{[^}]*font-size: var\(--fs-caption\); font-weight: var\(--fw-semibold\); color: var\(--ink3\)/);
   expect(css).toMatch(/tr\.is-unset td:nth-child\(2\) \{ color: var\(--ink3\); \}/);
