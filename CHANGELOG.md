@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.4](https://github.com/brinkercode/freewheel/compare/v1.1.3...v1.1.4) (2026-11-09)
+
+
+### Fixed
+
+* the release checklist template no longer asks for a release label that doesn't exist ([#228](https://github.com/brinkercode/freewheel/issues/228)) ([5681a4c](https://github.com/brinkercode/freewheel/commit/5681a4c2baa788a8c82d903d978504fcd7dd499b))
+
 ## [1.1.3](https://github.com/brinkercode/freewheel/compare/v1.1.2...v1.1.3) (2026-11-08)
 
 
