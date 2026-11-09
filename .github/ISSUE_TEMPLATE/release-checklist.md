@@ -2,7 +2,6 @@
 name: Release checklist
 about: The hand check with a real Speed Editor on each OS before a release is published.
 title: "Release checklist: vX.Y.Z"
-labels: ["release"]
 ---
 
 # Release checklist
