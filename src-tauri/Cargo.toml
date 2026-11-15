@@ -54,7 +54,10 @@ reqwest = { version = "0.13", default-features = false, features = ["native-tls-
 
 # Linux: the uinput keyboard (libc ioctls), the focused window's pid (X11),
 # logind's SetBrightness and the tray-host check (D-Bus), app icons drawn
-# from the icon theme (gdk-pixbuf); all already in tauri's tree.
+# from the icon theme (gdk-pixbuf). libc and zbus are the versions in
+# tauri's tree; x11rb and gdk-pixbuf (with its glib and gio) are newer than
+# tauri's, so the Linux build carries both copies, within the footprint
+# budgets.
 [target.'cfg(target_os = "linux")'.dependencies]
 gdk-pixbuf = "0.22"
 libc = "0.2"
