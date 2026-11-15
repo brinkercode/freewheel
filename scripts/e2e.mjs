@@ -118,6 +118,21 @@ export function appLocalData(platform, env = process.env, home = homedir()) {
 /** A DevTools target that is the app's own page (not about:blank before it loads): it may use localStorage. */
 export const appPage = (t) => t.type === "page" && /^https?:\/\/tauri\.localhost\//.test(t.url ?? "");
 
+/**
+ * Evaluated in the page: true once the app's own document has loaded and its
+ * storage can be read. The target's URL is not enough: a new window's
+ * DevTools target can already show the app's URL while Runtime.evaluate
+ * still runs in its first about:blank document, which is "complete" too but
+ * has no origin, so its localStorage throws a SecurityError.
+ */
+export const APP_PAGE_READY = `(() => {
+  try {
+    return /^https?:\\/\\/tauri\\.localhost\\//.test(location.href) && document.readyState === "complete" && localStorage.length >= 0;
+  } catch {
+    return false;
+  }
+})()`;
+
 /** Windows: evaluates `expression` in the first page of the WebView2 on DevTools `port` (raw CDP over its WebSocket); resolves to the value. */
 export async function cdpEval(port, expression) {
   const list = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(5000) }).then((r) => r.json());
@@ -164,7 +179,7 @@ async function launchReal(app, port, say) {
       .then((r) => r.json())
       .then((list) => list.filter(appPage).length, () => 0);
     // Its page loaded far enough to use its storage.
-    if (pages >= 1 && (await cdpEval(port, `document.readyState === "complete"`).catch(() => false)) === true) return child;
+    if (pages >= 1 && (await cdpEval(port, APP_PAGE_READY).catch(() => false)) === true) return child;
     await new Promise((r) => setTimeout(r, 300));
   }
   child.kill();

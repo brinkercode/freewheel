@@ -1,10 +1,11 @@
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
 import { expect, test } from "vitest";
 import { checkWorkflow } from "./check-workflow.mjs";
 import { DEVTOOLS_PORT_ENV, DIALOG_DIR_ENV, RESPONSIVE_MS, appLog, flowLines, parseArgs, sessionBody, shotName, traceLines } from "./e2e-windows.mjs";
-import { LINUX_APP, PLATFORMS, installLinuxApp } from "./e2e.mjs";
+import { APP_PAGE_READY, LINUX_APP, PLATFORMS, installLinuxApp } from "./e2e.mjs";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const wf = read("../.github/workflows/e2e-windows.yml");
@@ -26,6 +27,25 @@ test("the e2e session starts the real exe with --simulate through tauri-driver",
 
 test("the DevTools port env var matches the app", () => {
   expect(read("../src-tauri/src/simulate.rs")).toContain(`"${DEVTOOLS_PORT_ENV}"`);
+});
+
+test("the real app is ready only once its own page can read its storage, not while its first about:blank is still there", () => {
+  const page = (href, readyState, storage) => {
+    const ctx = { location: { href }, document: { readyState } };
+    Object.defineProperty(ctx, "localStorage", { get: storage });
+    return runInNewContext(APP_PAGE_READY, ctx);
+  };
+  const denied = () => {
+    throw new Error("SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document.");
+  };
+  // The window's first document: "complete", but no origin, so no storage.
+  expect(page("about:blank", "complete", denied)).toBe(false);
+  expect(page("http://tauri.localhost/", "complete", denied)).toBe(false);
+  expect(page("http://tauri.localhost/", "loading", () => ({ length: 0 }))).toBe(false);
+  expect(page("http://tauri.localhost/", "complete", () => ({ length: 0 }))).toBe(true);
+  expect(page("https://tauri.localhost/index.html", "complete", () => ({ length: 2 }))).toBe(true);
+  // launchReal waits on it before the storage mark.
+  expect(script).toMatch(/cdpEval\(port, APP_PAGE_READY\)/);
 });
 
 test("the dialog stubs' env var matches the app, and only the e2e build has them", () => {
