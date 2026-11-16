@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.4](https://github.com/brinkercode/freewheel/compare/v1.1.3...v1.1.4) (2026-11-16)
+
+
+### Fixed
+
+* freewheel uses newer libraries on Linux to draw app icons and find the window in front ([1935768](https://github.com/brinkercode/freewheel/commit/1935768891b0d010b630dff5c02e27c5616d96be))
+* **release:** the release checklist template no longer asks for a release label that does not exist ([5681a4c](https://github.com/brinkercode/freewheel/commit/5681a4c2baa788a8c82d903d978504fcd7dd499b))
+
 ## [1.1.3](https://github.com/brinkercode/freewheel/compare/v1.1.2...v1.1.3) (2026-11-08)
 
 
