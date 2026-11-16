@@ -111,7 +111,10 @@ test("release-please makes the release a draft with its tag, so release.yml runs
   expect(rpConfig["force-tag-creation"]).toBe(true);
   expect(rpConfig.prerelease).toBeUndefined();
   expect(rpConfig.packages["."].draft).toBeUndefined();
-  expect(read("../.github/workflows/release-please.yml")).toContain('gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"');
+  // The tag (made with release-please's token) starts release.yml; a
+  // dispatch as well would build the release twice.
+  expect(read("../.github/workflows/release.yml")).toMatch(/^on:\n {2}push:\n {4}tags: \["v\*"\]\n/m);
+  expect(read("../.github/workflows/release-please.yml")).not.toContain("gh workflow run release.yml");
 });
 
 const v111 = JSON.parse(read("./fixtures/release-v1.1.1.json"));
@@ -395,15 +398,16 @@ test("release-please bumps every version file and starts from the version they h
   }
 });
 
-test("release-please runs on main, pinned, and dispatches the release PR's CI and the tag's release build", () => {
+test("release-please runs on main, pinned, with its own token as its one secret and a read-only GITHUB_TOKEN", () => {
   expect(releasePlease).toMatch(/^on:\n {2}push:\n {4}branches: \[main\]\n {2}workflow_dispatch:\n/m);
   expect(releasePlease).toMatch(/^permissions:\n {2}contents: read$/m);
   expect(releasePlease).toContain("uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0");
-  expect(releasePlease).not.toMatch(/secrets\.|pull_request_target|secrets: inherit/);
-  expect(releasePlease).toContain("for wf in ci.yml e2e-windows.yml e2e-linux.yml; do");
-  expect(releasePlease).toContain('gh workflow run "$wf" --repo "$GITHUB_REPOSITORY" --ref "$branch"');
-  expect(releasePlease).toContain('gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"');
-  expect(releasePlease).toContain("if: steps.release.outputs.release_created == 'true'");
+  const code = releasePlease.split("\n").map((l) => l.replace(/(^|\s)#.*$/, "")).join("\n");
+  // One secret, only as the action's token input; no other step, no inherit.
+  expect(code.match(/secrets\.\w+/g)).toEqual(["secrets.RELEASE_PLEASE_TOKEN"]);
+  expect(code).toMatch(/^ {10}token: \$\{\{ secrets\.RELEASE_PLEASE_TOKEN \}\}$/m);
+  expect(code.match(/^ {6}- /gm)).toHaveLength(1);
+  expect(code).not.toMatch(/pull_request_target|secrets: inherit|: write\b|write-all/);
 });
 
 const e2e = read("../.github/workflows/update-e2e.yml");

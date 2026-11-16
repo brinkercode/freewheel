@@ -63,12 +63,17 @@ test package verified with a test key) and never installs.
 1. Every push to `main` runs `release-please.yml`. It opens (or updates) one
    PR, `chore(main): release X.Y.Z`, that bumps the version in `package.json`,
    `package-lock.json`, `src-tauri/tauri.conf.json`, both `Cargo.toml` files and
-   `Cargo.lock`, and adds the notes to `CHANGELOG.md`. It then starts `ci.yml`,
-   `e2e-windows.yml` and `e2e-linux.yml` on that PR's branch (a PR made with `GITHUB_TOKEN`
-   starts no workflow by itself), so the required checks run.
-2. Squash-merge the release PR. On that push release-please tags `vX.Y.Z`,
-   makes the GitHub release with the notes **as a draft**, and starts
-   `release.yml` on the tag. `release-please-config.json` sets `"draft": true`
+   `Cargo.lock`, and adds the notes to `CHANGELOG.md`. release-please acts with
+   the `RELEASE_PLEASE_TOKEN` repository secret, a fine-grained token on this
+   repository only (Contents, Pull requests and Issues: read and write), not
+   `GITHUB_TOKEN`: Actions here may not open pull requests, and a PR or tag
+   made with `GITHUB_TOKEN` starts no other workflow. So the release PR runs
+   its required checks like any other PR. When the token expires,
+   release-please fails with "not permitted to create or approve pull
+   requests" or a 401; make a new one and replace the secret.
+2. Squash-merge the release PR. On that push release-please tags `vX.Y.Z`
+   and makes the GitHub release with the notes **as a draft**; the tag starts
+   `release.yml` by itself. `release-please-config.json` sets `"draft": true`
    and `"force-tag-creation": true`: GitHub makes no tag for a draft until it
    is published, so release-please makes the tag itself first. With the tag,
    `release.yml` can run on it and release-please finds this release (it
