@@ -1,5 +1,5 @@
-# Release for freewheel: on a version tag (started by release-please.yml
-# with workflow_dispatch on the tag it made, or by a pushed v* tag), runs
+# Release for freewheel: on a version tag (the one release-please.yml makes
+# with its token, or any pushed v* tag; by hand with workflow_dispatch), runs
 # the full ci.yml test matrix, then builds the release files and uploads
 # them to the tag's DRAFT GitHub Release. Each is downloaded and run as it
 # is: no installer, no zip. The release is published (and made the latest)

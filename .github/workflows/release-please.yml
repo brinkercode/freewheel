@@ -4,14 +4,20 @@
 # that PR tags vX.Y.Z and makes its GitHub release as a DRAFT with the notes
 # (release-please-config.json "draft"; "force-tag-creation" makes the tag at
 # once, which a draft alone would not, so release.yml can run on it and
-# release-please finds this release next time); this workflow then starts
-# release.yml on the tag, which builds and uploads the signed files and
-# latest.json (with the same notes) to the draft and publishes it, as the
-# latest release, only once all of them are there and checked.
+# release-please finds this release next time); the tag starts release.yml,
+# which builds and uploads the signed files and latest.json (with the same
+# notes) to the draft and publishes it, as the latest release, only once all
+# of them are there and checked.
 #
-# Tags, PRs and pushes made with GITHUB_TOKEN start no other workflow, so the
-# release PR's CI and the release build are started here by
-# workflow_dispatch, the one event GITHUB_TOKEN may trigger. Uses no secret.
+# release-please acts with RELEASE_PLEASE_TOKEN, not GITHUB_TOKEN: Actions
+# here may not open pull requests, and a PR or tag made with GITHUB_TOKEN
+# starts no other workflow. The secret is a fine-grained token on this
+# repository only (Contents, Pull requests and Issues: read and write; Issues
+# for the release PR's labels), used only as the action's token. With it the
+# release PR gets its own pull_request runs (every required check, no
+# approval: the owner's PR) and the tag starts release.yml by itself, so
+# nothing is dispatched here; a dispatch as well would build the release
+# twice. GITHUB_TOKEN stays read-only.
 name: release-please
 
 on:
@@ -30,37 +36,9 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      contents: write # the release PR's branch, the tag and the release
-      pull-requests: write # the release PR
-      actions: write # workflow_dispatch of ci.yml and release.yml
     steps:
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
-        id: release
         with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-
-      # The required checks run on the release PR's head commit: its own
-      # pull_request runs wait for a maintainer's approval (a bot's PR), so
-      # every workflow with a required check (ci.yml: lint and test, and
-      # e2e-windows.yml and e2e-linux.yml: e2e, footprint) is dispatched on the
-      # branch instead; their check
-      # runs land on that same commit, no approval needed.
-      - name: Run CI on the release PR
-        if: steps.release.outputs.prs_created == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ steps.release.outputs.pr }}
-        run: |
-          branch=$(jq -r .headBranchName <<<"$PR")
-          for wf in ci.yml e2e-windows.yml e2e-linux.yml; do
-            gh workflow run "$wf" --repo "$GITHUB_REPOSITORY" --ref "$branch"
-          done
-
-      - name: Build the release
-        if: steps.release.outputs.release_created == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.release.outputs.tag_name }}
-        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"

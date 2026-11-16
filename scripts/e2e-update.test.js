@@ -170,10 +170,12 @@ test("shipped builds never get the e2e feature or the e2e override", () => {
   expect(read("../.github/workflows/test-build.yml")).toContain("node scripts/check-release-binary.mjs target/release/freewheel.exe");
 });
 
-test("the release PR gets every required check without approval: release-please dispatches ci.yml, e2e-windows.yml and e2e-linux.yml", () => {
+test("the release PR gets every required check: release-please opens it with its own token, so its pull_request runs start", () => {
   const rp = read("../.github/workflows/release-please.yml");
-  expect(rp).toContain("for wf in ci.yml e2e-windows.yml e2e-linux.yml; do");
-  expect(rp).toContain('gh workflow run "$wf" --repo "$GITHUB_REPOSITORY" --ref "$branch"');
-  expect(wf).toMatch(/^ {2}workflow_dispatch:/m);
-  expect(read("../.github/workflows/ci.yml")).toMatch(/^ {2}workflow_dispatch:/m);
+  expect(rp).toContain("token: ${{ secrets.RELEASE_PLEASE_TOKEN }}");
+  // Nothing dispatched: the PR's own runs carry the required checks.
+  expect(rp).not.toContain("gh workflow run");
+  for (const f of ["ci.yml", "e2e-windows.yml", "e2e-linux.yml"]) {
+    expect(read(`../.github/workflows/${f}`)).toMatch(/^ {2}pull_request:/m);
+  }
 });
